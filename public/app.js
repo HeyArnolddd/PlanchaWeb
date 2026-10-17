@@ -84,6 +84,7 @@ const views = {
         <div class="stat"><span>Ventas de hoy (${d.today.n})</span><b>${money(d.today.total)}</b></div>
         <div class="stat"><span>Ganancia hoy</span><b>${money(d.today.profit)}</b></div>
         <div class="stat"><span>Gastos de implementos hoy</span><b>${money(d.today.expenses)}</b></div>
+        <div class="stat"><span>Pagos de pedidos hoy</span><b>${money(d.today.orders)}</b></div>
         <div class="stat"><span>Ganancia neta hoy</span><b>${money(d.today.profit - d.today.expenses)}</b></div>
         <div class="stat"><span>Inventario (costo → venta)</span><b style="font-size:1.1rem">${money(d.inventory.cost)} → ${money(d.inventory.value)}</b></div>
       </div><br>
@@ -172,17 +173,25 @@ const views = {
   },
 
   async gastos() {
-    const rows = await api('/expenses');
-    const total = rows.reduce((t, e) => t + e.amount, 0);
-    $('#main').innerHTML = `<h2>Gastos de implementos</h2>
-      <div class="card"><p class="mute">Cucharas, vasos, servilletas y todo lo que se gasta pero no genera ganancia directa.</p>
-        <div class="row"><div style="flex:2"><label>Descripción</label><input id="gd" maxlength="150" placeholder="Ej: Paquete de vasos"></div>
+    const [rows, cats] = await Promise.all([api('/expenses'), api('/categories')]);
+    S.cats = cats;
+    const sum = (k) => rows.filter((e) => e.kind === k).reduce((t, e) => t + e.amount, 0);
+    $('#main').innerHTML = `<h2>Gastos</h2>
+      <div class="card"><div class="seg" style="margin-bottom:.5rem">
+        <button id="k1" class="on" onclick="A.kind('pedido')">🚚 Pago de pedido</button>
+        <button id="k2" onclick="A.kind('implementos')">🥄 Implementos</button></div>
+        <p class="mute" id="kh"></p>
+        <div class="row"><div id="gcw"><label>Proveedor / categoría</label><select id="gc"><option value="">Otro</option>${cats.map((c) => `<option>${esc(c.name)}</option>`).join('')}</select></div>
+        <div style="flex:2"><label id="gdl">Nota (opcional)</label><input id="gd" maxlength="150"></div>
         <div><label>Monto</label><input id="ga" type="number" inputmode="numeric" min="1"></div>
         <div><label>¿De dónde salió?</label><select id="gm"><option value="">Fuera de la caja</option><option value="efectivo">Efectivo de la caja</option><option value="nequi">Nequi de la caja</option></select></div></div>
         <p><button class="btn" onclick="A.addExpense()">Registrar gasto</button></p></div>
-      <div class="card tw"><h3>Historial · total ${money(total)}</h3><table><tr><th>Fecha</th><th>Descripción</th><th>Salió de</th><th class="n">Monto</th><th></th></tr>
-      ${rows.map((e) => `<tr><td>${dt(e.created_at)}</td><td>${esc(e.description)}</td><td>${e.method || 'Fuera de caja'}</td><td class="n">${money(e.amount)}</td>
-        <td class="n"><button class="btn sec sm" onclick="A.delExpense(${e.id})">Borrar</button></td></tr>`).join('') || '<tr><td colspan="5" class="mute">Sin gastos.</td></tr>'}</table></div>`;
+      <div class="grid"><div class="stat"><span>Total pedidos pagados</span><b>${money(sum('pedido'))}</b></div>
+        <div class="stat"><span>Total implementos</span><b>${money(sum('implementos'))}</b></div></div><br>
+      <div class="card tw"><h3>Historial</h3><table><tr><th>Fecha</th><th>Tipo</th><th>Descripción</th><th>Salió de</th><th class="n">Monto</th><th></th></tr>
+      ${rows.map((e) => `<tr><td>${dt(e.created_at)}</td><td><span class="tag">${e.kind === 'pedido' ? 'Pedido' : 'Implementos'}</span></td><td>${esc(e.description)}</td><td>${e.method || 'Fuera de caja'}</td><td class="n">${money(e.amount)}</td>
+        <td class="n"><button class="btn sec sm" onclick="A.delExpense(${e.id})">Borrar</button></td></tr>`).join('') || '<tr><td colspan="6" class="mute">Sin gastos.</td></tr>'}</table></div>`;
+    S.kind = 'pedido'; A.kind('pedido');
   },
 
   async turnos() {
@@ -345,8 +354,19 @@ const A = window.A = {
     if (await act(() => api('/register/adjust', 'POST', { method: val('am'), amount: val('aa'), note: val('an') }), 'Registrado')) boot();
   },
 
+  kind(k) {
+    S.kind = k;
+    $('#k1').classList.toggle('on', k === 'pedido'); $('#k2').classList.toggle('on', k === 'implementos');
+    $('#gcw').style.display = k === 'pedido' ? '' : 'none';
+    $('#gdl').textContent = k === 'pedido' ? 'Nota (opcional)' : 'Descripción (ej. paquete de vasos)';
+    $('#kh').textContent = k === 'pedido' ? 'Pago a un proveedor por un pedido. No hace falta detallar cantidades: eso va en Productos → + Stock.'
+      : 'Cucharas, vasos, servilletas y todo lo que se gasta pero no genera ganancia directa.';
+  },
   async addExpense() {
-    if (await act(() => api('/expenses', 'POST', { description: val('gd'), amount: val('ga'), method: val('gm') }), 'Gasto registrado')) boot();
+    let desc = val('gd').trim();
+    if (S.kind === 'pedido') { const c = val('gc'); desc = ['Pedido ' + (c || 'proveedor'), desc].filter(Boolean).join(' · '); }
+    const body = { kind: S.kind, description: desc, amount: val('ga'), method: val('gm') };
+    if (await act(() => api('/expenses', 'POST', body), 'Gasto registrado')) boot();
   },
   async delExpense(id) {
     if (confirm('¿Borrar este gasto? Si salió de la caja, el dinero se devuelve.') && await act(() => api('/expenses/' + id, 'DELETE'))) boot();

@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS expenses (
   method TEXT CHECK (method IN ('efectivo','nequi')),
   created_at TIMESTAMPTZ NOT NULL
 );
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'implementos';
 INSERT INTO register (id, cash, nequi) VALUES (1, 0, 0) ON CONFLICT DO NOTHING;
 `;
 
@@ -494,7 +495,7 @@ app.post('/api/register/adjust', auth, admin, wrap(async (req) => {
   return { ok: true };
 }));
 
-// ---------- Gastos de implementos (cucharas, vasos, etc.) ----------
+// ---------- Gastos: implementos (cucharas, vasos, etc.) y pagos de pedidos a proveedores ----------
 // method = de dónde salió la plata; si es null, no se descuenta de la caja.
 app.get('/api/expenses', auth, admin, wrap(() =>
   D.all(`SELECT e.*, u.name AS "user" FROM expenses e JOIN users u ON u.id=e.user_id ORDER BY e.id DESC LIMIT 200`)));
@@ -502,9 +503,10 @@ app.post('/api/expenses', auth, admin, wrap(async (req) => {
   const description = str(req.body.description, 'Descripción', 150);
   const amount = int(req.body.amount, 'monto', { min: 1 });
   const m = req.body.method ? method(req.body.method) : null;
+  const kind = req.body.kind === 'pedido' ? 'pedido' : 'implementos';
   await tx(async (t) => {
-    await t.run('INSERT INTO expenses (user_id,description,amount,method,created_at) VALUES ($1,$2,$3,$4,$5)',
-      [req.user.id, description, amount, m, now()]);
+    await t.run('INSERT INTO expenses (user_id,description,amount,method,kind,created_at) VALUES ($1,$2,$3,$4,$5,$6)',
+      [req.user.id, description, amount, m, kind, now()]);
     if (m) await t.run(`UPDATE register SET ${col(m)}=${col(m)}-$1 WHERE id=1`, [amount]);
   });
   return { ok: true };
@@ -527,7 +529,8 @@ app.get('/api/dashboard', auth, admin, wrap(async () => {
     D.get('SELECT COALESCE(SUM(total),0) AS total, COUNT(*) AS n FROM sales WHERE voided=0 AND created_at>=$1', [start]),
     D.get(`SELECT COALESCE(SUM((i.price-i.cost)*i.qty),0) AS p FROM sale_items i
       JOIN sales s ON s.id=i.sale_id WHERE s.voided=0 AND s.created_at>=$1`, [start]),
-    D.get('SELECT COALESCE(SUM(amount),0) AS t FROM expenses WHERE created_at>=$1', [start]),
+    D.get(`SELECT COALESCE(SUM(amount) FILTER (WHERE kind='implementos'),0) AS impl,
+      COALESCE(SUM(amount) FILTER (WHERE kind='pedido'),0) AS ped FROM expenses WHERE created_at>=$1`, [start]),
     D.all(`SELECT i.name, SUM(i.qty) AS qty FROM sale_items i JOIN sales s ON s.id=i.sale_id
       WHERE s.voided=0 AND s.created_at>=now() - interval '30 days' GROUP BY i.product_id, i.name ORDER BY qty DESC LIMIT 5`),
     D.all('SELECT name, stock, min_stock FROM products WHERE active=1 AND stock<=min_stock ORDER BY stock'),
@@ -536,7 +539,7 @@ app.get('/api/dashboard', auth, admin, wrap(async () => {
     openShift(),
     reg(),
   ]);
-  return { register, today: { ...t, profit: profit.p, expenses: exp.t }, top, low, inventory: inv, open_shift: shift || null };
+  return { register, today: { ...t, profit: profit.p, expenses: exp.impl, orders: exp.ped }, top, low, inventory: inv, open_shift: shift || null };
 }));
 
 // ---------- Archivos estáticos y errores ----------
