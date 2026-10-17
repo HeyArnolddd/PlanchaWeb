@@ -34,7 +34,7 @@ async function act(fn, ok) {
 
 const S = { user: null, view: null, cart: [], method: 'efectivo', cat: 'all', q: '' };
 const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['gastos', 'Gastos'], ['turnos', 'Turnos'], ['usuarios', 'Usuarios']];
-const TURNO_TABS = [['caja', 'Caja'], ['vender', 'Vender'], ['turnos', 'Mis turnos']];
+const TURNO_TABS = [['caja', 'Caja'], ['vender', 'Vender'], ['inventario', 'Productos'], ['turnos', 'Mis turnos']];
 
 function modal(html) {
   const m = document.createElement('div'); m.className = 'modal';
@@ -214,6 +214,15 @@ const views = {
     S.kind = 'pedido'; A.kind('pedido');
   },
 
+  // Solo lectura: precios y stock para quien atiende
+  async inventario() {
+    S.prods = (await api('/products')).filter((p) => p.active);
+    $('#main').innerHTML = `<h2>Productos y stock</h2>
+      <input id="iq" placeholder="Buscar producto…" oninput="A.invRows()">
+      <div class="card tw" style="margin-top:1rem"><table><thead><tr><th>Producto</th><th>Categoría</th><th class="n">Precio</th><th class="n">Stock</th></tr></thead><tbody id="irows"></tbody></table></div>`;
+    A.invRows();
+  },
+
   async turnos() {
     const rows = await api('/shifts');
     const admin = S.user.role === 'admin';
@@ -335,6 +344,14 @@ const A = window.A = {
   },
 
   // Productos
+  invRows() {
+    const words = norm(val('iq')).split(/\s+/).filter(Boolean);
+    const list = S.prods.filter((p) => words.every((w) => norm(p.name + ' ' + (p.category || '')).includes(w)));
+    $('#irows').innerHTML = list.map((p) => `<tr><td>${p.photo ? `<img class="thumb" loading="lazy" src="${photoUrl(p)}" alt="">` : ''}${esc(p.name)}</td>
+      <td>${esc(p.category || '—')}</td><td class="n">${money(p.sell_price)}</td>
+      <td class="n ${p.track_stock && p.stock <= p.min_stock ? 'err' : ''}"><b>${p.track_stock ? p.stock : '—'}</b></td></tr>`).join('')
+      || '<tr><td colspan="4" class="mute">Sin resultados.</td></tr>';
+  },
   async pickPhoto(inp) {
     if (!inp.files[0]) return;
     try { S.photo = await shrink(inp.files[0]); } catch (e) { return toast('No se pudo leer la imagen'); }
