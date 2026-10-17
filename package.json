@@ -1,0 +1,17 @@
+{
+  "name": "plancha-web",
+  "version": "1.0.0",
+  "description": "Control de ventas, stock y caja de La Plancha - Asociación de Ingeniería de Sistemas",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.21.0",
+    "pg": "^8.23.1"
+  }
+}
