@@ -1,5 +1,7 @@
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// Minúsculas y sin tildes, para que la búsqueda no sea exacta
+const norm = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const money = (n) => '$' + Number(n || 0).toLocaleString('es-CO');
 const dt = (s) => s ? new Date(s).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
 const diffTag = (d) => d === 0 ? '<span class="tag ok">Cuadra</span>'
@@ -248,8 +250,9 @@ const A = window.A = {
 
   // Venta
   grid() {
-    const q = S.q.toLowerCase();
-    const list = S.prods.filter((p) => (S.cat === 'all' || (p.category || 'Sin categoría') === S.cat) && p.name.toLowerCase().includes(q));
+    const words = norm(S.q).split(/\s+/).filter(Boolean);
+    const list = S.prods.filter((p) => (S.cat === 'all' || (p.category || 'Sin categoría') === S.cat)
+      && words.every((w) => norm(p.name + ' ' + (p.category || '')).includes(w)));
     $('#grid').innerHTML = list.map((p) => `<button class="prod" ${p.stock <= 0 ? 'disabled' : ''} onclick="A.add(${p.id})">
       <b>${esc(p.name)}</b>${money(p.sell_price)}<br><small>${p.stock} disp.</small></button>`).join('') || '<span class="mute">Sin resultados.</span>';
   },
