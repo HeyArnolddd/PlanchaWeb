@@ -138,6 +138,7 @@ CREATE TABLE IF NOT EXISTS product_photos (
   mime TEXT NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
 );
+ALTER TABLE products ADD COLUMN IF NOT EXISTS track_stock INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'implementos';
 INSERT INTO register (id, cash, nequi) VALUES (1, 0, 0) ON CONFLICT DO NOTHING;
 `;
@@ -321,14 +322,15 @@ async function productBody(b) {
     buy_price: int(b.buy_price, 'precio de compra'),
     sell_price: int(b.sell_price, 'precio de venta'),
     min_stock: int(b.min_stock ?? 0, 'stock mínimo'),
+    track_stock: b.track_stock === false || b.track_stock === 0 ? 0 : 1,
   };
 }
 app.post('/api/products', auth, admin, wrap(async (req) => {
   const p = await productBody(req.body);
-  const qty = int(req.body.stock ?? 0, 'cantidad inicial');
+  const qty = p.track_stock ? int(req.body.stock ?? 0, 'cantidad inicial') : 0;
   return tx(async (t) => {
-    const { id } = await t.get(`INSERT INTO products (name,category_id,buy_price,sell_price,stock,min_stock)
-      VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`, [p.name, p.category_id, p.buy_price, p.sell_price, qty, p.min_stock]);
+    const { id } = await t.get(`INSERT INTO products (name,category_id,buy_price,sell_price,stock,min_stock,track_stock)
+      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`, [p.name, p.category_id, p.buy_price, p.sell_price, qty, p.min_stock, p.track_stock]);
     if (qty > 0) await t.run('INSERT INTO stock_entries (product_id,qty,buy_price,user_id,note,created_at) VALUES ($1,$2,$3,$4,$5,$6)',
       [id, qty, p.buy_price, req.user.id, 'Stock inicial', now()]);
     return { id };
@@ -338,8 +340,8 @@ app.put('/api/products/:id', auth, admin, wrap(async (req) => {
   const id = int(req.params.id, 'id');
   const p = await productBody(req.body);
   const active = req.body.active === undefined ? 1 : (req.body.active ? 1 : 0);
-  await D.run(`UPDATE products SET name=$1,category_id=$2,buy_price=$3,sell_price=$4,min_stock=$5,active=$6 WHERE id=$7`,
-    [p.name, p.category_id, p.buy_price, p.sell_price, p.min_stock, active, id]);
+  await D.run(`UPDATE products SET name=$1,category_id=$2,buy_price=$3,sell_price=$4,min_stock=$5,active=$6,track_stock=$7 WHERE id=$8`,
+    [p.name, p.category_id, p.buy_price, p.sell_price, p.min_stock, active, p.track_stock, id]);
   return { ok: true };
 }));
 // Foto del producto (el navegador la reduce antes de enviarla)
@@ -474,7 +476,7 @@ app.post('/api/sales', auth, wrap(async (req) => {
       const qty = merged.get(pid);
       const p = await t.get('SELECT * FROM products WHERE id=$1 AND active=1 FOR UPDATE', [pid]);
       if (!p) throw bad('Producto no disponible');
-      if (p.stock < qty) throw bad(`Stock insuficiente de "${p.name}" (quedan ${p.stock})`);
+      if (p.track_stock && p.stock < qty) throw bad(`Stock insuficiente de "${p.name}" (quedan ${p.stock})`);
       rows.push({ p, qty });
       total += p.sell_price * qty;
     }
@@ -483,7 +485,7 @@ app.post('/api/sales', auth, wrap(async (req) => {
     for (const { p, qty } of rows) {
       await t.run('INSERT INTO sale_items (sale_id,product_id,name,qty,price,cost) VALUES ($1,$2,$3,$4,$5,$6)',
         [id, p.id, p.name, qty, p.sell_price, p.buy_price]);
-      await t.run('UPDATE products SET stock=stock-$1 WHERE id=$2', [qty, p.id]);
+      if (p.track_stock) await t.run('UPDATE products SET stock=stock-$1 WHERE id=$2', [qty, p.id]);
     }
     await t.run(`UPDATE register SET ${col(m)}=${col(m)}+$1 WHERE id=1`, [total]);
     return { id, total };
@@ -499,7 +501,7 @@ app.post('/api/sales/:id/void', auth, wrap(async (req) => {
       throw new HttpError(403, 'Solo puedes anular tus ventas mientras tu caja está abierta');
     await t.run('UPDATE sales SET voided=1 WHERE id=$1', [id]);
     for (const i of await t.all('SELECT * FROM sale_items WHERE sale_id=$1', [id]))
-      await t.run('UPDATE products SET stock=stock+$1 WHERE id=$2', [i.qty, i.product_id]);
+      await t.run('UPDATE products SET stock=stock+$1 WHERE id=$2 AND track_stock=1', [i.qty, i.product_id]);
     await t.run(`UPDATE register SET ${col(sale.method)}=${col(sale.method)}-$1 WHERE id=1`, [sale.total]);
     return { ok: true };
   });
@@ -563,9 +565,9 @@ app.get('/api/dashboard', auth, admin, wrap(async () => {
       COALESCE(SUM(amount) FILTER (WHERE kind='pedido'),0) AS ped FROM expenses WHERE created_at>=$1`, [start]),
     D.all(`SELECT i.name, SUM(i.qty) AS qty FROM sale_items i JOIN sales s ON s.id=i.sale_id
       WHERE s.voided=0 AND s.created_at>=now() - interval '30 days' GROUP BY i.product_id, i.name ORDER BY qty DESC LIMIT 5`),
-    D.all('SELECT name, stock, min_stock FROM products WHERE active=1 AND stock<=min_stock ORDER BY stock'),
+    D.all('SELECT name, stock, min_stock FROM products WHERE active=1 AND track_stock=1 AND stock<=min_stock ORDER BY stock'),
     D.get(`SELECT COALESCE(SUM(stock::bigint*buy_price),0) AS cost, COALESCE(SUM(stock::bigint*sell_price),0) AS value
-      FROM products WHERE active=1`),
+      FROM products WHERE active=1 AND track_stock=1`),
     openShift(),
     reg(),
   ]);
