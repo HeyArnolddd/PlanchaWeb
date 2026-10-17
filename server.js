@@ -132,6 +132,12 @@ CREATE TABLE IF NOT EXISTS expenses (
   method TEXT CHECK (method IN ('efectivo','nequi')),
   created_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS product_photos (
+  product_id INTEGER PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+  data BYTEA NOT NULL,
+  mime TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'implementos';
 INSERT INTO register (id, cash, nequi) VALUES (1, 0, 0) ON CONFLICT DO NOTHING;
 `;
@@ -161,7 +167,7 @@ const ensureReady = () => (ready ||= init().catch((e) => { ready = null; throw e
 const now = () => new Date();
 const app = express();
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '100kb' }));
+app.use(express.json({ limit: '400kb' }));
 app.use((req, res, next) => (req.path.startsWith('/api') ? ensureReady().then(() => next(), next) : next()));
 
 class HttpError extends Error {
@@ -300,8 +306,9 @@ app.delete('/api/categories/:id', auth, admin, wrap(async (req) => {
 
 // ---------- Productos / stock ----------
 app.get('/api/products', auth, wrap(async (req) => {
-  const rows = await D.all(`SELECT p.*, c.name AS category FROM products p
-    LEFT JOIN categories c ON c.id=p.category_id ORDER BY p.active DESC, c.name, p.name`);
+  const rows = await D.all(`SELECT p.*, c.name AS category,
+    (SELECT extract(epoch FROM updated_at)::bigint FROM product_photos f WHERE f.product_id=p.id) AS photo
+    FROM products p LEFT JOIN categories c ON c.id=p.category_id ORDER BY p.active DESC, c.name, p.name`);
   if (req.user.role !== 'admin') rows.forEach((r) => { delete r.buy_price; });
   return rows;
 }));
@@ -333,6 +340,29 @@ app.put('/api/products/:id', auth, admin, wrap(async (req) => {
   const active = req.body.active === undefined ? 1 : (req.body.active ? 1 : 0);
   await D.run(`UPDATE products SET name=$1,category_id=$2,buy_price=$3,sell_price=$4,min_stock=$5,active=$6 WHERE id=$7`,
     [p.name, p.category_id, p.buy_price, p.sell_price, p.min_stock, active, id]);
+  return { ok: true };
+}));
+// Foto del producto (el navegador la reduce antes de enviarla)
+app.get('/api/products/:id/photo', auth, wrap(async (req, res) => {
+  const f = await D.get('SELECT data, mime FROM product_photos WHERE product_id=$1', [int(req.params.id, 'id')]);
+  if (!f) throw new HttpError(404, 'Sin foto');
+  res.set({ 'Content-Type': f.mime, 'Cache-Control': 'private, max-age=31536000' });
+  res.end(f.data);
+}));
+app.put('/api/products/:id/photo', auth, admin, wrap(async (req) => {
+  const id = int(req.params.id, 'id');
+  const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(req.body.image || ''));
+  if (!m) throw bad('Imagen inválida');
+  const data = Buffer.from(m[2], 'base64');
+  if (data.length > 200 * 1024) throw bad('La imagen es demasiado grande');
+  if (!await D.get('SELECT 1 FROM products WHERE id=$1', [id])) throw new HttpError(404, 'No existe');
+  await D.run(`INSERT INTO product_photos (product_id,data,mime,updated_at) VALUES ($1,$2,$3,$4)
+    ON CONFLICT (product_id) DO UPDATE SET data=EXCLUDED.data, mime=EXCLUDED.mime, updated_at=EXCLUDED.updated_at`,
+    [id, data, m[1], now()]);
+  return { ok: true };
+}));
+app.delete('/api/products/:id/photo', auth, admin, wrap(async (req) => {
+  await D.run('DELETE FROM product_photos WHERE product_id=$1', [int(req.params.id, 'id')]);
   return { ok: true };
 }));
 // Ingreso de stock (llegó mercancía nueva)

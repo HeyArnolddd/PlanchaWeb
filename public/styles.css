@@ -45,3 +45,7 @@ th{font-size:.8rem;color:var(--mute);font-weight:600}td.n,th.n{text-align:right;
 .modal>div{background:var(--card);border-radius:12px;padding:1.2rem;width:100%;max-width:440px;max-height:90vh;overflow:auto}
 #toast{position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:.6rem 1rem;border-radius:8px;opacity:0;pointer-events:none;transition:.2s;z-index:30}
 #toast.show{opacity:1}
+
+.prod img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;margin-bottom:.3rem;display:block}
+.thumb{width:36px;height:36px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-right:.5rem}
+.pprev{width:96px;height:96px;object-fit:cover;border-radius:10px;border:1px solid var(--line);background:var(--bg);display:block;margin-bottom:.4rem}

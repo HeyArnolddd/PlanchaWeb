@@ -2,6 +2,15 @@ const $ = (s, r = document) => r.querySelector(s);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 // Minúsculas y sin tildes, para que la búsqueda no sea exacta
 const norm = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const photoUrl = (p) => `/api/products/${p.id}/photo?v=${p.photo}`;
+// Reduce la foto a un cuadrado de 240px (JPEG) para que pese pocos KB
+async function shrink(file) {
+  const bmp = await createImageBitmap(file);
+  const side = Math.min(bmp.width, bmp.height), N = 240;
+  const cv = document.createElement('canvas'); cv.width = cv.height = N;
+  cv.getContext('2d').drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, N, N);
+  return cv.toDataURL('image/jpeg', 0.8);
+}
 const money = (n) => '$' + Number(n || 0).toLocaleString('es-CO');
 const dt = (s) => s ? new Date(s).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
 const diffTag = (d) => d === 0 ? '<span class="tag ok">Cuadra</span>'
@@ -149,7 +158,7 @@ const views = {
       <button class="btn" onclick="A.productForm()">+ Producto</button>
       <button class="btn sec" onclick="A.catManager()">Categorías</button></div>
       <div class="card tw"><table><tr><th>Producto</th><th>Categoría</th><th class="n">Compra</th><th class="n">Venta</th><th class="n">Stock</th><th></th></tr>
-      ${prods.map((p) => `<tr style="${p.active ? '' : 'opacity:.5'}"><td>${esc(p.name)}</td><td>${esc(p.category || '—')}</td>
+      ${prods.map((p) => `<tr style="${p.active ? '' : 'opacity:.5'}"><td>${p.photo ? `<img class="thumb" loading="lazy" src="${photoUrl(p)}" alt="">` : ''}${esc(p.name)}</td><td>${esc(p.category || '—')}</td>
         <td class="n">${money(p.buy_price)}</td><td class="n">${money(p.sell_price)}</td>
         <td class="n ${p.stock <= p.min_stock ? 'err' : ''}"><b>${p.stock}</b></td>
         <td class="n"><button class="btn sm" onclick="A.stockForm(${p.id})">+ Stock</button>
@@ -263,7 +272,7 @@ const A = window.A = {
     const list = S.prods.filter((p) => (S.cat === 'all' || (p.category || 'Sin categoría') === S.cat)
       && words.every((w) => norm(p.name + ' ' + (p.category || '')).includes(w)));
     $('#grid').innerHTML = list.map((p) => `<button class="prod" ${p.stock <= 0 ? 'disabled' : ''} onclick="A.add(${p.id})">
-      <b>${esc(p.name)}</b>${money(p.sell_price)}<br><small>${p.stock} disp.</small></button>`).join('') || '<span class="mute">Sin resultados.</span>';
+      ${p.photo ? `<img loading="lazy" src="${photoUrl(p)}" alt="">` : ''}<b>${esc(p.name)}</b>${money(p.sell_price)}<br><small>${p.stock} disp.</small></button>`).join('') || '<span class="mute">Sin resultados.</span>';
   },
   add(id) {
     const p = S.prods.find((x) => x.id === id), c = S.cart.find((x) => x.id === id);
@@ -301,9 +310,20 @@ const A = window.A = {
   },
 
   // Productos
+  async pickPhoto(inp) {
+    if (!inp.files[0]) return;
+    try { S.photo = await shrink(inp.files[0]); } catch (e) { return toast('No se pudo leer la imagen'); }
+    const im = $('#pimg'); im.src = S.photo; im.style.display = '';
+  },
+  rmPhoto() { S.photo = 'remove'; $('#pimg').style.display = 'none'; },
   productForm(id) {
+    S.photo = undefined;
     const p = id ? S.prods.find((x) => x.id === id) : { name: '', category_id: '', buy_price: '', sell_price: '', min_stock: 0, active: 1 };
     modal(`<h3>${id ? 'Editar' : 'Nuevo'} producto</h3>
+      <label>Foto (opcional)</label>
+      <img id="pimg" class="pprev" ${p.photo ? `src="${photoUrl(p)}"` : 'style="display:none"'} alt="">
+      <input id="pf" type="file" accept="image/*" onchange="A.pickPhoto(this)">
+      ${p.photo ? '<a href="#" onclick="A.rmPhoto();return false" class="mute">Quitar foto</a>' : ''}
       <label>Nombre</label><input id="pn" value="${esc(p.name)}">
       <label>Categoría</label><select id="pc"><option value="">Sin categoría</option>${S.cats.map((c) => `<option value="${c.id}" ${c.id === p.category_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
       <div class="row"><div><label>Precio de compra</label><input id="pb" type="number" inputmode="numeric" min="0" value="${p.buy_price}"></div>
@@ -316,7 +336,12 @@ const A = window.A = {
   async saveProduct(id) {
     const body = { name: val('pn'), category_id: val('pc'), buy_price: val('pb'), sell_price: val('ps'), min_stock: val('pm') };
     if (id) body.active = $('#pa').checked; else body.stock = val('pq');
-    if (await act(() => api(id ? `/products/${id}` : '/products', id ? 'PUT' : 'POST', body), 'Guardado')) { closeModal(); boot(); }
+    const r = await act(() => api(id ? `/products/${id}` : '/products', id ? 'PUT' : 'POST', body), 'Guardado');
+    if (!r) return;
+    const pid = id || r.id;
+    if (S.photo === 'remove') await act(() => api(`/products/${pid}/photo`, 'DELETE'));
+    else if (S.photo) await act(() => api(`/products/${pid}/photo`, 'PUT', { image: S.photo }));
+    S.photo = undefined; closeModal(); boot();
   },
   stockForm(id) {
     const p = S.prods.find((x) => x.id === id);
