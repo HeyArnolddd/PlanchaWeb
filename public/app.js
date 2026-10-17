@@ -92,6 +92,7 @@ const views = {
         <div class="stat"><span>Total esperado</span><b>${money(d.register.cash + d.register.nequi)}</b></div>
         <div class="stat"><span>Ventas de hoy (${d.today.n})</span><b>${money(d.today.total)}</b></div>
         <div class="stat"><span>Ganancia hoy</span><b>${money(d.today.profit)}</b></div>
+        <div class="stat"><span>Retiros Nequi hoy (${d.today.withdrawals}) · comisiones</span><b>${money(d.today.fees)}</b></div>
         <div class="stat"><span>Gastos de implementos hoy</span><b>${money(d.today.expenses)}</b></div>
         <div class="stat"><span>Pagos de pedidos hoy</span><b>${money(d.today.orders)}</b></div>
         <div class="stat"><span>Ganancia neta hoy</span><b>${money(d.today.profit - d.today.expenses)}</b></div>
@@ -135,7 +136,7 @@ const views = {
   },
 
   async vender() {
-    const [{ shift: s }, prods, sales] = await Promise.all([api('/shift/current'), api('/products'), api('/sales/current')]);
+    const [{ shift: s }, prods, sales, wds] = await Promise.all([api('/shift/current'), api('/products'), api('/sales/current'), api('/withdrawals/current')]);
     if (!s) { $('#main').innerHTML = '<div class="alert">Abre caja primero para poder vender.</div>'; return; }
     if (s.user_id !== S.user.id) { $('#main').innerHTML = `<div class="alert">La caja la abrió ${esc(s.user_name)}.</div>`; return; }
     S.prods = prods.filter((p) => p.active);
@@ -147,6 +148,16 @@ const views = {
         ${cats.map((c) => `<button class="${S.cat === c ? 'on' : ''}" data-c="${esc(c)}" onclick="S.cat=this.dataset.c;views.vender()">${esc(c)}</button>`).join('')}</div>
         <div class="prods" id="grid"></div></div>
       <div class="card"><h3>Venta</h3><div id="cart"></div></div></div>
+      <div class="card"><h3>💸 Retiro de efectivo por Nequi</h3>
+        <p class="mute">El cliente te transfiere por Nequi y tú le entregas efectivo. Comisión sugerida: $500 por cada $50.000.</p>
+        <div class="row"><div><label>Monto a entregar en efectivo</label><input id="wa" type="number" inputmode="numeric" min="1" oninput="A.wdFee()"></div>
+        <div><label>Comisión</label><input id="wf" type="number" inputmode="numeric" min="0" value="0"></div>
+        <div><label>La comisión se cobró en</label><select id="wm"><option value="nequi">Nequi (se suma a la transferencia)</option><option value="efectivo">Efectivo</option></select></div></div>
+        <p id="wsum" class="mute"></p>
+        <button class="btn" onclick="A.withdraw()">Registrar retiro</button>
+        ${wds.length ? `<div class="tw" style="margin-top:1rem"><table><tr><th>Hora</th><th class="n">Entregado</th><th class="n">Comisión</th><th></th></tr>${wds.map((w) =>
+          `<tr style="${w.voided ? 'opacity:.5;text-decoration:line-through' : ''}"><td>${dt(w.created_at).split(', ').pop()}</td><td class="n">${money(w.amount)}</td><td class="n">${money(w.fee)}</td>
+          <td class="n">${w.voided ? '<span class="tag err">Anulado</span>' : `<button class="btn sec sm" onclick="A.voidWd(${w.id})">Anular</button>`}</td></tr>`).join('')}</table></div>` : ''}</div>
       <div class="card"><h3>Ventas de este turno</h3><div class="tw">${salesTable(sales, true)}</div></div>`;
     A.grid(); A.cart();
   },
@@ -304,6 +315,20 @@ const A = window.A = {
     const r = await act(() => api('/sales', 'POST', { method: S.method, items: S.cart.map((c) => ({ product_id: c.id, qty: c.qty })) }));
     if (r) { S.cart = []; toast('Venta registrada: ' + money(r.total)); views.vender(); }
   },
+  wdFee() {
+    const a = Number(val('wa')) || 0;
+    $('#wf').value = a > 0 ? Math.ceil(a / 50000) * 500 : 0;
+  },
+  async withdraw() {
+    const a = Number(val('wa')), f = Number(val('wf')), m = val('wm');
+    if (!(a > 0)) return toast('Escribe el monto');
+    const recibe = m === 'nequi' ? a + f : a;
+    if (!confirm(`Entrega ${money(a)} en efectivo.\nDebes haber recibido ${money(recibe)} por Nequi${m === 'efectivo' ? ` y ${money(f)} en efectivo de comisión` : ''}.\n¿Registrar?`)) return;
+    if (await act(() => api('/withdrawals', 'POST', { amount: a, fee: f, fee_method: m }), 'Retiro registrado')) views.vender();
+  },
+  async voidWd(id) {
+    if (confirm('¿Anular este retiro? El dinero se revierte.') && await act(() => api(`/withdrawals/${id}/void`, 'POST'), 'Retiro anulado')) views.vender();
+  },
   async voidSale(id) {
     if (!confirm('¿Anular esta venta? El stock y el dinero se revierten.')) return;
     if (await act(() => api(`/sales/${id}/void`, 'POST'), 'Venta anulada')) boot();
@@ -412,6 +437,7 @@ const A = window.A = {
       ${closed ? `<tr><td>Esperado al cerrar</td><td class="n">${money(s.sys_close_cash)}</td><td class="n">${money(s.sys_close_nequi)}</td></tr>
       <tr><td>Contado al cerrar</td><td class="n">${money(s.close_cash)}</td><td class="n">${money(s.close_nequi)}</td></tr>
       <tr><td><b>Diferencia</b></td><td class="n">${diffTag(s.close_cash - s.sys_close_cash)}</td><td class="n">${diffTag(s.close_nequi - s.sys_close_nequi)}</td></tr>` : ''}</table>
+      ${s.wd_count ? `<p>Retiros por Nequi: <b>${s.wd_count}</b> · entregado ${money(s.wd_amount)} · comisiones ${money(s.wd_fees)}</p>` : ''}
       ${S.user.role === 'admin' ? `<p>Ganancia del turno: <b>${money(s.profit)}</b></p>` : ''}
       ${s.notes ? `<p><i>${esc(s.notes)}</i></p>` : ''}
       <div class="tw">${salesTable(s.sales, S.user.role === 'admin')}</div>

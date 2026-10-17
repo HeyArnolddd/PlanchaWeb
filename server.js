@@ -138,6 +138,17 @@ CREATE TABLE IF NOT EXISTS product_photos (
   mime TEXT NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS withdrawals (
+  id SERIAL PRIMARY KEY,
+  shift_id INTEGER NOT NULL REFERENCES shifts(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  amount BIGINT NOT NULL,
+  fee BIGINT NOT NULL,
+  fee_method TEXT NOT NULL CHECK (fee_method IN ('efectivo','nequi')),
+  voided INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS withdrawals_shift ON withdrawals (shift_id);
 ALTER TABLE products ADD COLUMN IF NOT EXISTS track_stock INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'implementos';
 INSERT INTO register (id, cash, nequi) VALUES (1, 0, 0) ON CONFLICT DO NOTHING;
@@ -398,7 +409,11 @@ const SHIFT_SQL = `SELECT s.*, u.name AS user_name,
   COALESCE((SELECT SUM(total) FROM sales x WHERE x.shift_id=s.id AND x.voided=0 AND x.method='nequi'),0) AS sales_nequi,
   (SELECT COUNT(*) FROM sales x WHERE x.shift_id=s.id AND x.voided=0) AS sales_count,
   COALESCE((SELECT SUM((i.price-i.cost)*i.qty) FROM sale_items i JOIN sales x ON x.id=i.sale_id
-    WHERE x.shift_id=s.id AND x.voided=0),0) AS profit
+    WHERE x.shift_id=s.id AND x.voided=0),0)
+    + COALESCE((SELECT SUM(fee) FROM withdrawals w WHERE w.shift_id=s.id AND w.voided=0),0) AS profit,
+  (SELECT COUNT(*) FROM withdrawals w WHERE w.shift_id=s.id AND w.voided=0) AS wd_count,
+  COALESCE((SELECT SUM(amount) FROM withdrawals w WHERE w.shift_id=s.id AND w.voided=0),0) AS wd_amount,
+  COALESCE((SELECT SUM(fee) FROM withdrawals w WHERE w.shift_id=s.id AND w.voided=0),0) AS wd_fees
   FROM shifts s JOIN users u ON u.id=s.user_id`;
 const openShift = (x = D) => x.get(`${SHIFT_SQL} WHERE s.closed_at IS NULL`);
 
@@ -442,7 +457,7 @@ app.get('/api/shifts/:id', auth, wrap(async (req) => {
   const s = await D.get(`${SHIFT_SQL} WHERE s.id=$1`, [int(req.params.id, 'id')]);
   if (!s) throw new HttpError(404, 'No existe');
   if (req.user.role !== 'admin' && s.user_id !== req.user.id) throw new HttpError(403, 'Sin acceso');
-  return { ...s, sales: await salesOf(s.id) };
+  return { ...s, sales: await salesOf(s.id), withdrawals: await D.all('SELECT * FROM withdrawals WHERE shift_id=$1 ORDER BY id DESC', [s.id]) };
 }));
 
 // ---------- Ventas ----------
@@ -507,6 +522,46 @@ app.post('/api/sales/:id/void', auth, wrap(async (req) => {
   });
 }));
 
+// ---------- Retiros de efectivo por Nequi ----------
+// El cliente transfiere por Nequi y el turno le entrega efectivo. La comisión se cobra por Nequi o en efectivo.
+app.get('/api/withdrawals/current', auth, wrap(async () => {
+  const s = await openShift();
+  return s ? D.all('SELECT * FROM withdrawals WHERE shift_id=$1 ORDER BY id DESC', [s.id]) : [];
+}));
+app.post('/api/withdrawals', auth, wrap(async (req) => {
+  const amount = int(req.body.amount, 'monto', { min: 1 });
+  const fee = int(req.body.fee ?? 0, 'comisión');
+  const fm = method(req.body.fee_method || 'nequi');
+  return tx(async (t) => {
+    const s = await openShift(t);
+    if (!s) throw bad('Primero debes abrir caja');
+    if (s.user_id !== req.user.id) throw bad(`La caja la abrió ${s.user_name}`);
+    const r = await t.get('SELECT cash FROM register WHERE id=1 FOR UPDATE');
+    const dCash = fm === 'efectivo' ? fee - amount : -amount;
+    if (r.cash + dCash < 0) throw bad('No hay suficiente efectivo en caja para este retiro');
+    const dNequi = fm === 'nequi' ? amount + fee : amount;
+    await t.run('UPDATE register SET cash=cash+$1, nequi=nequi+$2 WHERE id=1', [dCash, dNequi]);
+    const { id } = await t.get(`INSERT INTO withdrawals (shift_id,user_id,amount,fee,fee_method,created_at)
+      VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`, [s.id, req.user.id, amount, fee, fm, now()]);
+    return { id, give_cash: amount, nequi_in: dNequi };
+  });
+}));
+app.post('/api/withdrawals/:id/void', auth, wrap(async (req) => {
+  const id = int(req.params.id, 'id');
+  return tx(async (t) => {
+    const w = await t.get(`SELECT w.*, h.closed_at FROM withdrawals w JOIN shifts h ON h.id=w.shift_id WHERE w.id=$1 FOR UPDATE OF w`, [id]);
+    if (!w) throw new HttpError(404, 'No existe');
+    if (w.voided) throw bad('Ya estaba anulado');
+    if (req.user.role !== 'admin' && (w.user_id !== req.user.id || w.closed_at))
+      throw new HttpError(403, 'Solo puedes anular tus retiros mientras tu caja está abierta');
+    const dCash = w.fee_method === 'efectivo' ? w.fee - w.amount : -w.amount;
+    const dNequi = w.fee_method === 'nequi' ? w.amount + w.fee : w.amount;
+    await t.run('UPDATE withdrawals SET voided=1 WHERE id=$1', [id]);
+    await t.run('UPDATE register SET cash=cash-$1, nequi=nequi-$2 WHERE id=1', [dCash, dNequi]);
+    return { ok: true };
+  });
+}));
+
 // ---------- Administración de dinero ----------
 app.get('/api/register', auth, admin, wrap(async () => ({
   register: await reg(),
@@ -557,7 +612,7 @@ app.delete('/api/expenses/:id', auth, admin, wrap(async (req) => {
 app.get('/api/dashboard', auth, admin, wrap(async () => {
   const start = new Date(); start.setUTCHours(5, 0, 0, 0); // medianoche Colombia (UTC-5)
   if (start > new Date()) start.setUTCDate(start.getUTCDate() - 1);
-  const [t, profit, exp, top, low, inv, shift, register] = await Promise.all([
+  const [t, profit, exp, top, low, inv, shift, register, wd] = await Promise.all([
     D.get('SELECT COALESCE(SUM(total),0) AS total, COUNT(*) AS n FROM sales WHERE voided=0 AND created_at>=$1', [start]),
     D.get(`SELECT COALESCE(SUM((i.price-i.cost)*i.qty),0) AS p FROM sale_items i
       JOIN sales s ON s.id=i.sale_id WHERE s.voided=0 AND s.created_at>=$1`, [start]),
@@ -570,8 +625,9 @@ app.get('/api/dashboard', auth, admin, wrap(async () => {
       FROM products WHERE active=1 AND track_stock=1`),
     openShift(),
     reg(),
+    D.get('SELECT COUNT(*) AS n, COALESCE(SUM(fee),0) AS fees FROM withdrawals WHERE voided=0 AND created_at>=$1', [start]),
   ]);
-  return { register, today: { ...t, profit: profit.p, expenses: exp.impl, orders: exp.ped }, top, low, inventory: inv, open_shift: shift || null };
+  return { register, today: { ...t, profit: profit.p + wd.fees, expenses: exp.impl, orders: exp.ped, withdrawals: wd.n, fees: wd.fees }, top, low, inventory: inv, open_shift: shift || null };
 }));
 
 // ---------- Archivos estáticos y errores ----------
