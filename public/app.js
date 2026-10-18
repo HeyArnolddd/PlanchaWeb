@@ -54,8 +54,8 @@ async function boot() {
   const tabs = S.user.role === 'admin' ? ADMIN_TABS : TURNO_TABS;
   if (!S.view || !tabs.find((t) => t[0] === S.view)) S.view = tabs[0][0];
   $('#app').innerHTML = `
-    <div class="top"><b>🥤 La Plancha</b><span class="sp"></span>
-      <small>${esc(S.user.name)} · ${S.user.role === 'admin' ? 'Admin' : 'Turno'}</small>
+    <div class="top"><div class="brand"><img src="/logo.png" alt="ACEIS"><i>La Plancha</i></div><span class="sp"></span>
+      <small data-i="${esc(S.user.name.trim()[0] || '?').toUpperCase()}"><span>${esc(S.user.name)} · ${S.user.role === 'admin' ? 'Admin' : 'Turno'}</span></small>
       <button class="btn sec sm" onclick="A.password()">Contraseña</button>
       <button class="btn sec sm" onclick="A.logout()">Salir</button></div>
     <nav>${tabs.map(([k, l]) => `<button class="${k === S.view ? 'on' : ''}" onclick="go('${k}')">${l}</button>`).join('')}</nav>
@@ -67,10 +67,11 @@ async function boot() {
 window.go = (v) => { S.view = v; boot(); };
 
 function loginView() {
-  $('#app').innerHTML = `<div class="login card"><h2>🥤 La Plancha</h2><p class="mute">Asociación de Ingeniería de Sistemas</p>
+  $('#app').innerHTML = `<div class="login-wrap"><i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i>
+    <div class="login"><img src="/logo.png" alt="ACEIS"><h2>La Plancha</h2><p class="mute">Asociación de Ingeniería de Sistemas</p>
     <label>Usuario</label><input id="lu" autocomplete="username" autocapitalize="none">
     <label>Contraseña</label><input id="lp" type="password" autocomplete="current-password">
-    <p><button class="btn" style="width:100%" id="lb">Ingresar</button></p></div>`;
+    <button class="btn" id="lb">Ingresar</button></div></div>`;
   const go = async () => {
     const u = await act(() => api('/login', 'POST', { username: val('lu'), password: val('lp') }));
     if (u) boot();
@@ -101,7 +102,7 @@ const views = {
       <div class="card"><h3>Turno actual</h3>${s ? `<b>${esc(s.user_name)}</b> abrió caja ${dt(s.opened_at)} · ${s.sales_count} ventas · ${money(s.sales_cash + s.sales_nequi)}`
         : '<span class="mute">No hay caja abierta.</span>'}</div>
       <div class="grid">
-        <div class="card"><h3>⚠️ Stock bajo</h3>${d.low.length ? `<table>${d.low.map((p) => `<tr><td>${esc(p.name)}</td><td class="n ${p.stock === 0 ? 'err' : 'warn'}">${p.stock}</td></tr>`).join('')}</table>` : '<span class="mute">Todo bien.</span>'}</div>
+        <div class="card"><h3>Stock bajo</h3>${d.low.length ? `<table>${d.low.map((p) => `<tr><td>${esc(p.name)}</td><td class="n ${p.stock === 0 ? 'err' : 'warn'}">${p.stock}</td></tr>`).join('')}</table>` : '<span class="mute">Todo bien.</span>'}</div>
         <div class="card"><h3>Más vendidos (30 días)</h3>${d.top.length ? `<table>${d.top.map((p) => `<tr><td>${esc(p.name)}</td><td class="n">${p.qty}</td></tr>`).join('')}</table>` : '<span class="mute">Sin ventas aún.</span>'}</div>
       </div>`;
   },
@@ -148,7 +149,7 @@ const views = {
         ${cats.map((c) => `<button class="${S.cat === c ? 'on' : ''}" data-c="${esc(c)}" onclick="S.cat=this.dataset.c;views.vender()">${esc(c)}</button>`).join('')}</div>
         <div class="prods" id="grid"></div></div>
       <div class="card"><h3>Venta</h3><div id="cart"></div></div></div>
-      <div class="card"><h3>💸 Retiro de efectivo por Nequi</h3>
+      <div class="card"><h3>Retiro de efectivo por Nequi</h3>
         <p class="mute">El cliente te transfiere por Nequi y tú le entregas efectivo. Comisión sugerida: $500 por cada $50.000.</p>
         <div class="row"><div><label>Monto a entregar en efectivo</label><input id="wa" type="number" inputmode="numeric" min="1" oninput="A.wdFee()"></div>
         <div><label>Comisión</label><input id="wf" type="number" inputmode="numeric" min="0" value="0"></div>
