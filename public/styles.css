@@ -51,7 +51,7 @@ nav button{flex:none;border:0;background:none;color:var(--mute);padding:.5rem .9
 nav button:hover{background:var(--ice);color:var(--brand)}
 nav button.on{background:linear-gradient(135deg,var(--brand),var(--sky));color:#fff;box-shadow:0 6px 16px -6px rgba(29,78,216,.7)}
 nav button:active{transform:scale(.95)}
-main{max-width:1040px;margin:0 auto;padding:1.2rem 1rem 3rem}
+main{max-width:1040px;margin:0 auto;padding:1.2rem 1rem 5rem}
 
 /* ---------- Tarjetas ---------- */
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:1.1rem;margin-bottom:1rem;box-shadow:var(--shadow)}
