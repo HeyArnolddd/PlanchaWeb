@@ -618,8 +618,13 @@ app.get('/api/dashboard', auth, admin, wrap(async () => {
       JOIN sales s ON s.id=i.sale_id WHERE s.voided=0 AND s.created_at>=$1`, [start]),
     D.get(`SELECT COALESCE(SUM(amount) FILTER (WHERE kind='implementos'),0) AS impl,
       COALESCE(SUM(amount) FILTER (WHERE kind='pedido'),0) AS ped FROM expenses WHERE created_at>=$1`, [start]),
-    D.all(`SELECT i.name, SUM(i.qty) AS qty FROM sale_items i JOIN sales s ON s.id=i.sale_id
-      WHERE s.voided=0 AND s.created_at>=now() - interval '30 days' GROUP BY i.product_id, i.name ORDER BY qty DESC LIMIT 5`),
+    D.all(`SELECT category, name, qty FROM (
+      SELECT COALESCE(c.name,'Sin categoría') AS category, i.name, SUM(i.qty) AS qty,
+        ROW_NUMBER() OVER (PARTITION BY c.id ORDER BY SUM(i.qty) DESC) AS rn
+      FROM sale_items i JOIN sales s ON s.id=i.sale_id
+      LEFT JOIN products p ON p.id=i.product_id LEFT JOIN categories c ON c.id=p.category_id
+      WHERE s.voided=0 AND s.created_at>=now() - interval '30 days' GROUP BY c.id, c.name, i.product_id, i.name) t
+      WHERE rn<=5 ORDER BY category, qty DESC`),
     D.all('SELECT name, stock, min_stock FROM products WHERE active=1 AND track_stock=1 AND stock<=min_stock ORDER BY stock'),
     D.get(`SELECT COALESCE(SUM(stock::bigint*buy_price),0) AS cost, COALESCE(SUM(stock::bigint*sell_price),0) AS value
       FROM products WHERE active=1 AND track_stock=1`),
