@@ -149,3 +149,10 @@ body:has(.login-wrap){overflow-x:hidden}
 .pprev{width:96px;height:96px;object-fit:cover;border-radius:12px;border:1px solid var(--line);background:var(--ice);display:block;margin-bottom:.4rem}
 
 ::-webkit-scrollbar{height:8px;width:8px}::-webkit-scrollbar-thumb{background:#c4d4f5;border-radius:99px}
+
+.bar{height:10px;background:var(--ice);border-radius:99px;overflow:hidden}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--sky),var(--navy-2));border-radius:99px;transition:width .5s var(--ease)}
+.hb{display:grid;grid-template-columns:3.2rem 1fr minmax(7rem,auto);gap:.6rem;align-items:center;margin:.25rem 0;font-size:.85rem}
+.hb b{font-weight:600;text-align:right;white-space:nowrap}
+.hb span{color:var(--mute)}
+.stat small{display:block;margin-top:.15rem;font-size:.75rem}

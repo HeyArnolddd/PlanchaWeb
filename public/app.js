@@ -33,7 +33,7 @@ async function act(fn, ok) {
 }
 
 const S = { user: null, view: null, cart: [], method: 'efectivo', cat: 'all', q: '' };
-const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['gastos', 'Gastos'], ['turnos', 'Turnos'], ['usuarios', 'Usuarios']];
+const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['gastos', 'Gastos'], ['reportes', 'Reportes'], ['turnos', 'Turnos'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
 const TURNO_TABS = [['caja', 'Caja'], ['vender', 'Vender'], ['inventario', 'Productos'], ['turnos', 'Mis turnos']];
 
 function modal(html) {
@@ -224,6 +224,53 @@ const views = {
     A.invRows();
   },
 
+  async reportes() {
+    S.week ||= null;
+    const w = await api('/reports/week' + (S.week ? `?start=${S.week}` : ''));
+    S.week = w.start;
+    const d0 = (s) => new Date(s + 'T12:00:00Z').toLocaleDateString('es-CO', { timeZone: 'UTC', day: 'numeric', month: 'short' });
+    const dn = (s) => new Date(s + 'T12:00:00Z').toLocaleDateString('es-CO', { timeZone: 'UTC', weekday: 'short', day: 'numeric' });
+    const pct = (a, b) => b ? `<small class="${a >= b ? 'ok' : 'err'}">${a >= b ? '▲' : '▼'} ${Math.abs(Math.round((a - b) / b * 100))}% vs semana anterior</small>` : '<small class="mute">Sin semana anterior</small>';
+    const t = w.totals, pv = w.previous, max = Math.max(1, ...w.days.map((d) => d.total));
+    const net = t.profit - t.impl;
+    $('#main').innerHTML = `<h2>Reporte semanal</h2>
+      <div class="row" style="align-items:center;margin-bottom:1rem">
+        <button class="btn sec sm" onclick="A.week(-7)">← Anterior</button>
+        <b style="flex:2;text-align:center">${d0(w.start)} – ${d0(w.end)}</b>
+        <button class="btn sec sm" onclick="A.week(7)">Siguiente →</button></div>
+      <div class="grid">
+        <div class="stat"><span>Ventas (${t.n})</span><b>${money(t.total)}</b>${pct(t.total, pv.total)}</div>
+        <div class="stat"><span>Ganancia</span><b>${money(t.profit)}</b>${pct(t.profit, pv.profit)}</div>
+        <div class="stat"><span>Gastos de implementos</span><b>${money(t.impl)}</b></div>
+        <div class="stat"><span>Ganancia neta</span><b>${money(net)}</b>${pct(net, pv.profit - pv.impl)}</div>
+        <div class="stat"><span>Pagos de pedidos</span><b>${money(t.ped)}</b></div>
+      </div><br>
+      <div class="card tw"><h3>Por día</h3><table><tr><th>Día</th><th class="n">Ventas</th><th class="n">Total</th><th></th><th class="n">Ganancia</th><th class="n">Gastos</th><th class="n">Pedidos</th></tr>
+      ${w.days.map((d) => `<tr><td>${dn(d.day)}</td><td class="n">${d.n}</td><td class="n">${money(d.total)}</td>
+        <td style="width:25%"><div class="bar"><i style="width:${Math.round(d.total / max * 100)}%"></i></div></td>
+        <td class="n">${money(d.profit)}</td><td class="n">${money(d.impl)}</td><td class="n">${money(d.ped)}</td></tr>`).join('')}</table></div>
+      <div class="card tw"><h3>Más vendidos de la semana</h3>${w.top.length ? `<table><tr><th>Producto</th><th class="n">Cant.</th><th class="n">Total</th></tr>${w.top.map((p) => `<tr><td>${esc(p.name)}</td><td class="n">${p.qty}</td><td class="n">${money(p.total)}</td></tr>`).join('')}</table>` : '<span class="mute">Sin ventas.</span>'}</div>
+      <div class="card"><h3>Ventas por hora</h3>
+        <div class="seg" style="margin-bottom:.8rem"><button id="hp1" onclick="A.hours('week')">Esta semana</button><button id="hp2" onclick="A.hours(30)">30 días</button><button id="hp3" onclick="A.hours(90)">90 días</button></div>
+        <div id="hours"></div></div>
+      <div class="card"><h3>Extracto para rendición de cuentas (CSV)</h3>
+        <p class="mute">Descarga todos los movimientos del rango: ventas, retiros, gastos, ajustes, aperturas y cierres de caja. Se abre directo en Excel.</p>
+        <div class="row"><div><label>Desde</label><input id="xf" type="date" value="${w.start}"></div>
+        <div><label>Hasta</label><input id="xt" type="date" value="${w.end}"></div></div>
+        <p><button class="btn" onclick="A.exportCsv()">⬇ Descargar CSV</button></p></div>`;
+    A.hours('week');
+  },
+
+  async actividad() {
+    S.aq ??= '';
+    const rows = await api('/audit?q=' + encodeURIComponent(S.aq));
+    $('#main').innerHTML = `<h2>Actividad</h2>
+      <p class="mute">Quién hizo qué: ventas, anulaciones, cambios de productos y stock, ajustes de dinero, usuarios y más. Se muestran los últimos 300 movimientos.</p>
+      <div class="row"><input id="aq" placeholder="Buscar por persona, acción o detalle…" value="${esc(S.aq)}" onkeydown="if(event.key==='Enter')A.auditSearch()"><button class="btn sm" style="flex:0 0 auto" onclick="A.auditSearch()">Buscar</button></div>
+      <div class="card tw" style="margin-top:1rem"><table><tr><th>Fecha</th><th>Quién</th><th>Acción</th><th>Detalle</th></tr>
+      ${rows.map((r) => `<tr><td style="white-space:nowrap">${dt(r.created_at)}</td><td>${esc(r.user_name)}</td><td><span class="tag">${esc(r.action)}</span></td><td>${esc(r.detail || '')}</td></tr>`).join('') || '<tr><td colspan="4" class="mute">Sin actividad.</td></tr>'}</table></div>`;
+  },
+
   async turnos() {
     const rows = await api('/shifts');
     const admin = S.user.role === 'admin';
@@ -269,6 +316,36 @@ const A = window.A = {
   async savePassword() {
     if (await act(() => api('/password', 'POST', { current: val('p0'), password: val('p1') }), 'Contraseña actualizada')) { closeModal(); boot(); }
   },
+
+
+  // Reportes
+  week(d) {
+    const t = new Date(S.week + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + d);
+    S.week = t.toISOString().slice(0, 10); views.reportes();
+  },
+  async hours(p) {
+    [1, 2, 3].forEach((i) => $('#hp' + i)?.classList.toggle('on', (i === 1 && p === 'week') || (i === 2 && p === 30) || (i === 3 && p === 90)));
+    let from = S.week, to;
+    const iso = (t) => t.toISOString().slice(0, 10);
+    if (p === 'week') { const e = new Date(S.week + 'T12:00:00Z'); e.setUTCDate(e.getUTCDate() + 6); to = iso(e); }
+    else { const n = new Date(Date.now() - 5 * 36e5); to = iso(n); n.setUTCDate(n.getUTCDate() - p + 1); from = iso(n); }
+    const r = await act(() => api(`/reports/hours?from=${from}&to=${to}`));
+    if (!r || !$('#hours')) return;
+    const bars = (rows, mx) => rows.map((x) => `<div class="hb"><span>${x.l}</span><div class="bar"><i style="width:${Math.round(x.total / mx * 100)}%"></i></div><b>${x.n ? x.n + ' · ' + money(x.total) : '—'}</b></div>`).join('');
+    const hrs = Array.from({ length: 24 }, (_, h) => ({ l: `${h % 12 || 12} ${h < 12 ? 'am' : 'pm'}`, ...(r.hours.find((x) => x.h === h) || { n: 0, total: 0 }) }));
+    const used = hrs.filter((x, h) => x.n || (h >= 6 && h <= 22));
+    const days = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map((l, i) => ({ l, ...(r.dows.find((x) => x.d === i + 1) || { n: 0, total: 0 }) }));
+    const best = hrs.reduce((a, b) => (b.total > a.total ? b : a), hrs[0]);
+    $('#hours').innerHTML = `${best.total ? `<p>🔥 Hora más fuerte: <b>${best.l}</b> (${best.n} ventas · ${money(best.total)})</p>` : '<span class="mute">Sin ventas en este periodo.</span>'}
+      ${bars(used, Math.max(1, ...used.map((x) => x.total)))}<h3 style="margin-top:1rem">Por día de la semana</h3>${bars(days, Math.max(1, ...days.map((x) => x.total)))}`;
+  },
+  exportCsv() {
+    const f = val('xf'), t = val('xt');
+    if (!f || !t) return toast('Elige las fechas');
+    if (t < f) return toast('La fecha final es anterior a la inicial');
+    location.href = `/api/export.csv?from=${f}&to=${t}`;
+  },
+  auditSearch() { S.aq = val('aq'); views.actividad(); },
 
   // Caja
   async openShift() {

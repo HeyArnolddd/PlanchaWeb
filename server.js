@@ -151,6 +151,15 @@ CREATE TABLE IF NOT EXISTS withdrawals (
 CREATE INDEX IF NOT EXISTS withdrawals_shift ON withdrawals (shift_id);
 ALTER TABLE products ADD COLUMN IF NOT EXISTS track_stock INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'implementos';
+CREATE TABLE IF NOT EXISTS audit_log (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER,
+  user_name TEXT NOT NULL,
+  action TEXT NOT NULL,
+  detail TEXT,
+  created_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS audit_log_created ON audit_log (created_at DESC);
 INSERT INTO register (id, cash, nequi) VALUES (1, 0, 0) ON CONFLICT DO NOTHING;
 `;
 
@@ -204,6 +213,10 @@ const method = (v) => {
   return v;
 };
 const col = (m) => (m === 'efectivo' ? 'cash' : 'nequi'); // nombre de columna seguro
+// Registro de actividad (quién hizo qué); x es D o la transacción t
+const audit = (x, u, action, detail = null) =>
+  x.run('INSERT INTO audit_log (user_id,user_name,action,detail,created_at) VALUES ($1,$2,$3,$4,$5)',
+    [u.id, u.name, action, detail, now()]);
 const dup = (e, msg) => { if (e.code === '23505') throw bad(msg); throw e; };
 
 // ---------- Autenticación ----------
@@ -245,6 +258,7 @@ app.post('/api/login', wrap(async (req, res) => {
   attempts.delete(key);
   const token = crypto.randomBytes(32).toString('hex');
   await D.run('INSERT INTO sessions (token,user_id,created_at) VALUES ($1,$2,$3)', [token, u.id, now()]);
+  await audit(D, u, 'Inició sesión');
   res.setHeader('Set-Cookie', `sid=${token}; ${cookieOpts(req, 60 * 60 * 24 * 14)}`);
   return { id: u.id, username: u.username, name: u.name, role: u.role, must_change: u.must_change };
 }));
@@ -260,6 +274,7 @@ app.post('/api/password', auth, wrap(async (req) => {
   const np = String(req.body.password || '');
   if (np.length < 6) throw bad('La nueva contraseña debe tener al menos 6 caracteres');
   await D.run('UPDATE users SET password_hash=$1, must_change=0 WHERE id=$2', [bcrypt.hashSync(np, 10), u.id]);
+  await audit(D, req.user, 'Cambió su contraseña');
   return { ok: true };
 }));
 
@@ -273,8 +288,10 @@ app.post('/api/users', auth, admin, wrap(async (req) => {
   if (password.length < 6) throw bad('La contraseña debe tener al menos 6 caracteres');
   const role = req.body.role === 'admin' ? 'admin' : 'turno';
   try {
-    return await D.get('INSERT INTO users (username,name,password_hash,role) VALUES ($1,$2,$3,$4) RETURNING id',
+    const r = await D.get('INSERT INTO users (username,name,password_hash,role) VALUES ($1,$2,$3,$4) RETURNING id',
       [username, name, bcrypt.hashSync(password, 10), role]);
+    await audit(D, req.user, 'Creó usuario', `${name} (${username}) · ${role === 'admin' ? 'Admin' : 'Turno'}`);
+    return r;
   } catch (e) { dup(e, 'Ese usuario ya existe'); }
 }));
 app.put('/api/users/:id', auth, admin, wrap(async (req) => {
@@ -294,6 +311,12 @@ app.put('/api/users/:id', auth, admin, wrap(async (req) => {
     await D.run('UPDATE users SET password_hash=$1, must_change=0 WHERE id=$2', [bcrypt.hashSync(p, 10), id]);
   }
   if (!active) await D.run('DELETE FROM sessions WHERE user_id=$1', [id]);
+  const ch = [];
+  if (name !== u.name) ch.push(`nombre → ${name}`);
+  if (role !== u.role) ch.push(`rol → ${role === 'admin' ? 'Admin' : 'Turno'}`);
+  if (active !== u.active) ch.push(active ? 'activado' : 'desactivado');
+  if (req.body.password) ch.push('nueva contraseña');
+  await audit(D, req.user, 'Editó usuario', `${u.name} (${u.username})${ch.length ? ': ' + ch.join(', ') : ''}`);
   return { ok: true };
 }));
 
@@ -301,18 +324,25 @@ app.put('/api/users/:id', auth, admin, wrap(async (req) => {
 app.get('/api/categories', auth, wrap(() => D.all('SELECT * FROM categories ORDER BY name')));
 app.post('/api/categories', auth, admin, wrap(async (req) => {
   const name = str(req.body.name, 'Nombre', 40);
-  try { return await D.get('INSERT INTO categories (name) VALUES ($1) RETURNING id', [name]); }
+  try { const r = await D.get('INSERT INTO categories (name) VALUES ($1) RETURNING id', [name]); await audit(D, req.user, 'Creó categoría', name); return r; }
   catch (e) { dup(e, 'Esa categoría ya existe'); }
 }));
 app.put('/api/categories/:id', auth, admin, wrap(async (req) => {
   const name = str(req.body.name, 'Nombre', 40);
-  try { await D.run('UPDATE categories SET name=$1 WHERE id=$2', [name, int(req.params.id, 'id')]); return { ok: true }; }
+  try {
+    const id = int(req.params.id, 'id');
+    const old = await D.get('SELECT name FROM categories WHERE id=$1', [id]);
+    await D.run('UPDATE categories SET name=$1 WHERE id=$2', [name, id]);
+    await audit(D, req.user, 'Renombró categoría', `${old ? old.name : id} → ${name}`);
+    return { ok: true };
+  }
   catch (e) { dup(e, 'Esa categoría ya existe'); }
 }));
 app.delete('/api/categories/:id', auth, admin, wrap(async (req) => {
   const id = int(req.params.id, 'id');
   if (await D.get('SELECT 1 FROM products WHERE category_id=$1', [id])) throw bad('Hay productos en esta categoría; muévelos primero');
-  await D.run('DELETE FROM categories WHERE id=$1', [id]);
+  const c = await D.get('DELETE FROM categories WHERE id=$1 RETURNING name', [id]);
+  if (c) await audit(D, req.user, 'Eliminó categoría', c.name);
   return { ok: true };
 }));
 
@@ -344,6 +374,7 @@ app.post('/api/products', auth, admin, wrap(async (req) => {
       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`, [p.name, p.category_id, p.buy_price, p.sell_price, qty, p.min_stock, p.track_stock]);
     if (qty > 0) await t.run('INSERT INTO stock_entries (product_id,qty,buy_price,user_id,note,created_at) VALUES ($1,$2,$3,$4,$5,$6)',
       [id, qty, p.buy_price, req.user.id, 'Stock inicial', now()]);
+    await audit(t, req.user, 'Creó producto', `${p.name} · compra ${p.buy_price} · venta ${p.sell_price}${qty ? ` · stock inicial ${qty}` : ''}`);
     return { id };
   });
 }));
@@ -351,8 +382,20 @@ app.put('/api/products/:id', auth, admin, wrap(async (req) => {
   const id = int(req.params.id, 'id');
   const p = await productBody(req.body);
   const active = req.body.active === undefined ? 1 : (req.body.active ? 1 : 0);
+  const old = await D.get('SELECT * FROM products WHERE id=$1', [id]);
   await D.run(`UPDATE products SET name=$1,category_id=$2,buy_price=$3,sell_price=$4,min_stock=$5,active=$6,track_stock=$7 WHERE id=$8`,
     [p.name, p.category_id, p.buy_price, p.sell_price, p.min_stock, active, p.track_stock, id]);
+  if (old) {
+    const ch = [];
+    if (old.name !== p.name) ch.push(`nombre → ${p.name}`);
+    if (old.buy_price !== p.buy_price) ch.push(`compra ${old.buy_price} → ${p.buy_price}`);
+    if (old.sell_price !== p.sell_price) ch.push(`venta ${old.sell_price} → ${p.sell_price}`);
+    if (old.active !== active) ch.push(active ? 'activado' : 'desactivado');
+    if (old.min_stock !== p.min_stock) ch.push(`stock mínimo ${old.min_stock} → ${p.min_stock}`);
+    if (old.category_id !== p.category_id) ch.push('cambió de categoría');
+    if (old.track_stock !== p.track_stock) ch.push(p.track_stock ? 'controla stock' : 'sin control de stock');
+    if (ch.length) await audit(D, req.user, 'Editó producto', `${old.name}: ${ch.join(', ')}`);
+  }
   return { ok: true };
 }));
 // Foto del producto (el navegador la reduce antes de enviarla)
@@ -372,6 +415,7 @@ app.put('/api/products/:id/photo', auth, admin, wrap(async (req) => {
   await D.run(`INSERT INTO product_photos (product_id,data,mime,updated_at) VALUES ($1,$2,$3,$4)
     ON CONFLICT (product_id) DO UPDATE SET data=EXCLUDED.data, mime=EXCLUDED.mime, updated_at=EXCLUDED.updated_at`,
     [id, data, m[1], now()]);
+  await audit(D, req.user, 'Cambió foto de producto', (await D.get('SELECT name FROM products WHERE id=$1', [id])).name);
   return { ok: true };
 }));
 app.delete('/api/products/:id/photo', auth, admin, wrap(async (req) => {
@@ -389,12 +433,16 @@ app.post('/api/products/:id/stock', auth, admin, wrap(async (req) => {
     await t.run('UPDATE products SET stock=stock+$1, buy_price=$2 WHERE id=$3', [qty, buy, id]);
     await t.run('INSERT INTO stock_entries (product_id,qty,buy_price,user_id,note,created_at) VALUES ($1,$2,$3,$4,$5,$6)',
       [id, qty, buy, req.user.id, String(req.body.note || '').slice(0, 200) || null, now()]);
+    await audit(t, req.user, 'Ingresó stock', `${p.name}: +${qty} (stock ${p.stock} → ${p.stock + qty}) · compra ${buy}`);
     return { ok: true };
   });
 }));
 // Corrección de inventario (conteo físico)
 app.post('/api/products/:id/set-stock', auth, admin, wrap(async (req) => {
-  await D.run('UPDATE products SET stock=$1 WHERE id=$2', [int(req.body.stock, 'stock'), int(req.params.id, 'id')]);
+  const id = int(req.params.id, 'id'), stock = int(req.body.stock, 'stock');
+  const p = await D.get('SELECT name, stock FROM products WHERE id=$1', [id]);
+  await D.run('UPDATE products SET stock=$1 WHERE id=$2', [stock, id]);
+  if (p) await audit(D, req.user, 'Corrigió stock', `${p.name}: ${p.stock} → ${stock}`);
   return { ok: true };
 }));
 app.get('/api/stock-entries', auth, admin, wrap(() =>
@@ -430,6 +478,7 @@ app.post('/api/shift/open', auth, wrap(async (req) => {
         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`, [req.user.id, now(), cash, nequi, r.cash, r.nequi]);
       // La caja parte de lo que el turno declara tener realmente
       await t.run('UPDATE register SET cash=$1, nequi=$2 WHERE id=1', [cash, nequi]);
+      await audit(t, req.user, 'Abrió caja', `Efectivo ${cash} · Nequi ${nequi} (sistema: ${r.cash} / ${r.nequi})`);
       return { id, diff_cash: cash - r.cash, diff_nequi: nequi - r.nequi };
     });
   } catch (e) { dup(e, 'Ya hay una caja abierta'); }
@@ -445,6 +494,7 @@ app.post('/api/shift/close', auth, wrap(async (req) => {
     await t.run(`UPDATE shifts SET closed_at=$1, close_cash=$2, close_nequi=$3, sys_close_cash=$4, sys_close_nequi=$5, notes=$6
       WHERE id=$7`, [now(), cash, nequi, r.cash, r.nequi, String(req.body.notes || '').slice(0, 300) || null, s.id]);
     await t.run('UPDATE register SET cash=$1, nequi=$2 WHERE id=1', [cash, nequi]);
+    await audit(t, req.user, 'Cerró caja', `Efectivo ${cash} · Nequi ${nequi} (sistema: ${r.cash} / ${r.nequi}) · turno de ${s.user_name}`);
     return { diff_cash: cash - r.cash, diff_nequi: nequi - r.nequi, expected_cash: r.cash, expected_nequi: r.nequi };
   });
 }));
@@ -503,6 +553,7 @@ app.post('/api/sales', auth, wrap(async (req) => {
       if (p.track_stock) await t.run('UPDATE products SET stock=stock-$1 WHERE id=$2', [qty, p.id]);
     }
     await t.run(`UPDATE register SET ${col(m)}=${col(m)}+$1 WHERE id=1`, [total]);
+    await audit(t, req.user, 'Registró venta', `#${id} · ${rows.map(({ p, qty }) => `${qty}× ${p.name}`).join(', ')} · ${total} (${m})`);
     return { id, total };
   });
 }));
@@ -518,6 +569,7 @@ app.post('/api/sales/:id/void', auth, wrap(async (req) => {
     for (const i of await t.all('SELECT * FROM sale_items WHERE sale_id=$1', [id]))
       await t.run('UPDATE products SET stock=stock+$1 WHERE id=$2 AND track_stock=1', [i.qty, i.product_id]);
     await t.run(`UPDATE register SET ${col(sale.method)}=${col(sale.method)}-$1 WHERE id=1`, [sale.total]);
+    await audit(t, req.user, 'Anuló venta', `#${id} · ${sale.total} (${sale.method})`);
     return { ok: true };
   });
 }));
@@ -543,6 +595,7 @@ app.post('/api/withdrawals', auth, wrap(async (req) => {
     await t.run('UPDATE register SET cash=cash+$1, nequi=nequi+$2 WHERE id=1', [dCash, dNequi]);
     const { id } = await t.get(`INSERT INTO withdrawals (shift_id,user_id,amount,fee,fee_method,created_at)
       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`, [s.id, req.user.id, amount, fee, fm, now()]);
+    await audit(t, req.user, 'Registró retiro Nequi', `#${id} · entregó ${amount} · comisión ${fee} (${fm})`);
     return { id, give_cash: amount, nequi_in: dNequi };
   });
 }));
@@ -558,6 +611,7 @@ app.post('/api/withdrawals/:id/void', auth, wrap(async (req) => {
     const dNequi = w.fee_method === 'nequi' ? w.amount + w.fee : w.amount;
     await t.run('UPDATE withdrawals SET voided=1 WHERE id=$1', [id]);
     await t.run('UPDATE register SET cash=cash-$1, nequi=nequi-$2 WHERE id=1', [dCash, dNequi]);
+    await audit(t, req.user, 'Anuló retiro Nequi', `#${id} · ${w.amount} · comisión ${w.fee}`);
     return { ok: true };
   });
 }));
@@ -578,6 +632,7 @@ app.post('/api/register/adjust', auth, admin, wrap(async (req) => {
     await t.run(`UPDATE register SET ${col(m)}=${col(m)}+$1 WHERE id=1`, [amount]);
     await t.run('INSERT INTO adjustments (user_id,method,amount,note,created_at) VALUES ($1,$2,$3,$4,$5)',
       [req.user.id, m, amount, note, now()]);
+    await audit(t, req.user, 'Ajuste de dinero', `${amount > 0 ? '+' : ''}${amount} (${m}) · ${note}`);
   });
   return { ok: true };
 }));
@@ -595,6 +650,7 @@ app.post('/api/expenses', auth, admin, wrap(async (req) => {
     await t.run('INSERT INTO expenses (user_id,description,amount,method,kind,created_at) VALUES ($1,$2,$3,$4,$5,$6)',
       [req.user.id, description, amount, m, kind, now()]);
     if (m) await t.run(`UPDATE register SET ${col(m)}=${col(m)}-$1 WHERE id=1`, [amount]);
+    await audit(t, req.user, kind === 'pedido' ? 'Registró pago de pedido' : 'Registró gasto', `${description} · ${amount} (${m || 'fuera de caja'})`);
   });
   return { ok: true };
 }));
@@ -604,6 +660,7 @@ app.delete('/api/expenses/:id', auth, admin, wrap(async (req) => {
     const e = await t.get('DELETE FROM expenses WHERE id=$1 RETURNING *', [id]);
     if (!e) throw new HttpError(404, 'No existe');
     if (e.method) await t.run(`UPDATE register SET ${col(e.method)}=${col(e.method)}+$1 WHERE id=1`, [e.amount]);
+    await audit(t, req.user, 'Borró gasto', `${e.description} · ${e.amount}`);
   });
   return { ok: true };
 }));
@@ -633,6 +690,142 @@ app.get('/api/dashboard', auth, admin, wrap(async () => {
     D.get('SELECT COUNT(*) AS n, COALESCE(SUM(fee),0) AS fees FROM withdrawals WHERE voided=0 AND created_at>=$1', [start]),
   ]);
   return { register, today: { ...t, profit: profit.p + wd.fees, expenses: exp.impl, orders: exp.ped, withdrawals: wd.n, fees: wd.fees }, top, low, inventory: inv, open_shift: shift || null };
+}));
+
+// ---------- Reportes, extracto CSV y registro de actividad (admin) ----------
+const TZ = 'America/Bogota';
+const ymd = (v, name) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) || isNaN(new Date(`${v}T00:00:00Z`))) throw bad(`Fecha inválida: ${name}`);
+  return v;
+};
+const addDays = (d, n) => new Date(new Date(`${d}T00:00:00Z`).getTime() + n * 864e5).toISOString().slice(0, 10);
+const startOf = (d) => new Date(`${d}T00:00:00-05:00`); // Colombia no tiene horario de verano
+const today = () => new Date(Date.now() - 5 * 36e5).toISOString().slice(0, 10);
+const mondayOf = (d) => addDays(d, -((new Date(`${d}T00:00:00Z`).getUTCDay() + 6) % 7));
+const DAY = `(created_at AT TIME ZONE '${TZ}')::date`;
+function range(q, maxDays = 366) {
+  const from = ymd(q.from, 'desde'), to = ymd(q.to, 'hasta');
+  if (to < from) throw bad('El rango es inválido');
+  if ((new Date(to) - new Date(from)) / 864e5 > maxDays) throw bad(`El rango máximo es de ${maxDays} días`);
+  return { from, to, a: startOf(from), b: startOf(addDays(to, 1)) };
+}
+
+async function weekTotals(a, b) {
+  const [sales, items, exp, wd] = await Promise.all([
+    D.all(`SELECT to_char(${DAY},'YYYY-MM-DD') AS day, SUM(total) AS total, COUNT(*) AS n FROM sales
+      WHERE voided=0 AND created_at>=$1 AND created_at<$2 GROUP BY 1`, [a, b]),
+    D.all(`SELECT to_char((s.created_at AT TIME ZONE '${TZ}')::date,'YYYY-MM-DD') AS day, SUM((i.price-i.cost)*i.qty) AS profit
+      FROM sale_items i JOIN sales s ON s.id=i.sale_id WHERE s.voided=0 AND s.created_at>=$1 AND s.created_at<$2 GROUP BY 1`, [a, b]),
+    D.all(`SELECT to_char(${DAY},'YYYY-MM-DD') AS day, COALESCE(SUM(amount) FILTER (WHERE kind='implementos'),0) AS impl,
+      COALESCE(SUM(amount) FILTER (WHERE kind='pedido'),0) AS ped FROM expenses WHERE created_at>=$1 AND created_at<$2 GROUP BY 1`, [a, b]),
+    D.all(`SELECT to_char(${DAY},'YYYY-MM-DD') AS day, SUM(fee) AS fees FROM withdrawals
+      WHERE voided=0 AND created_at>=$1 AND created_at<$2 GROUP BY 1`, [a, b]),
+  ]);
+  return { sales, items, exp, wd };
+}
+app.get('/api/reports/week', auth, admin, wrap(async (req) => {
+  const start = mondayOf(req.query.start ? ymd(req.query.start, 'semana') : today());
+  const prev = addDays(start, -7);
+  const [cur, old, top] = await Promise.all([
+    weekTotals(startOf(start), startOf(addDays(start, 7))),
+    weekTotals(startOf(prev), startOf(start)),
+    D.all(`SELECT i.name, SUM(i.qty) AS qty, SUM(i.price*i.qty) AS total FROM sale_items i JOIN sales s ON s.id=i.sale_id
+      WHERE s.voided=0 AND s.created_at>=$1 AND s.created_at<$2 GROUP BY i.product_id, i.name ORDER BY qty DESC LIMIT 10`,
+      [startOf(start), startOf(addDays(start, 7))]),
+  ]);
+  const find = (rows, day) => rows.find((r) => r.day === day) || {};
+  const days = Array.from({ length: 7 }, (_, k) => {
+    const day = addDays(start, k);
+    const e = find(cur.exp, day);
+    return { day, total: find(cur.sales, day).total || 0, n: find(cur.sales, day).n || 0,
+      profit: (find(cur.items, day).profit || 0) + (find(cur.wd, day).fees || 0), impl: e.impl || 0, ped: e.ped || 0 };
+  });
+  const sum = (w) => {
+    const f = (rows, k) => rows.reduce((t, r) => t + (r[k] || 0), 0);
+    return { total: f(w.sales, 'total'), n: f(w.sales, 'n'), profit: f(w.items, 'profit') + f(w.wd, 'fees'), impl: f(w.exp, 'impl'), ped: f(w.exp, 'ped') };
+  };
+  return { start, end: addDays(start, 6), days, totals: sum(cur), previous: sum(old), top };
+}));
+
+// Ventas por hora del día y por día de la semana (hora de Colombia)
+app.get('/api/reports/hours', auth, admin, wrap(async (req) => {
+  const { a, b } = range(req.query, 366);
+  const [hours, dows] = await Promise.all([
+    D.all(`SELECT extract(hour from created_at AT TIME ZONE '${TZ}')::int AS h, COUNT(*) AS n, SUM(total) AS total FROM sales
+      WHERE voided=0 AND created_at>=$1 AND created_at<$2 GROUP BY 1 ORDER BY 1`, [a, b]),
+    D.all(`SELECT extract(isodow from created_at AT TIME ZONE '${TZ}')::int AS d, COUNT(*) AS n, SUM(total) AS total FROM sales
+      WHERE voided=0 AND created_at>=$1 AND created_at<$2 GROUP BY 1 ORDER BY 1`, [a, b]),
+  ]);
+  return { hours, dows };
+}));
+
+// Extracto para rendición de cuentas: todos los movimientos del rango, en CSV (Excel en español: separador ;)
+app.get('/api/export.csv', auth, admin, wrap(async (req, res) => {
+  const { from, to, a, b } = range(req.query, 366);
+  const p = [a, b];
+  const [sales, items, wds, exps, adjs, shifts, stocks] = await Promise.all([
+    D.all(`SELECT s.*, u.name AS who FROM sales s JOIN users u ON u.id=s.user_id WHERE s.created_at>=$1 AND s.created_at<$2`, p),
+    D.all(`SELECT i.* FROM sale_items i JOIN sales s ON s.id=i.sale_id WHERE s.created_at>=$1 AND s.created_at<$2`, p),
+    D.all(`SELECT w.*, u.name AS who FROM withdrawals w JOIN users u ON u.id=w.user_id WHERE w.created_at>=$1 AND w.created_at<$2`, p),
+    D.all(`SELECT e.*, u.name AS who FROM expenses e JOIN users u ON u.id=e.user_id WHERE e.created_at>=$1 AND e.created_at<$2`, p),
+    D.all(`SELECT a.*, u.name AS who FROM adjustments a JOIN users u ON u.id=a.user_id WHERE a.created_at>=$1 AND a.created_at<$2`, p),
+    D.all(`SELECT h.*, u.name AS who FROM shifts h JOIN users u ON u.id=h.user_id WHERE (h.opened_at>=$1 AND h.opened_at<$2) OR (h.closed_at>=$1 AND h.closed_at<$2)`, p),
+    D.all(`SELECT e.*, pr.name AS product, u.name AS who FROM stock_entries e JOIN products pr ON pr.id=e.product_id JOIN users u ON u.id=e.user_id
+      WHERE e.created_at>=$1 AND e.created_at<$2`, p),
+  ]);
+  const rows = []; // { at, tipo, detalle, who, turno, monto, cash, nequi }
+  const eff = (m, v) => ({ cash: m === 'efectivo' ? v : 0, nequi: m === 'nequi' ? v : 0 });
+  for (const s of sales) {
+    const det = items.filter((i) => i.sale_id === s.id).map((i) => `${i.qty}x ${i.name}`).join(', ');
+    rows.push({ at: s.created_at, tipo: s.voided ? 'Venta anulada' : 'Venta', detalle: `#${s.id} ${det} (${s.method})`, who: s.who, turno: s.shift_id,
+      monto: s.total, ...(s.voided ? { cash: 0, nequi: 0 } : eff(s.method, s.total)) });
+  }
+  for (const w of wds) {
+    const dCash = w.fee_method === 'efectivo' ? w.fee - w.amount : -w.amount;
+    const dNequi = w.fee_method === 'nequi' ? w.amount + w.fee : w.amount;
+    rows.push({ at: w.created_at, tipo: w.voided ? 'Retiro Nequi anulado' : 'Retiro Nequi',
+      detalle: `#${w.id} entregó efectivo ${w.amount}; comisión ${w.fee} cobrada en ${w.fee_method}`, who: w.who, turno: w.shift_id, monto: w.amount,
+      cash: w.voided ? 0 : dCash, nequi: w.voided ? 0 : dNequi });
+  }
+  for (const e of exps) {
+    rows.push({ at: e.created_at, tipo: e.kind === 'pedido' ? 'Pago de pedido' : 'Gasto de implementos',
+      detalle: `${e.description} (${e.method ? 'de ' + e.method : 'fuera de caja'})`, who: e.who, turno: '', monto: e.amount, ...(e.method ? eff(e.method, -e.amount) : { cash: 0, nequi: 0 }) });
+  }
+  for (const x of adjs) rows.push({ at: x.created_at, tipo: 'Ajuste de dinero', detalle: `${x.note} (${x.method})`, who: x.who, turno: '', monto: x.amount, ...eff(x.method, x.amount) });
+  for (const h of shifts) {
+    if (h.opened_at >= a && h.opened_at < b) rows.push({ at: h.opened_at, tipo: 'Apertura de caja',
+      detalle: `Declaró efectivo ${h.open_cash} y Nequi ${h.open_nequi} (sistema: ${h.sys_open_cash} / ${h.sys_open_nequi})`, who: h.who, turno: h.id, monto: '', cash: 0, nequi: 0 });
+    if (h.closed_at && h.closed_at >= a && h.closed_at < b) rows.push({ at: h.closed_at, tipo: 'Cierre de caja',
+      detalle: `Contó efectivo ${h.close_cash} y Nequi ${h.close_nequi} (sistema: ${h.sys_close_cash} / ${h.sys_close_nequi}); diferencia efectivo ${h.close_cash - h.sys_close_cash}, Nequi ${h.close_nequi - h.sys_close_nequi}${h.notes ? '; ' + h.notes : ''}`,
+      who: h.who, turno: h.id, monto: '', cash: 0, nequi: 0 });
+  }
+  for (const e of stocks) rows.push({ at: e.created_at, tipo: 'Ingreso de stock', detalle: `${e.product}: +${e.qty} a ${e.buy_price} c/u${e.note ? ' (' + e.note + ')' : ''}`, who: e.who, turno: '', monto: e.qty * e.buy_price, cash: 0, nequi: 0 });
+  rows.sort((x, y) => x.at - y.at);
+
+  const cell = (v) => {
+    if (typeof v === 'number') return String(v);
+    let t = String(v ?? '');
+    if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; // evita fórmulas al abrir en Excel
+    return /[";\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
+  const when = (d) => d.toLocaleString('sv-SE', { timeZone: TZ }).split(' ');
+  const lines = [['Fecha', 'Hora', 'Tipo', 'Detalle', 'Usuario', 'Turno', 'Valor', 'Efecto efectivo', 'Efecto Nequi']];
+  for (const r of rows) { const [d, h] = when(r.at); lines.push([d, h, r.tipo, r.detalle, r.who, r.turno, r.monto, r.cash, r.nequi]); }
+  const sum = (k) => rows.reduce((t, r) => t + r[k], 0);
+  lines.push([], ['', '', 'TOTAL', `Del ${from} al ${to}`, '', '', '', sum('cash'), sum('nequi')]);
+  res.set({
+    'Content-Type': 'text/csv; charset=utf-8',
+    'Content-Disposition': `attachment; filename="extracto-plancha-${from}_a_${to}.csv"`,
+  });
+  res.send('﻿' + lines.map((l) => l.map(cell).join(';')).join('\r\n'));
+  await audit(D, req.user, 'Descargó extracto CSV', `${from} a ${to}`);
+}));
+
+app.get('/api/audit', auth, admin, wrap((req) => {
+  const q = String(req.query.q || '').trim().slice(0, 60);
+  return D.all(`SELECT id, user_name, action, detail, created_at FROM audit_log
+    WHERE ($1='' OR user_name ILIKE '%'||$1||'%' OR action ILIKE '%'||$1||'%' OR detail ILIKE '%'||$1||'%')
+    ORDER BY id DESC LIMIT 300`, [q]);
 }));
 
 // ---------- Archivos estáticos y errores ----------
