@@ -495,8 +495,8 @@ const A = window.A = {
           : (S.benefit ? '' : `<button class="btn sec sm" onclick="A.benefit(${c.id})">🎁 Beneficio (precio de compra)</button>`)}</td></tr>` : '');
     }).join('')}</table>` : '<span class="mute">Toca un producto para agregarlo.</span>') +
       `<p class="total">${money(total)}</p>
-      <div class="seg"><button class="${S.method === 'efectivo' ? 'on' : ''}" onclick="S.method='efectivo';A.cart()">💵 Efectivo</button>
-      <button class="${S.method === 'nequi' ? 'on' : ''}" onclick="S.method='nequi';A.cart()">📱 Nequi</button>
+      <div class="seg"><button class="${S.method === 'efectivo' ? 'on' : ''}" onclick="S.method='efectivo';A.cart()"><img class="pay" src="/efectivo.png" alt=""> Efectivo</button>
+      <button class="${S.method === 'nequi' ? 'on' : ''}" onclick="S.method='nequi';A.cart()"><img class="pay" src="/nequi.jpg" alt=""> Nequi</button>
       <button class="${S.method === 'mixto' ? 'on' : ''}" onclick="S.method='mixto';A.cart()">🔀 Mixto</button></div>
       ${S.method === 'mixto' ? `<label>Pagó por Nequi</label><input id="nq" type="number" inputmode="numeric" min="1" value="${S.nq || ''}" oninput="S.nq=this.value;A.mix(${total})">
       <p id="mix" class="mute"></p>` : ''}

@@ -191,3 +191,4 @@ body:has(.login-wrap){overflow-x:hidden}
 .cw-grid.stk i{position:absolute;top:0;right:0;background:var(--err);color:#fff;border-radius:50%;width:1.1rem;height:1.1rem;font-style:normal;font-size:.8rem;line-height:1.1rem;text-align:center;cursor:pointer}
 .addstk{display:flex;align-items:center;justify-content:center;height:56px;border:2px dashed var(--line);border-radius:10px;color:var(--brand);font-size:1.5rem;cursor:pointer}
 .cw-pick[hidden]{display:none}
+.seg button .pay{width:1.4rem;height:1.4rem;object-fit:contain;vertical-align:-.3rem;border-radius:5px}
