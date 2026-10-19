@@ -59,7 +59,7 @@ const val = (id) => $('#' + id).value;
 // ---------- Shell ----------
 async function boot() {
   S.user = await api('/me').catch(() => null);
-  if (!S.user) return loginView();
+  if (!S.user) { clearInterval(S.chatTimer); S.chatOpen = false; S.peer = null; S.chat = []; chatShell(); return loginView(); }
   const tabs = S.user.role === 'admin' ? ADMIN_TABS : TURNO_TABS;
   if (!S.view || !tabs.find((t) => t[0] === S.view)) S.view = tabs[0][0];
   $('#app').innerHTML = `
