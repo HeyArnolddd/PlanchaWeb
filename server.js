@@ -152,10 +152,15 @@ CREATE INDEX IF NOT EXISTS withdrawals_shift ON withdrawals (shift_id);
 ALTER TABLE products ADD COLUMN IF NOT EXISTS track_stock INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'implementos';
 CREATE TABLE IF NOT EXISTS benefit_uses (
-  user_id INTEGER PRIMARY KEY REFERENCES users(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
   sale_id INTEGER NOT NULL REFERENCES sales(id),
   created_at TIMESTAMPTZ NOT NULL
 );
+ALTER TABLE benefit_uses DROP CONSTRAINT IF EXISTS benefit_uses_pkey;
+ALTER TABLE benefit_uses ADD COLUMN IF NOT EXISTS day DATE;
+UPDATE benefit_uses SET day=(created_at AT TIME ZONE 'America/Bogota')::date WHERE day IS NULL;
+ALTER TABLE benefit_uses ALTER COLUMN day SET NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS benefit_user_day ON benefit_uses (user_id, day);
 CREATE TABLE IF NOT EXISTS audit_log (
   id SERIAL PRIMARY KEY,
   user_id INTEGER,
@@ -528,7 +533,7 @@ async function salesOf(shiftId) {
 // Beneficio: la primera empanada de cada usuario se vende al precio de compra, una sola vez por usuario.
 app.get('/api/benefit/users', auth, wrap(() =>
   D.all(`SELECT u.id, u.name, (b.user_id IS NOT NULL) AS used FROM users u
-    LEFT JOIN benefit_uses b ON b.user_id=u.id WHERE u.active=1 ORDER BY u.name`)));
+    LEFT JOIN benefit_uses b ON b.user_id=u.id AND b.day=$1 WHERE u.active=1 ORDER BY u.name`, [today()])));
 app.get('/api/sales/current', auth, wrap(async () => {
   const s = await openShift();
   return s ? salesOf(s.id) : [];
@@ -563,7 +568,7 @@ app.post('/api/sales', auth, wrap(async (req) => {
         if (!c || !/^empanada/i.test(c.name)) throw bad('El beneficio solo aplica a empanadas');
         const u = await t.get('SELECT name FROM users WHERE id=$1 AND active=1', [benefit.user_id]);
         if (!u) throw bad('Usuario del beneficio inválido');
-        if (await t.get('SELECT 1 FROM benefit_uses WHERE user_id=$1', [benefit.user_id])) throw bad(`${u.name} ya usó su beneficio`);
+        if (await t.get('SELECT 1 FROM benefit_uses WHERE user_id=$1 AND day=$2', [benefit.user_id, today()])) throw bad(`${u.name} ya usó su beneficio de hoy`);
         row.bq = 1; row.bname = u.name;
         total -= p.sell_price - p.buy_price;
       }
@@ -576,8 +581,8 @@ app.post('/api/sales', auth, wrap(async (req) => {
       if (bq) {
         await t.run('INSERT INTO sale_items (sale_id,product_id,name,qty,price,cost) VALUES ($1,$2,$3,1,$4,$4)',
           [id, p.id, `${p.name} (beneficio ${bname})`, p.buy_price]);
-        try { await t.run('INSERT INTO benefit_uses (user_id,sale_id,created_at) VALUES ($1,$2,$3)', [benefit.user_id, id, now()]); }
-        catch (e) { dup(e, `${bname} ya usó su beneficio`); }
+        try { await t.run('INSERT INTO benefit_uses (user_id,sale_id,created_at,day) VALUES ($1,$2,$3,$4)', [benefit.user_id, id, now(), today()]); }
+        catch (e) { dup(e, `${bname} ya usó su beneficio de hoy`); }
       }
       if (qty - bq > 0) await t.run('INSERT INTO sale_items (sale_id,product_id,name,qty,price,cost) VALUES ($1,$2,$3,$4,$5,$6)',
         [id, p.id, p.name, qty - bq, p.sell_price, p.buy_price]);

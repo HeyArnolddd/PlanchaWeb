@@ -408,8 +408,8 @@ const A = window.A = {
     const us = await act(() => api('/benefit/users'));
     if (!us) return;
     S.benefitUsers = us;
-    modal(`<h3>🎁 Beneficio de empanada</h3><p class="mute">La primera empanada de cada usuario se vende al precio de compra. Solo se puede usar una vez por usuario.</p>
-      <label>Usuario</label><select id="bu">${us.map((u) => `<option value="${u.id}" ${u.used ? 'disabled' : ''}>${esc(u.name)}${u.used ? ' (ya lo usó)' : ''}</option>`).join('')}</select>
+    modal(`<h3>🎁 Beneficio de empanada</h3><p class="mute">La primera empanada de cada usuario se vende al precio de compra. Solo se puede usar una vez al día por usuario.</p>
+      <label>Usuario</label><select id="bu">${us.map((u) => `<option value="${u.id}" ${u.used ? 'disabled' : ''}>${esc(u.name)}${u.used ? ' (ya lo usó hoy)' : ''}</option>`).join('')}</select>
       <p><button class="btn" onclick="A.setBenefit(${pid})">Aplicar</button></p>`);
   },
   setBenefit(pid) {
