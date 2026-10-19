@@ -33,8 +33,8 @@ async function act(fn, ok) {
 }
 
 const S = { user: null, view: null, cart: [], benefit: null, method: 'efectivo', cat: 'all', q: '' };
-const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['gastos', 'Gastos'], ['reportes', 'Reportes'], ['turnos', 'Turnos'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
-const TURNO_TABS = [['caja', 'Caja'], ['vender', 'Vender'], ['inventario', 'Productos'], ['turnos', 'Mis turnos']];
+const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['gastos', 'Gastos'], ['reportes', 'Reportes'], ['turnos', 'Turnos'], ['horario', 'Horario'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
+const TURNO_TABS = [['caja', 'Caja'], ['vender', 'Vender'], ['inventario', 'Productos'], ['turnos', 'Mis turnos'], ['horario', 'Horario']];
 
 function modal(html) {
   const m = document.createElement('div'); m.className = 'modal';
@@ -272,6 +272,23 @@ const views = {
       ${rows.map((r) => `<tr><td style="white-space:nowrap">${dt(r.created_at)}</td><td>${esc(r.user_name)}</td><td><span class="tag">${esc(r.action)}</span></td><td>${esc(r.detail || '')}</td></tr>`).join('') || '<tr><td colspan="4" class="mute">Sin actividad.</td></tr>'}</table></div>`;
   },
 
+  horario() {
+    const DIAS = ['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES'];
+    const H = [['Tere', 'Murillo', 'Felipe', 'Murillo', 'Juan'], ['Tere', 'Murillo', 'Felipe', 'Murillo', 'Santiago'],
+      ['Juan', 'Jhon', 'Soto', 'Jhon', 'Juan'], ['Arnold', 'Jhon', 'Soto', 'Jhon', 'Soto'],
+      ['Murillo', 'Soto', 'Diego', 'Jhon', 'Diego'], ['Paula', 'Soto', 'Tere', 'Felipe', 'Diego'],
+      ['Paula', 'Juan', 'Santiago', 'Felipe', 'Majo'], ['Paula', 'Juan', 'Santiago', 'Felipe', 'Majo'],
+      ['Paula', 'Arnold', 'Santiago', 'Diego', 'Arnold'], ['Paula', 'Arnold', 'Santiago', 'Diego', 'Arnold']];
+    const ASEO = ['Majo / Arnold', 'Soto / Paula', 'Santiago / Felipe', 'Jhon / Diego', 'Murillo / Juan'];
+    const f = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Bogota', weekday: 'short', hour: 'numeric', hourCycle: 'h23' }).formatToParts(new Date()).map((x) => [x.type, x.value]));
+    const d = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].indexOf(f.weekday), r = Number(f.hour) - 8;
+    const lbl = (i) => { const h = (n) => String((n - 1) % 12 + 1).padStart(2, '0') + ':00'; return `${h(8 + i)} - ${h(9 + i)}`; };
+    const now = d >= 0 && r >= 0 && r < H.length ? `Ahora (${lbl(r)}): <b>${esc(H[r][d])}</b>` : 'Fuera del horario de atención.';
+    $('#main').innerHTML = `<div class="card"><h3>Horario de atención</h3><p>${now}</p>
+      <div class="tw"><table><tr><th>Horario</th>${DIAS.map((x, i) => `<th${i === d ? ' style="background:var(--ice)"' : ''}>${x}</th>`).join('')}</tr>
+      ${H.map((row, i) => `<tr><td><b>${lbl(i)}</b></td>${row.map((n, j) => `<td style="${j === d ? 'background:var(--ice);' : ''}${i === r && j === d ? 'background:var(--brand);color:#fff;font-weight:700' : ''}">${esc(n)}</td>`).join('')}</tr>`).join('')}
+      <tr><td><b>ASEO</b></td>${ASEO.map((n, j) => `<td style="font-weight:600;${j === d ? 'background:var(--ice)' : ''}">${esc(n)}</td>`).join('')}</tr></table></div></div>`;
+  },
   async turnos() {
     const rows = await api('/shifts');
     const admin = S.user.role === 'admin';
