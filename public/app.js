@@ -32,9 +32,9 @@ async function act(fn, ok) {
   try { const r = await fn(); if (ok) toast(ok); return r; } catch (e) { toast(e.message); return null; }
 }
 
-const S = { user: null, view: null, chat: [], peer: 0, cart: [], benefit: null, method: 'efectivo', cat: 'all', q: '' };
-const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['gastos', 'Gastos'], ['reportes', 'Reportes'], ['turnos', 'Turnos'], ['horario', 'Horario'], ['chat', 'Chat'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
-const TURNO_TABS = [['caja', 'Caja'], ['vender', 'Vender'], ['inventario', 'Productos'], ['turnos', 'Mis turnos'], ['horario', 'Horario'], ['chat', 'Chat']];
+const S = { user: null, view: null, chat: [], peer: null, chatOpen: false, cart: [], benefit: null, method: 'efectivo', cat: 'all', q: '' };
+const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['gastos', 'Gastos'], ['reportes', 'Reportes'], ['turnos', 'Turnos'], ['horario', 'Horario'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
+const TURNO_TABS = [['caja', 'Caja'], ['vender', 'Vender'], ['inventario', 'Productos'], ['turnos', 'Mis turnos'], ['horario', 'Horario']];
 
 function modal(html) {
   const m = document.createElement('div'); m.className = 'modal';
@@ -58,26 +58,47 @@ async function boot() {
       <small data-i="${esc(S.user.name.trim()[0] || '?').toUpperCase()}"><span>${esc(S.user.name)} · ${S.user.role === 'admin' ? 'Admin' : 'Turno'}</span></small>
       <button class="btn sec sm" onclick="A.password()">Contraseña</button>
       <button class="btn sec sm" onclick="A.logout()">Salir</button></div>
-    <nav>${tabs.map(([k, l]) => `<button class="${k === S.view ? 'on' : ''}" onclick="go('${k}')">${l}${k === 'chat' ? '<b class="dot" id="chatdot" hidden></b>' : ''}</button>`).join('')}</nav>
+    <nav>${tabs.map(([k, l]) => `<button class="${k === S.view ? 'on' : ''}" onclick="go('${k}')">${l}</button>`).join('')}</nav>
     <main id="main"></main>`;
   await views[S.view]();
-  chatStart();
+  chatShell(); chatStart();
   if (S.user.must_change) $('#main').insertAdjacentHTML('afterbegin',
     '<div class="alert bad">Estás usando la contraseña por defecto. <a href="#" onclick="A.password();return false">Cámbiala ahora</a>.</div>');
 }
-// Chat: sala general (peer 0) y mensajes privados (peer = id de usuario). Se consulta cada 5 s;
-// el punto del tab avisa de mensajes sin leer en cualquier conversación.
-const inChat = () => S.view === 'chat' && $('#chatlist');
+// Chat: ventana flotante abajo a la derecha. S.peer = null (lista de perfiles), 0 (sala del equipo) o id de usuario (privado).
+// Se consulta cada 5 s; el contador del botón avisa de mensajes sin leer en cualquier conversación.
+const inChat = () => S.chatOpen && S.peer !== null && $('#chatlist');
 const lastChatId = () => (S.chat.length ? S.chat[S.chat.length - 1].id : 0);
+const peerName = () => (S.peer === 0 ? 'Equipo (todos)' : ((S.chatUsers && S.chatUsers.users.find((x) => x.id === S.peer)) || { name: 'Mensaje privado' }).name);
+function chatShell() {
+  let w = $('#cw');
+  if (!S.user) { if (w) w.remove(); return; }
+  if (w) return;
+  w = document.createElement('div'); w.id = 'cw'; document.body.appendChild(w);
+  chatDraw();
+}
+function chatDraw() {
+  const w = $('#cw'); if (!w) return;
+  if (!S.chatOpen) {
+    w.innerHTML = '<button class="cw-btn" onclick="A.chatToggle()">💬 Chat<b class="badge" id="cwbadge" hidden></b></button>';
+    chatPaintBadge(); return;
+  }
+  w.innerHTML = `<div class="cw-panel"><div class="cw-head">${S.peer === null ? '' : '<button onclick="A.chatBack()" aria-label="Volver">←</button>'}
+    <b>${S.peer === null ? '💬 Chat' : esc(peerName())}</b><button onclick="A.chatToggle()" aria-label="Cerrar">✕</button></div>
+    ${S.peer === null ? '<div id="chatside" class="cw-list"></div>'
+      : `<div id="chatlist" class="chatlist"></div><div class="cw-send"><input id="cm" maxlength="500" placeholder="Escribe un mensaje…" onkeydown="if(event.key==='Enter')A.say()"><button class="btn sm" onclick="A.say()">Enviar</button></div>`}</div>`;
+  chatPaintSide(); chatPaintList();
+  const f = $('#cm'); if (f) f.focus();
+}
 function chatPaintSide() {
   const side = $('#chatside'); if (!side || !S.chatUsers) return;
-  const row = (id, name, n) => `<button class="${S.peer === id ? 'on' : ''}" onclick="A.openChat(${id})"><span>${id ? '' : '👥 '}${esc(name)}</span>${n && S.peer !== id ? `<b class="badge">${n}</b>` : ''}</button>`;
+  const row = (id, name, n) => `<button onclick="A.openChat(${id})"><span>${id ? '' : '👥 '}${esc(name)}</span>${n ? `<b class="badge">${n}</b>` : ''}</button>`;
   side.innerHTML = row(0, 'Equipo (todos)', S.chatUsers.general) + S.chatUsers.users.map((u) => row(u.id, u.name, u.unread)).join('');
 }
-function chatPaintDot() {
-  const d = $('#chatdot'); if (!d || !S.chatUsers) return;
-  const cur = inChat() ? S.peer : -1;
-  d.hidden = !(S.chatUsers.general && cur !== 0) && !S.chatUsers.users.some((u) => u.unread && u.id !== cur);
+function chatPaintBadge() {
+  const d = $('#cwbadge'); if (!d || !S.chatUsers) return;
+  const n = S.chatUsers.general + S.chatUsers.users.reduce((t, u) => t + u.unread, 0);
+  d.hidden = !n; d.textContent = n;
 }
 function chatPaintList() {
   const box = $('#chatlist'); if (!box) return;
@@ -95,12 +116,12 @@ async function chatPoll() {
     S.chatUsers = sum;
     if (rows && peer === S.peer && inChat()) {
       const fresh = rows.filter((m) => m.id > lastChatId());
-      const first = !last;
       if (fresh.length) { S.chat = S.chat.concat(fresh); chatPaintList(); }
-      if (first) { const b = $('#chatlist'); if (b) b.scrollTop = b.scrollHeight; }
-      if (fresh.length || first) api('/chat/read', 'POST', { with: peer }).catch(() => {});
+      if (fresh.length || !last) { const b = $('#chatlist'); if (!last && b) b.scrollTop = b.scrollHeight; api('/chat/read', 'POST', { with: peer }).catch(() => {}); }
+      // lo que se está leyendo ahora no cuenta como pendiente
+      if (peer === 0) sum.general = 0; else { const u = sum.users.find((x) => x.id === peer); if (u) u.unread = 0; }
     }
-    chatPaintSide(); chatPaintDot();
+    chatPaintSide(); chatPaintBadge();
   } catch {}
 }
 function chatStart() {
@@ -317,15 +338,6 @@ const views = {
       ${rows.map((r) => `<tr><td style="white-space:nowrap">${dt(r.created_at)}</td><td>${esc(r.user_name)}</td><td><span class="tag">${esc(r.action)}</span></td><td>${esc(r.detail || '')}</td></tr>`).join('') || '<tr><td colspan="4" class="mute">Sin actividad.</td></tr>'}</table></div>`;
   },
 
-  async chat() {
-    S.peer = S.peer || 0; S.chat = [];
-    $('#main').innerHTML = `<div class="chatwrap"><div class="card chatside" id="chatside"></div>
-      <div class="card"><h3 id="chattitle"></h3><div id="chatlist" class="chatlist"></div>
-      <div class="row" style="margin-top:.6rem"><div style="flex:1"><input id="cm" maxlength="500" placeholder="Escribe un mensaje…" onkeydown="if(event.key==='Enter')A.say()"></div>
-      <div><button class="btn" onclick="A.say()">Enviar</button></div></div></div></div>`;
-    A.chatTitle();
-    await chatPoll();
-  },
   horario() {
     const DIAS = ['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES'];
     const H = [['Tere', 'Murillo', 'Felipe', 'Murillo', 'Juan'], ['Tere', 'Murillo', 'Felipe', 'Murillo', 'Santiago'],
@@ -380,7 +392,7 @@ function salesTable(sales, canVoid) {
 
 // ---------- Acciones ----------
 const A = window.A = {
-  async logout() { await api('/logout', 'POST'); S.view = null; S.cart = []; S.benefit = null; clearInterval(S.chatTimer); S.chat = []; S.peer = 0; S.chatUsers = null; boot(); },
+  async logout() { await api('/logout', 'POST'); S.view = null; S.cart = []; S.benefit = null; clearInterval(S.chatTimer); S.chat = []; S.peer = null; S.chatOpen = false; S.chatUsers = null; chatShell(); boot(); },
   password() {
     modal(`<h3>Cambiar contraseña</h3><label>Actual</label><input id="p0" type="password"><label>Nueva (mín. 6)</label><input id="p1" type="password">
       <p><button class="btn" onclick="A.savePassword()">Guardar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);
@@ -489,23 +501,19 @@ const A = window.A = {
     S.benefit = { name, product_id: pid };
     closeModal(); A.cart();
   },
-  chatTitle() {
-    const u = S.chatUsers && S.chatUsers.users.find((x) => x.id === S.peer);
-    const t = $('#chattitle'); if (t) t.textContent = S.peer ? '💬 ' + (u ? u.name : 'Mensaje privado') : '👥 Equipo (todos)';
+  chatToggle() {
+    S.chatOpen = !S.chatOpen; S.chat = [];
+    chatDraw(); chatPoll();
   },
-  async openChat(id) {
-    S.peer = id; S.chat = [];
-    A.chatTitle(); chatPaintSide(); chatPaintList();
-    await chatPoll(); chatPaintDot();
-    const f = $('#cm'); if (f) f.focus();
-  },
+  chatBack() { S.peer = null; S.chat = []; chatDraw(); chatPoll(); },
+  async openChat(id) { S.peer = id; S.chat = []; chatDraw(); await chatPoll(); },
   async say() {
     const body = val('cm').trim();
     if (!body) return;
     $('#cm').value = '';
     const m = await act(() => api('/chat', 'POST', { body, to: S.peer }));
     if (m) { await chatPoll(); const b = $('#chatlist'); if (b) b.scrollTop = b.scrollHeight; }
-    $('#cm').focus();
+    const f = $('#cm'); if (f) f.focus();
   },
   mix(total) {
     const nq = Number(S.nq) || 0;
