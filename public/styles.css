@@ -176,3 +176,18 @@ body:has(.login-wrap){overflow-x:hidden}
 .cw-send{display:flex;gap:.4rem;padding:.6rem;border-top:1px solid var(--line)}
 .cw-send input{flex:1;min-width:0}
 .msg .seen{margin-top:.1rem;text-align:right;opacity:.85}
+
+.msg .stk{display:block;width:120px;height:auto;max-height:120px;object-fit:contain}
+.cw-pick{border-top:1px solid var(--line);background:var(--ice-2);max-height:190px;overflow-y:auto}
+.cw-tabs{display:flex;gap:.3rem;padding:.4rem .4rem 0}
+.cw-tabs button{border:0;background:none;font:inherit;font-weight:600;color:var(--mute);padding:.3rem .6rem;border-radius:99px;cursor:pointer}
+.cw-tabs button.on{background:var(--ice);color:var(--brand)}
+.cw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(38px,1fr));gap:.2rem;padding:.4rem}
+.cw-grid button{border:0;background:none;font-size:1.4rem;cursor:pointer;border-radius:8px;padding:.15rem}
+.cw-grid button:hover{background:var(--ice)}
+.cw-grid.stk{grid-template-columns:repeat(auto-fill,minmax(64px,1fr))}
+.cw-grid.stk span{position:relative}
+.cw-grid.stk img{width:100%;height:56px;object-fit:contain}
+.cw-grid.stk i{position:absolute;top:0;right:0;background:var(--err);color:#fff;border-radius:50%;width:1.1rem;height:1.1rem;font-style:normal;font-size:.8rem;line-height:1.1rem;text-align:center;cursor:pointer}
+.addstk{display:flex;align-items:center;justify-content:center;height:56px;border:2px dashed var(--line);border-radius:10px;color:var(--brand);font-size:1.5rem;cursor:pointer}
+.cw-pick[hidden]{display:none}

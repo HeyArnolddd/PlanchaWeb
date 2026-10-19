@@ -11,6 +11,15 @@ async function shrink(file) {
   cv.getContext('2d').drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, N, N);
   return cv.toDataURL('image/jpeg', 0.8);
 }
+// Sticker: cabe en 160px conservando proporción y transparencia (WebP o PNG) para que pese pocos KB
+async function shrinkSticker(file) {
+  const bmp = await createImageBitmap(file);
+  const k = Math.min(1, 160 / Math.max(bmp.width, bmp.height));
+  const cv = document.createElement('canvas'); cv.width = Math.round(bmp.width * k); cv.height = Math.round(bmp.height * k);
+  cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+  const out = cv.toDataURL('image/webp', 0.85);
+  return out.startsWith('data:image/webp') ? out : cv.toDataURL('image/png');
+}
 const money = (n) => '$' + Number(n || 0).toLocaleString('es-CO');
 const dt = (s) => s ? new Date(s).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
 const diffTag = (d) => d === 0 ? '<span class="tag ok">Cuadra</span>'
@@ -69,6 +78,7 @@ async function boot() {
 // Se consulta cada 5 s; el contador del botón avisa de mensajes sin leer en cualquier conversación.
 const inChat = () => S.chatOpen && S.peer !== null && $('#chatlist');
 const lastChatId = () => (S.chat.length ? S.chat[S.chat.length - 1].id : 0);
+const EMOJIS = '😀 😁 😂 🤣 😊 😍 😘 😎 🤔 😅 😢 😭 😡 🥳 😴 🙄 😬 🤗 👍 👎 👏 🙌 🙏 💪 👋 🤝 ✌️ 👌 🔥 ⭐ ❤️ 💙 💯 🎉 🎁 ✅ ❌ ⚠️ 💸 💵 📱 🍔 🍟 🥟 🥤 🍫 🍦 🍕 ☕ 🧹 🧾 📦 ⏰ 📌 👀 🚀'.split(' ');
 const peerName = () => (S.peer === 0 ? 'Equipo (todos)' : ((S.chatUsers && S.chatUsers.users.find((x) => x.id === S.peer)) || { name: 'Mensaje privado' }).name);
 function chatShell() {
   let w = $('#cw');
@@ -86,7 +96,7 @@ function chatDraw() {
   w.innerHTML = `<div class="cw-panel"><div class="cw-head">${S.peer === null ? '' : '<button onclick="A.chatBack()" aria-label="Volver">←</button>'}
     <b>${S.peer === null ? '💬 Chat' : esc(peerName())}</b><button onclick="A.chatToggle()" aria-label="Cerrar">✕</button></div>
     ${S.peer === null ? '<div id="chatside" class="cw-list"></div>'
-      : `<div id="chatlist" class="chatlist"></div><div class="cw-send"><input id="cm" maxlength="500" placeholder="Escribe un mensaje…" onkeydown="if(event.key==='Enter')A.say()"><button class="btn sm" onclick="A.say()">Enviar</button></div>`}</div>`;
+      : `<div id="chatlist" class="chatlist"></div><div id="cwpick" class="cw-pick" hidden></div><div class="cw-send"><button class="btn sec sm" onclick="A.pick()" aria-label="Emojis y stickers">😊</button><input id="cm" maxlength="500" placeholder="Escribe un mensaje…" onkeydown="if(event.key==='Enter')A.say()"><button class="btn sm" onclick="A.say()">Enviar</button></div>`}</div>`;
   chatPaintSide(); chatPaintList();
   const f = $('#cm'); if (f) f.focus();
 }
@@ -103,7 +113,7 @@ function chatPaintBadge() {
 function chatPaintList() {
   const box = $('#chatlist'); if (!box) return;
   const bottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
-  box.innerHTML = S.chat.map((m) => `<div class="msg ${m.user_id === S.user.id ? 'me' : ''}"><small>${m.user_id === S.user.id ? 'Tú' : esc(m.user_name)} · ${dt(m.created_at).split(', ').pop()}</small><div>${esc(m.body)}</div>${m.user_id === S.user.id && S.peer ? `<small class="seen">${m.id <= S.peerRead ? '✓✓ Visto' : '✓ Enviado'}</small>` : ''}</div>`).join('')
+  box.innerHTML = S.chat.map((m) => `<div class="msg ${m.user_id === S.user.id ? 'me' : ''}"><small>${m.user_id === S.user.id ? 'Tú' : esc(m.user_name)} · ${dt(m.created_at).split(', ').pop()}</small>${m.sticker_id ? `<img class="stk" src="/api/stickers/${m.sticker_id}/img" alt="sticker">` : `<div>${m.body ? esc(m.body) : '<i class="mute">🖼️ sticker eliminado</i>'}</div>`}${m.user_id === S.user.id && S.peer ? `<small class="seen">${m.id <= S.peerRead ? '✓✓ Visto' : '✓ Enviado'}</small>` : ''}</div>`).join('')
     || '<span class="mute">Aún no hay mensajes. ¡Escribe el primero!</span>';
   if (bottom) box.scrollTop = box.scrollHeight;
 }
@@ -507,6 +517,30 @@ const A = window.A = {
   chatToggle() {
     S.chatOpen = !S.chatOpen; S.chat = [];
     chatDraw(); chatPoll();
+  },
+  async pick(tab) {
+    const el = $('#cwpick'); if (!el) return;
+    if (!tab && !el.hidden) { el.hidden = true; return; }
+    tab ||= S.pickTab || 'emoji'; S.pickTab = tab; el.hidden = false;
+    const tabs = `<div class="cw-tabs"><button class="${tab === 'emoji' ? 'on' : ''}" onclick="A.pick('emoji')">😊 Emojis</button><button class="${tab === 'stk' ? 'on' : ''}" onclick="A.pick('stk')">🖼️ Stickers</button></div>`;
+    if (tab === 'emoji') { el.innerHTML = tabs + `<div class="cw-grid">${EMOJIS.map((e) => `<button onclick="A.addEmoji(this.textContent)">${e}</button>`).join('')}</div>`; return; }
+    S.stickers = await api('/stickers').catch(() => S.stickers || []);
+    if ($('#cwpick') !== el || el.hidden) return;
+    el.innerHTML = tabs + `<div class="cw-grid stk">${S.stickers.map((x) => `<span><button onclick="A.sendSticker(${x.id})"><img src="/api/stickers/${x.id}/img" alt="sticker"></button>${x.user_id === S.user.id || S.user.role === 'admin' ? `<i onclick="A.delSticker(${x.id})" title="Borrar">×</i>` : ''}</span>`).join('')}
+      <label class="addstk">＋<input type="file" accept="image/*" hidden onchange="A.addSticker(this)"></label></div>`;
+  },
+  addEmoji(e) { const f = $('#cm'); if (!f) return; f.value += e; f.focus(); },
+  async sendSticker(id) {
+    $('#cwpick').hidden = true;
+    if (await act(() => api('/chat', 'POST', { sticker_id: id, to: S.peer }))) { await chatPoll(); const b = $('#chatlist'); if (b) b.scrollTop = b.scrollHeight; }
+  },
+  async addSticker(inp) {
+    const file = inp.files[0]; if (!file) return;
+    let img; try { img = await shrinkSticker(file); } catch { return toast('No se pudo leer la imagen'); }
+    if (await act(() => api('/stickers', 'POST', { image: img }), 'Sticker agregado')) A.pick('stk');
+  },
+  async delSticker(id) {
+    if (confirm('¿Borrar este sticker?') && await act(() => api(`/stickers/${id}`, 'DELETE'))) A.pick('stk');
   },
   chatBack() { S.peer = null; S.chat = []; chatDraw(); chatPoll(); },
   async openChat(id) { S.peer = id; S.chat = []; S.peerRead = 0; chatDraw(); await chatPoll(); },

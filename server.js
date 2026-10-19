@@ -189,6 +189,14 @@ CREATE TABLE IF NOT EXISTS chat_reads (
   last_id INTEGER NOT NULL,
   PRIMARY KEY (user_id, peer_id)
 );
+CREATE TABLE IF NOT EXISTS stickers (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  data BYTEA NOT NULL,
+  mime TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL
+);
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS sticker_id INTEGER REFERENCES stickers(id) ON DELETE SET NULL;
 CREATE TABLE IF NOT EXISTS audit_log (
   id SERIAL PRIMARY KEY,
   user_id INTEGER,
@@ -579,7 +587,7 @@ app.get('/api/chat/users', auth, wrap(async (req) => {
 app.get('/api/chat', auth, wrap(async (req) => {
   const peer = peerOf(req.query.with), after = Number(req.query.after) || 0;
   const c = convo(req.user.id, peer), n = c.args.length;
-  const rows = await D.all(`SELECT id, user_id, user_name, recipient_id, body, created_at FROM chat_messages
+  const rows = await D.all(`SELECT id, user_id, user_name, recipient_id, body, sticker_id, created_at FROM chat_messages
     WHERE ${c.where} ${after ? `AND id>$${n + 1}` : ''} ORDER BY id ${after ? 'ASC' : 'DESC'} LIMIT ${after ? 200 : 100}`,
     after ? [...c.args, after] : c.args);
   // peer_read: hasta qué mensaje de esta conversación ha leído la otra persona (para mostrar "Visto")
@@ -587,13 +595,42 @@ app.get('/api/chat', auth, wrap(async (req) => {
   return { rows: after ? rows : rows.reverse(), peer_read: r ? r.last_id : 0 };
 }));
 app.post('/api/chat', auth, wrap(async (req) => {
-  const body = str(req.body.body, 'Mensaje', 500);
+  const sticker = req.body.sticker_id ? int(req.body.sticker_id, 'sticker') : null;
+  const body = sticker ? '' : str(req.body.body, 'Mensaje', 500);
+  if (sticker && !await D.get('SELECT 1 FROM stickers WHERE id=$1', [sticker])) throw bad('Ese sticker ya no existe');
   const peer = peerOf(req.body.to);
   if (peer && !await D.get('SELECT 1 FROM users WHERE id=$1 AND active=1', [peer])) throw bad('Usuario inválido');
-  const m = await D.get('INSERT INTO chat_messages (user_id,user_name,recipient_id,body,created_at) VALUES ($1,$2,$3,$4,$5) RETURNING id, user_id, user_name, recipient_id, body, created_at',
-    [req.user.id, req.user.name, peer || null, body, now()]);
+  const m = await D.get('INSERT INTO chat_messages (user_id,user_name,recipient_id,body,sticker_id,created_at) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, user_id, user_name, recipient_id, body, sticker_id, created_at',
+    [req.user.id, req.user.name, peer || null, body, sticker, now()]);
   await D.run(`DELETE FROM chat_messages WHERE created_at < now() - interval '30 days'`);
   return m;
+}));
+// Stickers con imagen: biblioteca compartida; cada imagen se reduce en el cliente y se limita su tamaño y cantidad
+app.get('/api/stickers', auth, wrap(() => D.all('SELECT id, user_id FROM stickers ORDER BY id DESC')));
+app.get('/api/stickers/:id/img', auth, wrap(async (req, res) => {
+  const f = await D.get('SELECT data, mime FROM stickers WHERE id=$1', [int(req.params.id, 'id')]);
+  if (!f) throw new HttpError(404, 'Sin sticker');
+  res.set({ 'Content-Type': f.mime, 'Cache-Control': 'private, max-age=31536000, immutable' });
+  res.end(f.data);
+}));
+app.post('/api/stickers', auth, wrap(async (req) => {
+  const m = /^data:(image\/(?:png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(req.body.image || ''));
+  if (!m) throw bad('Imagen inválida');
+  const data = Buffer.from(m[2], 'base64');
+  if (data.length > 150 * 1024) throw bad('La imagen es demasiado grande');
+  if ((await D.get('SELECT COUNT(*) c FROM stickers')).c >= 60) throw bad('Ya hay 60 stickers; borra alguno para agregar más');
+  const r = await D.get('INSERT INTO stickers (user_id,data,mime,created_at) VALUES ($1,$2,$3,$4) RETURNING id', [req.user.id, data, m[1], now()]);
+  await audit(D, req.user, 'Agregó sticker', `#${r.id}`);
+  return r;
+}));
+app.delete('/api/stickers/:id', auth, wrap(async (req) => {
+  const id = int(req.params.id, 'id');
+  const st = await D.get('SELECT user_id FROM stickers WHERE id=$1', [id]);
+  if (!st) return { ok: true };
+  if (st.user_id !== req.user.id && req.user.role !== 'admin') throw new HttpError(403, 'Solo quien lo agregó o un admin puede borrarlo');
+  await D.run('DELETE FROM stickers WHERE id=$1', [id]);
+  await audit(D, req.user, 'Borró sticker', `#${id}`);
+  return { ok: true };
 }));
 app.post('/api/chat/read', auth, wrap(async (req) => {
   const peer = peerOf(req.body.with), c = convo(req.user.id, peer);
