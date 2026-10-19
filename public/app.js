@@ -404,23 +404,20 @@ const A = window.A = {
       <p><button class="btn" style="width:100%" ${S.cart.length ? '' : 'disabled'} onclick="A.sell()">Registrar venta</button></p>
       ${S.cart.length ? '<button class="btn sec sm" onclick="S.cart=[];S.benefit=null;A.cart()">Vaciar</button>' : ''}`;
   },
-  async benefit(pid) {
-    const us = await act(() => api('/benefit/users'));
-    if (!us) return;
-    S.benefitUsers = us;
-    modal(`<h3>🎁 Beneficio de empanada</h3><p class="mute">La primera empanada de cada usuario se vende al precio de compra. Solo se puede usar una vez al día por usuario.</p>
-      <label>Usuario</label><select id="bu">${us.map((u) => `<option value="${u.id}" ${u.used ? 'disabled' : ''}>${esc(u.name)}${u.used ? ' (ya lo usó hoy)' : ''}</option>`).join('')}</select>
+  benefit(pid) {
+    modal(`<h3>🎁 Beneficio de empanada</h3><p class="mute">La primera empanada del día de cada persona se vende al precio de compra. Solo una vez al día por persona.</p>
+      <label>Nombre de la persona</label><input id="bu" maxlength="60" onkeydown="if(event.key==='Enter')A.setBenefit(${pid})">
       <p><button class="btn" onclick="A.setBenefit(${pid})">Aplicar</button></p>`);
   },
   setBenefit(pid) {
-    const u = S.benefitUsers.find((x) => x.id === Number(val('bu')));
-    if (!u || u.used) return toast('Elige un usuario que no haya usado el beneficio');
-    S.benefit = { user_id: u.id, name: u.name, product_id: pid };
+    const name = val('bu').trim().replace(/\s+/g, ' ');
+    if (!name) return toast('Escribe el nombre de la persona');
+    S.benefit = { name, product_id: pid };
     closeModal(); A.cart();
   },
   async sell() {
     const r = await act(() => api('/sales', 'POST', { method: S.method, items: S.cart.map((c) => ({ product_id: c.id, qty: c.qty })),
-      benefit: S.benefit ? { user_id: S.benefit.user_id, product_id: S.benefit.product_id } : undefined }));
+      benefit: S.benefit ? { name: S.benefit.name, product_id: S.benefit.product_id } : undefined }));
     if (r) { S.cart = []; S.benefit = null; toast('Venta registrada: ' + money(r.total)); views.vender(); }
   },
   wdFee() {

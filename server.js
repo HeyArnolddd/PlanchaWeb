@@ -160,7 +160,12 @@ ALTER TABLE benefit_uses DROP CONSTRAINT IF EXISTS benefit_uses_pkey;
 ALTER TABLE benefit_uses ADD COLUMN IF NOT EXISTS day DATE;
 UPDATE benefit_uses SET day=(created_at AT TIME ZONE 'America/Bogota')::date WHERE day IS NULL;
 ALTER TABLE benefit_uses ALTER COLUMN day SET NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS benefit_user_day ON benefit_uses (user_id, day);
+DROP INDEX IF EXISTS benefit_user_day;
+ALTER TABLE benefit_uses ALTER COLUMN user_id DROP NOT NULL;
+ALTER TABLE benefit_uses ADD COLUMN IF NOT EXISTS person_name TEXT;
+ALTER TABLE benefit_uses ADD COLUMN IF NOT EXISTS person_key TEXT;
+UPDATE benefit_uses b SET person_name=u.name, person_key=lower(u.name) FROM users u WHERE b.user_id=u.id AND b.person_key IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS benefit_person_day ON benefit_uses (person_key, day);
 CREATE TABLE IF NOT EXISTS audit_log (
   id SERIAL PRIMARY KEY,
   user_id INTEGER,
@@ -531,9 +536,6 @@ async function salesOf(shiftId) {
   return sales;
 }
 // Beneficio: la primera empanada de cada usuario se vende al precio de compra, una sola vez por usuario.
-app.get('/api/benefit/users', auth, wrap(() =>
-  D.all(`SELECT u.id, u.name, (b.user_id IS NOT NULL) AS used FROM users u
-    LEFT JOIN benefit_uses b ON b.user_id=u.id AND b.day=$1 WHERE u.active=1 ORDER BY u.name`, [today()])));
 app.get('/api/sales/current', auth, wrap(async () => {
   const s = await openShift();
   return s ? salesOf(s.id) : [];
@@ -548,7 +550,11 @@ app.post('/api/sales', auth, wrap(async (req) => {
     merged.set(pid, (merged.get(pid) || 0) + int(l.qty, 'cantidad', { min: 1, max: 10000 }));
   }
   let benefit = null;
-  if (req.body.benefit) benefit = { user_id: int(req.body.benefit.user_id, 'usuario'), product_id: int(req.body.benefit.product_id, 'producto') };
+  if (req.body.benefit) {
+    const name = str(req.body.benefit.name, 'Nombre', 60);
+    const key = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ');
+    benefit = { name, key, product_id: int(req.body.benefit.product_id, 'producto') };
+  }
   if (benefit && !merged.has(benefit.product_id)) throw bad('El beneficio debe aplicarse a una empanada de la venta');
   const ids = [...merged.keys()].sort((a, b) => a - b); // orden fijo para evitar bloqueos cruzados
   return tx(async (t) => {
@@ -566,10 +572,8 @@ app.post('/api/sales', auth, wrap(async (req) => {
       if (benefit && benefit.product_id === pid) {
         const c = p.category_id && await t.get('SELECT name FROM categories WHERE id=$1', [p.category_id]);
         if (!c || !/^empanada/i.test(c.name)) throw bad('El beneficio solo aplica a empanadas');
-        const u = await t.get('SELECT name FROM users WHERE id=$1 AND active=1', [benefit.user_id]);
-        if (!u) throw bad('Usuario del beneficio inválido');
-        if (await t.get('SELECT 1 FROM benefit_uses WHERE user_id=$1 AND day=$2', [benefit.user_id, today()])) throw bad(`${u.name} ya usó su beneficio de hoy`);
-        row.bq = 1; row.bname = u.name;
+        if (await t.get('SELECT 1 FROM benefit_uses WHERE person_key=$1 AND day=$2', [benefit.key, today()])) throw bad(`${benefit.name} ya usó su beneficio de hoy`);
+        row.bq = 1; row.bname = benefit.name;
         total -= p.sell_price - p.buy_price;
       }
       rows.push(row);
@@ -581,7 +585,7 @@ app.post('/api/sales', auth, wrap(async (req) => {
       if (bq) {
         await t.run('INSERT INTO sale_items (sale_id,product_id,name,qty,price,cost) VALUES ($1,$2,$3,1,$4,$4)',
           [id, p.id, `${p.name} (beneficio ${bname})`, p.buy_price]);
-        try { await t.run('INSERT INTO benefit_uses (user_id,sale_id,created_at,day) VALUES ($1,$2,$3,$4)', [benefit.user_id, id, now(), today()]); }
+        try { await t.run('INSERT INTO benefit_uses (person_name,person_key,sale_id,created_at,day) VALUES ($1,$2,$3,$4,$5)', [benefit.name, benefit.key, id, now(), today()]); }
         catch (e) { dup(e, `${bname} ya usó su beneficio de hoy`); }
       }
       if (qty - bq > 0) await t.run('INSERT INTO sale_items (sale_id,product_id,name,qty,price,cost) VALUES ($1,$2,$3,$4,$5,$6)',
