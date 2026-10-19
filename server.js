@@ -290,18 +290,11 @@ app.use('/api', (req, res, next) => {
 const auth = (req, res, next) => (req.user ? next() : next(new HttpError(401, 'Inicia sesión')));
 const admin = (req, res, next) => (req.user?.role === 'admin' ? next() : next(new HttpError(403, 'Solo administrador')));
 
-const attempts = new Map();
 app.post('/api/login', wrap(async (req, res) => {
-  const key = req.ip;
-  const a = attempts.get(key) || { n: 0, t: Date.now() };
-  if (Date.now() - a.t > 15 * 60e3) { a.n = 0; a.t = Date.now(); }
-  if (a.n >= 10) throw new HttpError(429, 'Demasiados intentos. Espera unos minutos.');
   const u = await D.get('SELECT * FROM users WHERE username=$1 AND active=1', [String(req.body.username || '').trim().toLowerCase()]);
   if (!u || !bcrypt.compareSync(String(req.body.password || ''), u.password_hash)) {
-    a.n++; attempts.set(key, a);
     throw new HttpError(401, 'Usuario o contraseña incorrectos');
   }
-  attempts.delete(key);
   const token = crypto.randomBytes(32).toString('hex');
   await D.run('INSERT INTO sessions (token,user_id,created_at) VALUES ($1,$2,$3)', [token, u.id, now()]);
   await audit(D, u, 'Inició sesión');
