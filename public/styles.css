@@ -164,3 +164,11 @@ body:has(.login-wrap){overflow-x:hidden}
 .msg.me small{color:#ffffffb3}
 nav button .dot{display:inline-block;width:.55rem;height:.55rem;border-radius:50%;background:var(--err);margin-left:.35rem}
 nav button .dot[hidden]{display:none}
+
+.chatwrap{display:grid;grid-template-columns:210px 1fr;gap:1rem;align-items:start}
+.chatside{display:flex;flex-direction:column;gap:.25rem;padding:.6rem;max-height:60vh;overflow-y:auto}
+.chatside button{display:flex;justify-content:space-between;align-items:center;gap:.4rem;border:0;background:none;text-align:left;padding:.5rem .7rem;border-radius:10px;font:inherit;font-weight:600;color:var(--ink);cursor:pointer}
+.chatside button:hover{background:var(--ice)}
+.chatside button.on{background:var(--ice);color:var(--brand)}
+.badge{background:var(--err);color:#fff;border-radius:99px;font-size:.7rem;padding:.05rem .45rem}
+@media(max-width:700px){.chatwrap{grid-template-columns:1fr}.chatside{flex-direction:row;overflow-x:auto;max-height:none}.chatside button{flex:none}}

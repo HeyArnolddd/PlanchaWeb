@@ -181,6 +181,14 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   body TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL
 );
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS recipient_id INTEGER REFERENCES users(id);
+CREATE INDEX IF NOT EXISTS chat_messages_pair ON chat_messages (user_id, recipient_id);
+CREATE TABLE IF NOT EXISTS chat_reads (
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  peer_id INTEGER NOT NULL,
+  last_id INTEGER NOT NULL,
+  PRIMARY KEY (user_id, peer_id)
+);
 CREATE TABLE IF NOT EXISTS audit_log (
   id SERIAL PRIMARY KEY,
   user_id INTEGER,
@@ -551,19 +559,46 @@ async function salesOf(shiftId) {
   return sales;
 }
 // Beneficio: la primera empanada de cada usuario se vende al precio de compra, una sola vez por usuario.
-// ---------- Chat general entre perfiles (se consulta por polling) ----------
+// ---------- Chat: sala general del equipo (peer 0) y mensajes privados entre usuarios ----------
+// peer = 0 → sala general; peer = id de usuario → conversación privada con esa persona. Se consulta por polling.
+const peerOf = (v) => (Number(v) > 0 ? int(v, 'usuario') : 0);
+const convo = (me, peer) => (peer
+  ? { where: '((user_id=$1 AND recipient_id=$2) OR (user_id=$2 AND recipient_id=$1))', args: [me, peer] }
+  : { where: 'recipient_id IS NULL', args: [] });
+app.get('/api/chat/users', auth, wrap(async (req) => {
+  const me = req.user.id;
+  const users = await D.all(`SELECT u.id, u.name,
+    (SELECT COUNT(*) FROM chat_messages m WHERE m.user_id=u.id AND m.recipient_id=$1
+      AND m.id > COALESCE((SELECT last_id FROM chat_reads r WHERE r.user_id=$1 AND r.peer_id=u.id),0))::int AS unread,
+    (SELECT MAX(id) FROM chat_messages m WHERE (m.user_id=u.id AND m.recipient_id=$1) OR (m.user_id=$1 AND m.recipient_id=u.id)) AS last_id
+    FROM users u WHERE u.active=1 AND u.id<>$1 ORDER BY last_id DESC NULLS LAST, u.name`, [me]);
+  const general = await D.get(`SELECT COUNT(*)::int AS unread FROM chat_messages m WHERE m.recipient_id IS NULL AND m.user_id<>$1
+    AND m.id > COALESCE((SELECT last_id FROM chat_reads r WHERE r.user_id=$1 AND r.peer_id=0),0)`, [me]);
+  return { general: general.unread, users };
+}));
 app.get('/api/chat', auth, wrap(async (req) => {
-  const after = Number(req.query.after) || 0;
-  return after
-    ? D.all('SELECT * FROM chat_messages WHERE id>$1 ORDER BY id LIMIT 200', [after])
-    : (await D.all('SELECT * FROM chat_messages ORDER BY id DESC LIMIT 100')).reverse();
+  const peer = peerOf(req.query.with), after = Number(req.query.after) || 0;
+  const c = convo(req.user.id, peer), n = c.args.length;
+  const rows = await D.all(`SELECT id, user_id, user_name, recipient_id, body, created_at FROM chat_messages
+    WHERE ${c.where} ${after ? `AND id>$${n + 1}` : ''} ORDER BY id ${after ? 'ASC' : 'DESC'} LIMIT ${after ? 200 : 100}`,
+    after ? [...c.args, after] : c.args);
+  return after ? rows : rows.reverse();
 }));
 app.post('/api/chat', auth, wrap(async (req) => {
   const body = str(req.body.body, 'Mensaje', 500);
-  const m = await D.get('INSERT INTO chat_messages (user_id,user_name,body,created_at) VALUES ($1,$2,$3,$4) RETURNING *',
-    [req.user.id, req.user.name, body, now()]);
+  const peer = peerOf(req.body.to);
+  if (peer && !await D.get('SELECT 1 FROM users WHERE id=$1 AND active=1', [peer])) throw bad('Usuario inválido');
+  const m = await D.get('INSERT INTO chat_messages (user_id,user_name,recipient_id,body,created_at) VALUES ($1,$2,$3,$4,$5) RETURNING id, user_id, user_name, recipient_id, body, created_at',
+    [req.user.id, req.user.name, peer || null, body, now()]);
   await D.run(`DELETE FROM chat_messages WHERE created_at < now() - interval '30 days'`);
   return m;
+}));
+app.post('/api/chat/read', auth, wrap(async (req) => {
+  const peer = peerOf(req.body.with), c = convo(req.user.id, peer);
+  const last = (await D.get(`SELECT COALESCE(MAX(id),0) AS id FROM chat_messages WHERE ${c.where}`, c.args)).id;
+  await D.run(`INSERT INTO chat_reads (user_id,peer_id,last_id) VALUES ($1,$2,$3)
+    ON CONFLICT (user_id,peer_id) DO UPDATE SET last_id=GREATEST(chat_reads.last_id, EXCLUDED.last_id)`, [req.user.id, peer, last]);
+  return { ok: true };
 }));
 app.get('/api/sales/current', auth, wrap(async () => {
   const s = await openShift();
