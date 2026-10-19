@@ -48,7 +48,7 @@
   const SIZE = W * PX, SPEED = 38;
   let x = Math.random() * Math.max(0, innerWidth - SIZE), dir = 1, pause = 0, next = 4 + Math.random() * 5, last = performance.now(), tm;
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const LINES = ['¡Ñac ñac!', '¡Hola! 🐧', 'Vendiendo se aprende', '¿Un cafecito?', 'ACEIS al 100', '¡Cuadra la caja!'];
+  const LINES = ['¡Hola! 🐧', '¿Un cafecito?', 'ACEIS al 100', '¡Cuadra la caja!','Soto Hp'];
 
   const talk = (t) => { say.textContent = t; say.classList.add('on'); clearTimeout(tm); tm = setTimeout(() => say.classList.remove('on'), 1800); };
   el.addEventListener('click', () => {
