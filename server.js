@@ -151,6 +151,11 @@ CREATE TABLE IF NOT EXISTS withdrawals (
 CREATE INDEX IF NOT EXISTS withdrawals_shift ON withdrawals (shift_id);
 ALTER TABLE products ADD COLUMN IF NOT EXISTS track_stock INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'implementos';
+CREATE TABLE IF NOT EXISTS benefit_uses (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id),
+  sale_id INTEGER NOT NULL REFERENCES sales(id),
+  created_at TIMESTAMPTZ NOT NULL
+);
 CREATE TABLE IF NOT EXISTS audit_log (
   id SERIAL PRIMARY KEY,
   user_id INTEGER,
@@ -351,7 +356,10 @@ app.get('/api/products', auth, wrap(async (req) => {
   const rows = await D.all(`SELECT p.*, c.name AS category,
     (SELECT extract(epoch FROM updated_at)::bigint FROM product_photos f WHERE f.product_id=p.id) AS photo
     FROM products p LEFT JOIN categories c ON c.id=p.category_id ORDER BY p.active DESC, c.name, p.name`);
-  if (req.user.role !== 'admin') rows.forEach((r) => { delete r.buy_price; });
+  if (req.user.role !== 'admin') rows.forEach((r) => {
+    if (/^empanada/i.test(r.category || '')) r.benefit_price = r.buy_price;
+    delete r.buy_price;
+  });
   return rows;
 }));
 async function productBody(b) {
@@ -517,6 +525,10 @@ async function salesOf(shiftId) {
   sales.forEach((s) => { s.items = items.filter((i) => i.sale_id === s.id); });
   return sales;
 }
+// Beneficio: la primera empanada de cada usuario se vende al precio de compra, una sola vez por usuario.
+app.get('/api/benefit/users', auth, wrap(() =>
+  D.all(`SELECT u.id, u.name, (b.user_id IS NOT NULL) AS used FROM users u
+    LEFT JOIN benefit_uses b ON b.user_id=u.id WHERE u.active=1 ORDER BY u.name`)));
 app.get('/api/sales/current', auth, wrap(async () => {
   const s = await openShift();
   return s ? salesOf(s.id) : [];
@@ -530,6 +542,9 @@ app.post('/api/sales', auth, wrap(async (req) => {
     const pid = int(l.product_id, 'producto');
     merged.set(pid, (merged.get(pid) || 0) + int(l.qty, 'cantidad', { min: 1, max: 10000 }));
   }
+  let benefit = null;
+  if (req.body.benefit) benefit = { user_id: int(req.body.benefit.user_id, 'usuario'), product_id: int(req.body.benefit.product_id, 'producto') };
+  if (benefit && !merged.has(benefit.product_id)) throw bad('El beneficio debe aplicarse a una empanada de la venta');
   const ids = [...merged.keys()].sort((a, b) => a - b); // orden fijo para evitar bloqueos cruzados
   return tx(async (t) => {
     const s = await openShift(t);
@@ -542,14 +557,30 @@ app.post('/api/sales', auth, wrap(async (req) => {
       const p = await t.get('SELECT * FROM products WHERE id=$1 AND active=1 FOR UPDATE', [pid]);
       if (!p) throw bad('Producto no disponible');
       if (p.track_stock && p.stock < qty) throw bad(`Stock insuficiente de "${p.name}" (quedan ${p.stock})`);
-      rows.push({ p, qty });
+      const row = { p, qty, bq: 0 };
+      if (benefit && benefit.product_id === pid) {
+        const c = p.category_id && await t.get('SELECT name FROM categories WHERE id=$1', [p.category_id]);
+        if (!c || !/^empanada/i.test(c.name)) throw bad('El beneficio solo aplica a empanadas');
+        const u = await t.get('SELECT name FROM users WHERE id=$1 AND active=1', [benefit.user_id]);
+        if (!u) throw bad('Usuario del beneficio inválido');
+        if (await t.get('SELECT 1 FROM benefit_uses WHERE user_id=$1', [benefit.user_id])) throw bad(`${u.name} ya usó su beneficio`);
+        row.bq = 1; row.bname = u.name;
+        total -= p.sell_price - p.buy_price;
+      }
+      rows.push(row);
       total += p.sell_price * qty;
     }
     const { id } = await t.get('INSERT INTO sales (shift_id,user_id,method,total,created_at) VALUES ($1,$2,$3,$4,$5) RETURNING id',
       [s.id, req.user.id, m, total, now()]);
-    for (const { p, qty } of rows) {
-      await t.run('INSERT INTO sale_items (sale_id,product_id,name,qty,price,cost) VALUES ($1,$2,$3,$4,$5,$6)',
-        [id, p.id, p.name, qty, p.sell_price, p.buy_price]);
+    for (const { p, qty, bq, bname } of rows) {
+      if (bq) {
+        await t.run('INSERT INTO sale_items (sale_id,product_id,name,qty,price,cost) VALUES ($1,$2,$3,1,$4,$4)',
+          [id, p.id, `${p.name} (beneficio ${bname})`, p.buy_price]);
+        try { await t.run('INSERT INTO benefit_uses (user_id,sale_id,created_at) VALUES ($1,$2,$3)', [benefit.user_id, id, now()]); }
+        catch (e) { dup(e, `${bname} ya usó su beneficio`); }
+      }
+      if (qty - bq > 0) await t.run('INSERT INTO sale_items (sale_id,product_id,name,qty,price,cost) VALUES ($1,$2,$3,$4,$5,$6)',
+        [id, p.id, p.name, qty - bq, p.sell_price, p.buy_price]);
       if (p.track_stock) await t.run('UPDATE products SET stock=stock-$1 WHERE id=$2', [qty, p.id]);
     }
     await t.run(`UPDATE register SET ${col(m)}=${col(m)}+$1 WHERE id=1`, [total]);
@@ -566,6 +597,7 @@ app.post('/api/sales/:id/void', auth, wrap(async (req) => {
     if (req.user.role !== 'admin' && (sale.user_id !== req.user.id || sale.closed_at))
       throw new HttpError(403, 'Solo puedes anular tus ventas mientras tu caja está abierta');
     await t.run('UPDATE sales SET voided=1 WHERE id=$1', [id]);
+    await t.run('DELETE FROM benefit_uses WHERE sale_id=$1', [id]); // al anular, el beneficio queda disponible de nuevo
     for (const i of await t.all('SELECT * FROM sale_items WHERE sale_id=$1', [id]))
       await t.run('UPDATE products SET stock=stock+$1 WHERE id=$2 AND track_stock=1', [i.qty, i.product_id]);
     await t.run(`UPDATE register SET ${col(sale.method)}=${col(sale.method)}-$1 WHERE id=1`, [sale.total]);

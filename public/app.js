@@ -32,7 +32,7 @@ async function act(fn, ok) {
   try { const r = await fn(); if (ok) toast(ok); return r; } catch (e) { toast(e.message); return null; }
 }
 
-const S = { user: null, view: null, cart: [], method: 'efectivo', cat: 'all', q: '' };
+const S = { user: null, view: null, cart: [], benefit: null, method: 'efectivo', cat: 'all', q: '' };
 const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['gastos', 'Gastos'], ['reportes', 'Reportes'], ['turnos', 'Turnos'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
 const TURNO_TABS = [['caja', 'Caja'], ['vender', 'Vender'], ['inventario', 'Productos'], ['turnos', 'Mis turnos']];
 
@@ -142,6 +142,7 @@ const views = {
     if (s.user_id !== S.user.id) { $('#main').innerHTML = `<div class="alert">La caja la abrió ${esc(s.user_name)}.</div>`; return; }
     S.prods = prods.filter((p) => p.active);
     S.cart = S.cart.filter((c) => S.prods.find((p) => p.id === c.id));
+    if (S.benefit && !S.cart.find((c) => c.id === S.benefit.product_id)) S.benefit = null;
     const cats = [...new Set(S.prods.map((p) => p.category || 'Sin categoría'))];
     $('#main').innerHTML = `<div class="pos">
       <div><input id="q" placeholder="Buscar producto…" value="${esc(S.q)}" oninput="S.q=this.value;A.grid()">
@@ -308,7 +309,7 @@ function salesTable(sales, canVoid) {
 
 // ---------- Acciones ----------
 const A = window.A = {
-  async logout() { await api('/logout', 'POST'); S.view = null; S.cart = []; boot(); },
+  async logout() { await api('/logout', 'POST'); S.view = null; S.cart = []; S.benefit = null; boot(); },
   password() {
     modal(`<h3>Cambiar contraseña</h3><label>Actual</label><input id="p0" type="password"><label>Nueva (mín. 6)</label><input id="p1" type="password">
       <p><button class="btn" onclick="A.savePassword()">Guardar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);
@@ -385,22 +386,42 @@ const A = window.A = {
     A.cart();
   },
   cart() {
-    const total = S.cart.reduce((t, c) => t + c.qty * S.prods.find((p) => p.id === c.id).sell_price, 0);
+    if (S.benefit && !S.cart.find((c) => c.id === S.benefit.product_id)) S.benefit = null;
+    const total = S.cart.reduce((t, c) => t + c.qty * S.prods.find((p) => p.id === c.id).sell_price, 0)
+      - (S.benefit ? S.prods.find((p) => p.id === S.benefit.product_id).sell_price - S.prods.find((p) => p.id === S.benefit.product_id).benefit_price : 0);
     $('#cart').innerHTML = (S.cart.length ? `<table>${S.cart.map((c) => {
       const p = S.prods.find((x) => x.id === c.id);
       return `<tr><td>${esc(p.name)}<br><small class="mute">${money(p.sell_price)}</small></td>
         <td><div class="qty"><button onclick="A.chg(${c.id},-1)">−</button>${c.qty}<button onclick="A.chg(${c.id},1)">+</button></div></td>
-        <td class="n">${money(c.qty * p.sell_price)}</td></tr>`;
+        <td class="n">${money(c.qty * p.sell_price)}</td></tr>` +
+        (p.benefit_price !== undefined ? `<tr><td colspan="3">${S.benefit && S.benefit.product_id === c.id
+          ? `<small>🎁 Beneficio: <b>${esc(S.benefit.name)}</b> · 1 a ${money(p.benefit_price)}</small> <button class="btn sec sm" onclick="S.benefit=null;A.cart()">Quitar</button>`
+          : (S.benefit ? '' : `<button class="btn sec sm" onclick="A.benefit(${c.id})">🎁 Beneficio (precio de compra)</button>`)}</td></tr>` : '');
     }).join('')}</table>` : '<span class="mute">Toca un producto para agregarlo.</span>') +
       `<p class="total">${money(total)}</p>
       <div class="seg"><button class="${S.method === 'efectivo' ? 'on' : ''}" onclick="S.method='efectivo';A.cart()">💵 Efectivo</button>
       <button class="${S.method === 'nequi' ? 'on' : ''}" onclick="S.method='nequi';A.cart()">📱 Nequi</button></div>
       <p><button class="btn" style="width:100%" ${S.cart.length ? '' : 'disabled'} onclick="A.sell()">Registrar venta</button></p>
-      ${S.cart.length ? '<button class="btn sec sm" onclick="S.cart=[];A.cart()">Vaciar</button>' : ''}`;
+      ${S.cart.length ? '<button class="btn sec sm" onclick="S.cart=[];S.benefit=null;A.cart()">Vaciar</button>' : ''}`;
+  },
+  async benefit(pid) {
+    const us = await act(() => api('/benefit/users'));
+    if (!us) return;
+    S.benefitUsers = us;
+    modal(`<h3>🎁 Beneficio de empanada</h3><p class="mute">La primera empanada de cada usuario se vende al precio de compra. Solo se puede usar una vez por usuario.</p>
+      <label>Usuario</label><select id="bu">${us.map((u) => `<option value="${u.id}" ${u.used ? 'disabled' : ''}>${esc(u.name)}${u.used ? ' (ya lo usó)' : ''}</option>`).join('')}</select>
+      <p><button class="btn" onclick="A.setBenefit(${pid})">Aplicar</button></p>`);
+  },
+  setBenefit(pid) {
+    const u = S.benefitUsers.find((x) => x.id === Number(val('bu')));
+    if (!u || u.used) return toast('Elige un usuario que no haya usado el beneficio');
+    S.benefit = { user_id: u.id, name: u.name, product_id: pid };
+    closeModal(); A.cart();
   },
   async sell() {
-    const r = await act(() => api('/sales', 'POST', { method: S.method, items: S.cart.map((c) => ({ product_id: c.id, qty: c.qty })) }));
-    if (r) { S.cart = []; toast('Venta registrada: ' + money(r.total)); views.vender(); }
+    const r = await act(() => api('/sales', 'POST', { method: S.method, items: S.cart.map((c) => ({ product_id: c.id, qty: c.qty })),
+      benefit: S.benefit ? { user_id: S.benefit.user_id, product_id: S.benefit.product_id } : undefined }));
+    if (r) { S.cart = []; S.benefit = null; toast('Venta registrada: ' + money(r.total)); views.vender(); }
   },
   wdFee() {
     const a = Number(val('wa')) || 0;
