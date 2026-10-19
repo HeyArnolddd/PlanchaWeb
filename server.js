@@ -148,6 +148,7 @@ CREATE TABLE IF NOT EXISTS withdrawals (
   voided INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL
 );
+ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS direction TEXT NOT NULL DEFAULT 'nequi_efectivo';
 CREATE INDEX IF NOT EXISTS withdrawals_shift ON withdrawals (shift_id);
 ALTER TABLE sales DROP CONSTRAINT IF EXISTS sales_method_check;
 ALTER TABLE sales ADD CONSTRAINT sales_method_check CHECK (method IN ('efectivo','nequi','mixto'));
@@ -723,23 +724,34 @@ app.get('/api/withdrawals/current', auth, wrap(async () => {
   const s = await openShift();
   return s ? D.all('SELECT * FROM withdrawals WHERE shift_id=$1 ORDER BY id DESC', [s.id]) : [];
 }));
+// Retiro: 'nequi_efectivo' = el cliente transfiere por Nequi y se le da efectivo;
+// 'efectivo_nequi' = el cliente da efectivo y se le transfiere por Nequi. La comisión entra por fee_method.
+const wdDir = (v) => (v === 'efectivo_nequi' ? 'efectivo_nequi' : 'nequi_efectivo');
+const wdDelta = (w) => {
+  const sign = w.direction === 'efectivo_nequi' ? 1 : -1; // efecto del monto sobre el efectivo
+  return {
+    cash: sign * w.amount + (w.fee_method === 'efectivo' ? w.fee : 0),
+    nequi: -sign * w.amount + (w.fee_method === 'nequi' ? w.fee : 0),
+  };
+};
 app.post('/api/withdrawals', auth, wrap(async (req) => {
   const amount = int(req.body.amount, 'monto', { min: 1 });
   const fee = int(req.body.fee ?? 0, 'comisión');
   const fm = method(req.body.fee_method || 'nequi');
+  const direction = wdDir(req.body.direction);
   return tx(async (t) => {
     const s = await openShift(t);
     if (!s) throw bad('Primero debes abrir caja');
     if (s.user_id !== req.user.id) throw bad(`La caja la abrió ${s.user_name}`);
-    const r = await t.get('SELECT cash FROM register WHERE id=1 FOR UPDATE');
-    const dCash = fm === 'efectivo' ? fee - amount : -amount;
-    if (r.cash + dCash < 0) throw bad('No hay suficiente efectivo en caja para este retiro');
-    const dNequi = fm === 'nequi' ? amount + fee : amount;
-    await t.run('UPDATE register SET cash=cash+$1, nequi=nequi+$2 WHERE id=1', [dCash, dNequi]);
-    const { id } = await t.get(`INSERT INTO withdrawals (shift_id,user_id,amount,fee,fee_method,created_at)
-      VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`, [s.id, req.user.id, amount, fee, fm, now()]);
-    await audit(t, req.user, 'Registró retiro Nequi', `#${id} · entregó ${amount} · comisión ${fee} (${fm})`);
-    return { id, give_cash: amount, nequi_in: dNequi };
+    const r = await t.get('SELECT cash, nequi FROM register WHERE id=1 FOR UPDATE');
+    const d = wdDelta({ amount, fee, fee_method: fm, direction });
+    if (r.cash + d.cash < 0) throw bad('No hay suficiente efectivo en caja para este retiro');
+    if (r.nequi + d.nequi < 0) throw bad('No hay suficiente saldo en Nequi para este retiro');
+    await t.run('UPDATE register SET cash=cash+$1, nequi=nequi+$2 WHERE id=1', [d.cash, d.nequi]);
+    const { id } = await t.get(`INSERT INTO withdrawals (shift_id,user_id,amount,fee,fee_method,direction,created_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`, [s.id, req.user.id, amount, fee, fm, direction, now()]);
+    await audit(t, req.user, 'Registró retiro Nequi', `#${id} · ${direction === 'efectivo_nequi' ? 'efectivo → Nequi' : 'Nequi → efectivo'} · ${amount} · comisión ${fee} (${fm})`);
+    return { id };
   });
 }));
 app.post('/api/withdrawals/:id/void', auth, wrap(async (req) => {
@@ -750,10 +762,9 @@ app.post('/api/withdrawals/:id/void', auth, wrap(async (req) => {
     if (w.voided) throw bad('Ya estaba anulado');
     if (req.user.role !== 'admin' && (w.user_id !== req.user.id || w.closed_at))
       throw new HttpError(403, 'Solo puedes anular tus retiros mientras tu caja está abierta');
-    const dCash = w.fee_method === 'efectivo' ? w.fee - w.amount : -w.amount;
-    const dNequi = w.fee_method === 'nequi' ? w.amount + w.fee : w.amount;
+    const d = wdDelta(w);
     await t.run('UPDATE withdrawals SET voided=1 WHERE id=$1', [id]);
-    await t.run('UPDATE register SET cash=cash-$1, nequi=nequi-$2 WHERE id=1', [dCash, dNequi]);
+    await t.run('UPDATE register SET cash=cash-$1, nequi=nequi-$2 WHERE id=1', [d.cash, d.nequi]);
     await audit(t, req.user, 'Anuló retiro Nequi', `#${id} · ${w.amount} · comisión ${w.fee}`);
     return { ok: true };
   });
@@ -924,11 +935,10 @@ app.get('/api/export.csv', auth, admin, wrap(async (req, res) => {
       monto: s.total, ...(s.voided ? { cash: 0, nequi: 0 } : { cash: Number(s.cash_amount), nequi: Number(s.nequi_amount) }) });
   }
   for (const w of wds) {
-    const dCash = w.fee_method === 'efectivo' ? w.fee - w.amount : -w.amount;
-    const dNequi = w.fee_method === 'nequi' ? w.amount + w.fee : w.amount;
+    const d = wdDelta(w);
     rows.push({ at: w.created_at, tipo: w.voided ? 'Retiro Nequi anulado' : 'Retiro Nequi',
-      detalle: `#${w.id} entregó efectivo ${w.amount}; comisión ${w.fee} cobrada en ${w.fee_method}`, who: w.who, turno: w.shift_id, monto: w.amount,
-      cash: w.voided ? 0 : dCash, nequi: w.voided ? 0 : dNequi });
+      detalle: `#${w.id} ${w.direction === 'efectivo_nequi' ? 'recibió efectivo y transfirió por Nequi' : 'recibió Nequi y entregó efectivo'} ${w.amount}; comisión ${w.fee} cobrada en ${w.fee_method}`, who: w.who, turno: w.shift_id, monto: w.amount,
+      cash: w.voided ? 0 : d.cash, nequi: w.voided ? 0 : d.nequi });
   }
   for (const e of exps) {
     rows.push({ at: e.created_at, tipo: e.kind === 'pedido' ? 'Pago de pedido' : 'Gasto de implementos',

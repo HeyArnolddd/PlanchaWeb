@@ -229,15 +229,16 @@ const views = {
         ${cats.map((c) => `<button class="${S.cat === c ? 'on' : ''}" data-c="${esc(c)}" onclick="S.cat=this.dataset.c;views.vender()">${esc(c)}</button>`).join('')}</div>
         <div class="prods" id="grid"></div></div>
       <div class="card"><h3>Venta</h3><div id="cart"></div></div></div>
-      <div class="card"><h3>Retiro de efectivo por Nequi</h3>
-        <p class="mute">El cliente te transfiere por Nequi y tú le entregas efectivo. Comisión sugerida: $500 por cada $50.000.</p>
-        <div class="row"><div><label>Monto a entregar en efectivo</label><input id="wa" type="number" inputmode="numeric" min="1" oninput="A.wdFee()"></div>
+      <div class="card"><h3>Retiro / cambio entre Nequi y efectivo</h3>
+        <p class="mute">Comisión sugerida: $500 por cada $50.000.</p>
+        <div class="row"><div><label>Tipo de movimiento</label><select id="wd" onchange="A.wdFee()"><option value="nequi_efectivo">Nequi → efectivo (el cliente transfiere, tú entregas efectivo)</option><option value="efectivo_nequi">Efectivo → Nequi (el cliente da efectivo, tú transfieres)</option></select></div>
+        <div><label>Monto a entregar</label><input id="wa" type="number" inputmode="numeric" min="1" oninput="A.wdFee()"></div>
         <div><label>Comisión</label><input id="wf" type="number" inputmode="numeric" min="0" value="0"></div>
-        <div><label>La comisión se cobró en</label><select id="wm"><option value="nequi">Nequi (se suma a la transferencia)</option><option value="efectivo">Efectivo</option></select></div></div>
+        <div><label>La comisión se cobró en</label><select id="wm"><option value="nequi">Nequi</option><option value="efectivo">Efectivo</option></select></div></div>
         <p id="wsum" class="mute"></p>
         <button class="btn" onclick="A.withdraw()">Registrar retiro</button>
-        ${wds.length ? `<div class="tw" style="margin-top:1rem"><table><tr><th>Hora</th><th class="n">Entregado</th><th class="n">Comisión</th><th></th></tr>${wds.map((w) =>
-          `<tr style="${w.voided ? 'opacity:.5;text-decoration:line-through' : ''}"><td>${dt(w.created_at).split(', ').pop()}</td><td class="n">${money(w.amount)}</td><td class="n">${money(w.fee)}</td>
+        ${wds.length ? `<div class="tw" style="margin-top:1rem"><table><tr><th>Hora</th><th>Tipo</th><th class="n">Monto</th><th class="n">Comisión</th><th></th></tr>${wds.map((w) =>
+          `<tr style="${w.voided ? 'opacity:.5;text-decoration:line-through' : ''}"><td>${dt(w.created_at).split(', ').pop()}</td><td>${w.direction === 'efectivo_nequi' ? 'Efectivo → Nequi' : 'Nequi → efectivo'}</td><td class="n">${money(w.amount)}</td><td class="n">${money(w.fee)}</td>
           <td class="n">${w.voided ? '<span class="tag err">Anulado</span>' : `<button class="btn sec sm" onclick="A.voidWd(${w.id})">Anular</button>`}</td></tr>`).join('')}</table></div>` : ''}</div>
       <div class="card"><h3>Ventas de este turno</h3><div class="tw">${salesTable(sales, true)}</div></div>`;
     A.grid(); A.cart();
@@ -566,11 +567,13 @@ const A = window.A = {
     $('#wf').value = a > 0 ? Math.ceil(a / 50000) * 500 : 0;
   },
   async withdraw() {
-    const a = Number(val('wa')), f = Number(val('wf')), m = val('wm');
+    const a = Number(val('wa')), f = Number(val('wf')), m = val('wm'), d = val('wd');
     if (!(a > 0)) return toast('Escribe el monto');
-    const recibe = m === 'nequi' ? a + f : a;
-    if (!confirm(`Entrega ${money(a)} en efectivo.\nDebes haber recibido ${money(recibe)} por Nequi${m === 'efectivo' ? ` y ${money(f)} en efectivo de comisión` : ''}.\n¿Registrar?`)) return;
-    if (await act(() => api('/withdrawals', 'POST', { amount: a, fee: f, fee_method: m }), 'Retiro registrado')) views.vender();
+    const msg = d === 'efectivo_nequi'
+      ? `Debes haber recibido ${money(a + (m === 'efectivo' ? f : 0))} en efectivo.\nTransfiere ${money(a)} por Nequi${m === 'nequi' ? ` (y cobra ${money(f)} de comisión por Nequi)` : ''}.\n¿Registrar?`
+      : `Entrega ${money(a)} en efectivo.\nDebes haber recibido ${money(m === 'nequi' ? a + f : a)} por Nequi${m === 'efectivo' ? ` y ${money(f)} en efectivo de comisión` : ''}.\n¿Registrar?`;
+    if (!confirm(msg)) return;
+    if (await act(() => api('/withdrawals', 'POST', { amount: a, fee: f, fee_method: m, direction: d }), 'Retiro registrado')) views.vender();
   },
   async voidWd(id) {
     if (confirm('¿Anular este retiro? El dinero se revierte.') && await act(() => api(`/withdrawals/${id}/void`, 'POST'), 'Retiro anulado')) views.vender();
