@@ -32,7 +32,7 @@ async function act(fn, ok) {
   try { const r = await fn(); if (ok) toast(ok); return r; } catch (e) { toast(e.message); return null; }
 }
 
-const S = { user: null, view: null, chat: [], peer: null, chatOpen: false, cart: [], benefit: null, method: 'efectivo', cat: 'all', q: '' };
+const S = { user: null, view: null, chat: [], peerRead: 0, peer: null, chatOpen: false, cart: [], benefit: null, method: 'efectivo', cat: 'all', q: '' };
 const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['gastos', 'Gastos'], ['reportes', 'Reportes'], ['turnos', 'Turnos'], ['horario', 'Horario'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
 const TURNO_TABS = [['caja', 'Caja'], ['vender', 'Vender'], ['inventario', 'Productos'], ['turnos', 'Mis turnos'], ['horario', 'Horario']];
 
@@ -103,7 +103,7 @@ function chatPaintBadge() {
 function chatPaintList() {
   const box = $('#chatlist'); if (!box) return;
   const bottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
-  box.innerHTML = S.chat.map((m) => `<div class="msg ${m.user_id === S.user.id ? 'me' : ''}"><small>${m.user_id === S.user.id ? 'Tú' : esc(m.user_name)} · ${dt(m.created_at).split(', ').pop()}</small><div>${esc(m.body)}</div></div>`).join('')
+  box.innerHTML = S.chat.map((m) => `<div class="msg ${m.user_id === S.user.id ? 'me' : ''}"><small>${m.user_id === S.user.id ? 'Tú' : esc(m.user_name)} · ${dt(m.created_at).split(', ').pop()}</small><div>${esc(m.body)}</div>${m.user_id === S.user.id && S.peer ? `<small class="seen">${m.id <= S.peerRead ? '✓✓ Visto' : '✓ Enviado'}</small>` : ''}</div>`).join('')
     || '<span class="mute">Aún no hay mensajes. ¡Escribe el primero!</span>';
   if (bottom) box.scrollTop = box.scrollHeight;
 }
@@ -111,12 +111,15 @@ async function chatPoll() {
   if (!S.user) return;
   try {
     const peer = S.peer, last = lastChatId();
-    const [sum, rows] = await Promise.all([api('/chat/users'),
+    const [sum, res] = await Promise.all([api('/chat/users'),
       inChat() ? api(`/chat?with=${peer}${last ? '&after=' + last : ''}`) : null]);
     S.chatUsers = sum;
-    if (rows && peer === S.peer && inChat()) {
-      const fresh = rows.filter((m) => m.id > lastChatId());
-      if (fresh.length) { S.chat = S.chat.concat(fresh); chatPaintList(); }
+    if (res && peer === S.peer && inChat()) {
+      const fresh = res.rows.filter((m) => m.id > lastChatId());
+      const seenChanged = res.peer_read !== S.peerRead;
+      S.peerRead = res.peer_read;
+      if (fresh.length) S.chat = S.chat.concat(fresh);
+      if (fresh.length || seenChanged) chatPaintList();
       if (fresh.length || !last) { const b = $('#chatlist'); if (!last && b) b.scrollTop = b.scrollHeight; api('/chat/read', 'POST', { with: peer }).catch(() => {}); }
       // lo que se está leyendo ahora no cuenta como pendiente
       if (peer === 0) sum.general = 0; else { const u = sum.users.find((x) => x.id === peer); if (u) u.unread = 0; }
@@ -392,7 +395,7 @@ function salesTable(sales, canVoid) {
 
 // ---------- Acciones ----------
 const A = window.A = {
-  async logout() { await api('/logout', 'POST'); S.view = null; S.cart = []; S.benefit = null; clearInterval(S.chatTimer); S.chat = []; S.peer = null; S.chatOpen = false; S.chatUsers = null; chatShell(); boot(); },
+  async logout() { await api('/logout', 'POST'); S.view = null; S.cart = []; S.benefit = null; clearInterval(S.chatTimer); S.chat = []; S.peerRead = 0; S.peer = null; S.chatOpen = false; S.chatUsers = null; chatShell(); boot(); },
   password() {
     modal(`<h3>Cambiar contraseña</h3><label>Actual</label><input id="p0" type="password"><label>Nueva (mín. 6)</label><input id="p1" type="password">
       <p><button class="btn" onclick="A.savePassword()">Guardar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);
@@ -506,7 +509,7 @@ const A = window.A = {
     chatDraw(); chatPoll();
   },
   chatBack() { S.peer = null; S.chat = []; chatDraw(); chatPoll(); },
-  async openChat(id) { S.peer = id; S.chat = []; chatDraw(); await chatPoll(); },
+  async openChat(id) { S.peer = id; S.chat = []; S.peerRead = 0; chatDraw(); await chatPoll(); },
   async say() {
     const body = val('cm').trim();
     if (!body) return;

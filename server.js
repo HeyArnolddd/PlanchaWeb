@@ -582,7 +582,9 @@ app.get('/api/chat', auth, wrap(async (req) => {
   const rows = await D.all(`SELECT id, user_id, user_name, recipient_id, body, created_at FROM chat_messages
     WHERE ${c.where} ${after ? `AND id>$${n + 1}` : ''} ORDER BY id ${after ? 'ASC' : 'DESC'} LIMIT ${after ? 200 : 100}`,
     after ? [...c.args, after] : c.args);
-  return after ? rows : rows.reverse();
+  // peer_read: hasta qué mensaje de esta conversación ha leído la otra persona (para mostrar "Visto")
+  const r = peer && await D.get('SELECT last_id FROM chat_reads WHERE user_id=$1 AND peer_id=$2', [peer, req.user.id]);
+  return { rows: after ? rows : rows.reverse(), peer_read: r ? r.last_id : 0 };
 }));
 app.post('/api/chat', auth, wrap(async (req) => {
   const body = str(req.body.body, 'Mensaje', 500);

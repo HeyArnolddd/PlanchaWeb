@@ -175,3 +175,4 @@ body:has(.login-wrap){overflow-x:hidden}
 .cw-list button:hover{background:var(--ice)}
 .cw-send{display:flex;gap:.4rem;padding:.6rem;border-top:1px solid var(--line)}
 .cw-send input{flex:1;min-width:0}
+.msg .seen{margin-top:.1rem;text-align:right;opacity:.85}
