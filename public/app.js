@@ -33,8 +33,8 @@ async function act(fn, ok) {
 }
 
 const S = { user: null, view: null, cart: [], benefit: null, method: 'efectivo', cat: 'all', q: '' };
-const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['gastos', 'Gastos'], ['reportes', 'Reportes'], ['turnos', 'Turnos'], ['horario', 'Horario'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
-const TURNO_TABS = [['caja', 'Caja'], ['vender', 'Vender'], ['inventario', 'Productos'], ['turnos', 'Mis turnos'], ['horario', 'Horario']];
+const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['gastos', 'Gastos'], ['reportes', 'Reportes'], ['turnos', 'Turnos'], ['horario', 'Horario'], ['chat', 'Chat'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
+const TURNO_TABS = [['caja', 'Caja'], ['vender', 'Vender'], ['inventario', 'Productos'], ['turnos', 'Mis turnos'], ['horario', 'Horario'], ['chat', 'Chat']];
 
 function modal(html) {
   const m = document.createElement('div'); m.className = 'modal';
@@ -58,11 +58,48 @@ async function boot() {
       <small data-i="${esc(S.user.name.trim()[0] || '?').toUpperCase()}"><span>${esc(S.user.name)} · ${S.user.role === 'admin' ? 'Admin' : 'Turno'}</span></small>
       <button class="btn sec sm" onclick="A.password()">Contraseña</button>
       <button class="btn sec sm" onclick="A.logout()">Salir</button></div>
-    <nav>${tabs.map(([k, l]) => `<button class="${k === S.view ? 'on' : ''}" onclick="go('${k}')">${l}</button>`).join('')}</nav>
+    <nav>${tabs.map(([k, l]) => `<button class="${k === S.view ? 'on' : ''}" onclick="go('${k}')">${l}${k === 'chat' ? '<b class="dot" id="chatdot" hidden></b>' : ''}</button>`).join('')}</nav>
     <main id="main"></main>`;
   await views[S.view]();
+  chatStart();
   if (S.user.must_change) $('#main').insertAdjacentHTML('afterbegin',
     '<div class="alert bad">Estás usando la contraseña por defecto. <a href="#" onclick="A.password();return false">Cámbiala ahora</a>.</div>');
+}
+// Chat: S.chat guarda los mensajes; se consulta cada 5 s y el punto del tab avisa de mensajes sin leer
+const seenKey = () => 'chatSeen' + S.user.id;
+const chatSeen = () => { try { return Number(localStorage.getItem(seenKey())) || 0; } catch { return 0; } };
+function chatMarkSeen() {
+  const last = S.chat.length ? S.chat[S.chat.length - 1].id : 0;
+  try { localStorage.setItem(seenKey(), last); } catch {}
+  const d = $('#chatdot'); if (d) d.hidden = true;
+}
+function chatPaint() {
+  const box = $('#chatlist');
+  if (box) {
+    const bottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+    box.innerHTML = S.chat.map((m) => `<div class="msg ${m.user_id === S.user.id ? 'me' : ''}"><small>${m.user_id === S.user.id ? 'Tú' : esc(m.user_name)} · ${dt(m.created_at).split(', ').pop()}</small><div>${esc(m.body)}</div></div>`).join('')
+      || '<span class="mute">Aún no hay mensajes. ¡Escribe el primero!</span>';
+    if (bottom) box.scrollTop = box.scrollHeight;
+    chatMarkSeen();
+  } else {
+    const d = $('#chatdot'), seen = chatSeen();
+    if (d) d.hidden = !S.chat.some((m) => m.id > seen && m.user_id !== S.user.id);
+  }
+}
+async function chatPoll() {
+  try {
+    const last = S.chat.length ? S.chat[S.chat.length - 1].id : 0;
+    const rows = await api('/chat' + (last ? '?after=' + last : ''));
+    const fresh = last ? rows.filter((m) => m.id > (S.chat.length ? S.chat[S.chat.length - 1].id : 0)) : rows;
+    if (fresh.length) { S.chat = last ? S.chat.concat(fresh) : fresh; chatPaint(); }
+  } catch {}
+}
+function chatStart() {
+  clearInterval(S.chatTimer);
+  if (!S.user) return;
+  S.chat = S.chat || [];
+  chatPoll();
+  S.chatTimer = setInterval(chatPoll, 5000);
 }
 window.go = (v) => { S.view = v; boot(); };
 
@@ -272,6 +309,14 @@ const views = {
       ${rows.map((r) => `<tr><td style="white-space:nowrap">${dt(r.created_at)}</td><td>${esc(r.user_name)}</td><td><span class="tag">${esc(r.action)}</span></td><td>${esc(r.detail || '')}</td></tr>`).join('') || '<tr><td colspan="4" class="mute">Sin actividad.</td></tr>'}</table></div>`;
   },
 
+  async chat() {
+    S.chat = [];
+    $('#main').innerHTML = `<div class="card"><h3>Chat del equipo</h3><div id="chatlist" class="chatlist"></div>
+      <div class="row" style="margin-top:.6rem"><div style="flex:1"><input id="cm" maxlength="500" placeholder="Escribe un mensaje…" onkeydown="if(event.key==='Enter')A.say()"></div>
+      <div><button class="btn" onclick="A.say()">Enviar</button></div></div></div>`;
+    await chatPoll();
+    const box = $('#chatlist'); box.scrollTop = box.scrollHeight;
+  },
   horario() {
     const DIAS = ['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES'];
     const H = [['Tere', 'Murillo', 'Felipe', 'Murillo', 'Juan'], ['Tere', 'Murillo', 'Felipe', 'Murillo', 'Santiago'],
@@ -326,7 +371,7 @@ function salesTable(sales, canVoid) {
 
 // ---------- Acciones ----------
 const A = window.A = {
-  async logout() { await api('/logout', 'POST'); S.view = null; S.cart = []; S.benefit = null; boot(); },
+  async logout() { await api('/logout', 'POST'); S.view = null; S.cart = []; S.benefit = null; clearInterval(S.chatTimer); S.chat = []; boot(); },
   password() {
     modal(`<h3>Cambiar contraseña</h3><label>Actual</label><input id="p0" type="password"><label>Nueva (mín. 6)</label><input id="p1" type="password">
       <p><button class="btn" onclick="A.savePassword()">Guardar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);
@@ -434,6 +479,14 @@ const A = window.A = {
     if (!name) return toast('Escribe el nombre de la persona');
     S.benefit = { name, product_id: pid };
     closeModal(); A.cart();
+  },
+  async say() {
+    const body = val('cm').trim();
+    if (!body) return;
+    $('#cm').value = '';
+    const m = await act(() => api('/chat', 'POST', { body }));
+    if (m) { await chatPoll(); const b = $('#chatlist'); if (b) b.scrollTop = b.scrollHeight; }
+    $('#cm').focus();
   },
   mix(total) {
     const nq = Number(S.nq) || 0;

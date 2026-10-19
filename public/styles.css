@@ -156,3 +156,11 @@ body:has(.login-wrap){overflow-x:hidden}
 .hb b{font-weight:600;text-align:right;white-space:nowrap}
 .hb span{color:var(--mute)}
 .stat small{display:block;margin-top:.15rem;font-size:.75rem}
+
+.chatlist{height:min(55vh,420px);overflow-y:auto;display:flex;flex-direction:column;gap:.5rem;padding:.3rem;background:var(--ice-2);border:1px solid var(--line);border-radius:12px}
+.msg{max-width:80%;align-self:flex-start;background:#fff;border:1px solid var(--line);border-radius:12px;padding:.4rem .7rem;overflow-wrap:anywhere}
+.msg small{display:block;color:var(--mute);font-size:.72rem}
+.msg.me{align-self:flex-end;background:var(--brand);color:#fff;border-color:var(--brand)}
+.msg.me small{color:#ffffffb3}
+nav button .dot{display:inline-block;width:.55rem;height:.55rem;border-radius:50%;background:var(--err);margin-left:.35rem}
+nav button .dot[hidden]{display:none}

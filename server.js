@@ -174,6 +174,13 @@ ALTER TABLE benefit_uses ADD COLUMN IF NOT EXISTS person_name TEXT;
 ALTER TABLE benefit_uses ADD COLUMN IF NOT EXISTS person_key TEXT;
 UPDATE benefit_uses b SET person_name=u.name, person_key=lower(u.name) FROM users u WHERE b.user_id=u.id AND b.person_key IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS benefit_person_day ON benefit_uses (person_key, day);
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  user_name TEXT NOT NULL,
+  body TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL
+);
 CREATE TABLE IF NOT EXISTS audit_log (
   id SERIAL PRIMARY KEY,
   user_id INTEGER,
@@ -544,6 +551,20 @@ async function salesOf(shiftId) {
   return sales;
 }
 // Beneficio: la primera empanada de cada usuario se vende al precio de compra, una sola vez por usuario.
+// ---------- Chat general entre perfiles (se consulta por polling) ----------
+app.get('/api/chat', auth, wrap(async (req) => {
+  const after = Number(req.query.after) || 0;
+  return after
+    ? D.all('SELECT * FROM chat_messages WHERE id>$1 ORDER BY id LIMIT 200', [after])
+    : (await D.all('SELECT * FROM chat_messages ORDER BY id DESC LIMIT 100')).reverse();
+}));
+app.post('/api/chat', auth, wrap(async (req) => {
+  const body = str(req.body.body, 'Mensaje', 500);
+  const m = await D.get('INSERT INTO chat_messages (user_id,user_name,body,created_at) VALUES ($1,$2,$3,$4) RETURNING *',
+    [req.user.id, req.user.name, body, now()]);
+  await D.run(`DELETE FROM chat_messages WHERE created_at < now() - interval '30 days'`);
+  return m;
+}));
 app.get('/api/sales/current', auth, wrap(async () => {
   const s = await openShift();
   return s ? salesOf(s.id) : [];
