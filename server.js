@@ -149,6 +149,14 @@ CREATE TABLE IF NOT EXISTS withdrawals (
   created_at TIMESTAMPTZ NOT NULL
 );
 CREATE INDEX IF NOT EXISTS withdrawals_shift ON withdrawals (shift_id);
+ALTER TABLE sales DROP CONSTRAINT IF EXISTS sales_method_check;
+ALTER TABLE sales ADD CONSTRAINT sales_method_check CHECK (method IN ('efectivo','nequi','mixto'));
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS cash_amount BIGINT;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS nequi_amount BIGINT;
+UPDATE sales SET cash_amount=CASE WHEN method='efectivo' THEN total ELSE 0 END,
+  nequi_amount=CASE WHEN method='nequi' THEN total ELSE 0 END WHERE cash_amount IS NULL;
+ALTER TABLE sales ALTER COLUMN cash_amount SET NOT NULL;
+ALTER TABLE sales ALTER COLUMN nequi_amount SET NOT NULL;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS track_stock INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'implementos';
 CREATE TABLE IF NOT EXISTS benefit_uses (
@@ -471,8 +479,8 @@ app.get('/api/stock-entries', auth, admin, wrap(() =>
 // ---------- Caja / turnos ----------
 const reg = (x = D) => x.get('SELECT cash,nequi FROM register WHERE id=1');
 const SHIFT_SQL = `SELECT s.*, u.name AS user_name,
-  COALESCE((SELECT SUM(total) FROM sales x WHERE x.shift_id=s.id AND x.voided=0 AND x.method='efectivo'),0) AS sales_cash,
-  COALESCE((SELECT SUM(total) FROM sales x WHERE x.shift_id=s.id AND x.voided=0 AND x.method='nequi'),0) AS sales_nequi,
+  COALESCE((SELECT SUM(cash_amount) FROM sales x WHERE x.shift_id=s.id AND x.voided=0),0) AS sales_cash,
+  COALESCE((SELECT SUM(nequi_amount) FROM sales x WHERE x.shift_id=s.id AND x.voided=0),0) AS sales_nequi,
   (SELECT COUNT(*) FROM sales x WHERE x.shift_id=s.id AND x.voided=0) AS sales_count,
   COALESCE((SELECT SUM((i.price-i.cost)*i.qty) FROM sale_items i JOIN sales x ON x.id=i.sale_id
     WHERE x.shift_id=s.id AND x.voided=0),0)
@@ -541,7 +549,7 @@ app.get('/api/sales/current', auth, wrap(async () => {
   return s ? salesOf(s.id) : [];
 }));
 app.post('/api/sales', auth, wrap(async (req) => {
-  const m = method(req.body.method);
+  const m = req.body.method === 'mixto' ? 'mixto' : method(req.body.method);
   const lines = req.body.items;
   if (!Array.isArray(lines) || !lines.length || lines.length > 100) throw bad('Agrega al menos un producto');
   const merged = new Map();
@@ -579,8 +587,14 @@ app.post('/api/sales', auth, wrap(async (req) => {
       rows.push(row);
       total += p.sell_price * qty;
     }
-    const { id } = await t.get('INSERT INTO sales (shift_id,user_id,method,total,created_at) VALUES ($1,$2,$3,$4,$5) RETURNING id',
-      [s.id, req.user.id, m, total, now()]);
+    let nq = m === 'nequi' ? total : 0;
+    if (m === 'mixto') {
+      nq = int(req.body.nequi_amount, 'monto por Nequi', { min: 0, max: 1e12 });
+      if (nq <= 0 || nq >= total) throw bad('En pago mixto el monto por Nequi debe ser mayor a 0 y menor al total');
+    }
+    const cash = total - nq;
+    const { id } = await t.get('INSERT INTO sales (shift_id,user_id,method,total,cash_amount,nequi_amount,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id',
+      [s.id, req.user.id, m, total, cash, nq, now()]);
     for (const { p, qty, bq, bname } of rows) {
       if (bq) {
         await t.run('INSERT INTO sale_items (sale_id,product_id,name,qty,price,cost) VALUES ($1,$2,$3,1,$4,$4)',
@@ -592,8 +606,8 @@ app.post('/api/sales', auth, wrap(async (req) => {
         [id, p.id, p.name, qty - bq, p.sell_price, p.buy_price]);
       if (p.track_stock) await t.run('UPDATE products SET stock=stock-$1 WHERE id=$2', [qty, p.id]);
     }
-    await t.run(`UPDATE register SET ${col(m)}=${col(m)}+$1 WHERE id=1`, [total]);
-    await audit(t, req.user, 'Registró venta', `#${id} · ${rows.map(({ p, qty }) => `${qty}× ${p.name}`).join(', ')} · ${total} (${m})`);
+    await t.run('UPDATE register SET cash=cash+$1, nequi=nequi+$2 WHERE id=1', [cash, nq]);
+    await audit(t, req.user, 'Registró venta', `#${id} · ${rows.map(({ p, qty }) => `${qty}× ${p.name}`).join(', ')} · ${total} (${m === 'mixto' ? `efectivo ${cash} + Nequi ${nq}` : m})`);
     return { id, total };
   });
 }));
@@ -609,7 +623,7 @@ app.post('/api/sales/:id/void', auth, wrap(async (req) => {
     await t.run('DELETE FROM benefit_uses WHERE sale_id=$1', [id]); // al anular, el beneficio queda disponible de nuevo
     for (const i of await t.all('SELECT * FROM sale_items WHERE sale_id=$1', [id]))
       await t.run('UPDATE products SET stock=stock+$1 WHERE id=$2 AND track_stock=1', [i.qty, i.product_id]);
-    await t.run(`UPDATE register SET ${col(sale.method)}=${col(sale.method)}-$1 WHERE id=1`, [sale.total]);
+    await t.run('UPDATE register SET cash=cash-$1, nequi=nequi-$2 WHERE id=1', [sale.cash_amount, sale.nequi_amount]);
     await audit(t, req.user, 'Anuló venta', `#${id} · ${sale.total} (${sale.method})`);
     return { ok: true };
   });
@@ -819,7 +833,7 @@ app.get('/api/export.csv', auth, admin, wrap(async (req, res) => {
   for (const s of sales) {
     const det = items.filter((i) => i.sale_id === s.id).map((i) => `${i.qty}x ${i.name}`).join(', ');
     rows.push({ at: s.created_at, tipo: s.voided ? 'Venta anulada' : 'Venta', detalle: `#${s.id} ${det} (${s.method})`, who: s.who, turno: s.shift_id,
-      monto: s.total, ...(s.voided ? { cash: 0, nequi: 0 } : eff(s.method, s.total)) });
+      monto: s.total, ...(s.voided ? { cash: 0, nequi: 0 } : { cash: Number(s.cash_amount), nequi: Number(s.nequi_amount) }) });
   }
   for (const w of wds) {
     const dCash = w.fee_method === 'efectivo' ? w.fee - w.amount : -w.amount;

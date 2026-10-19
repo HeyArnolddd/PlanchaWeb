@@ -320,7 +320,7 @@ function salesTable(sales, canVoid) {
   if (!sales.length) return '<span class="mute">Sin ventas.</span>';
   return `<table><tr><th>Hora</th><th>Detalle</th><th>Pago</th><th class="n">Total</th><th></th></tr>${sales.map((s) =>
     `<tr style="${s.voided ? 'opacity:.5;text-decoration:line-through' : ''}"><td>${dt(s.created_at).split(', ').pop()}</td>
-    <td>${s.items.map((i) => `${i.qty}× ${esc(i.name)}`).join(', ')}</td><td>${s.method}</td><td class="n">${money(s.total)}</td>
+    <td>${s.items.map((i) => `${i.qty}× ${esc(i.name)}`).join(', ')}</td><td>${s.method === 'mixto' ? `mixto<br><small class="mute">ef ${money(s.cash_amount)} · nq ${money(s.nequi_amount)}</small>` : s.method}</td><td class="n">${money(s.total)}</td>
     <td class="n">${canVoid && !s.voided ? `<button class="btn sec sm" onclick="A.voidSale(${s.id})">Anular</button>` : (s.voided ? '<span class="tag err">Anulada</span>' : '')}</td></tr>`).join('')}</table>`;
 }
 
@@ -417,7 +417,10 @@ const A = window.A = {
     }).join('')}</table>` : '<span class="mute">Toca un producto para agregarlo.</span>') +
       `<p class="total">${money(total)}</p>
       <div class="seg"><button class="${S.method === 'efectivo' ? 'on' : ''}" onclick="S.method='efectivo';A.cart()">💵 Efectivo</button>
-      <button class="${S.method === 'nequi' ? 'on' : ''}" onclick="S.method='nequi';A.cart()">📱 Nequi</button></div>
+      <button class="${S.method === 'nequi' ? 'on' : ''}" onclick="S.method='nequi';A.cart()">📱 Nequi</button>
+      <button class="${S.method === 'mixto' ? 'on' : ''}" onclick="S.method='mixto';A.cart()">🔀 Mixto</button></div>
+      ${S.method === 'mixto' ? `<label>Pagó por Nequi</label><input id="nq" type="number" inputmode="numeric" min="1" value="${S.nq || ''}" oninput="S.nq=this.value;A.mix(${total})">
+      <p id="mix" class="mute"></p>` : ''}
       <p><button class="btn" style="width:100%" ${S.cart.length ? '' : 'disabled'} onclick="A.sell()">Registrar venta</button></p>
       ${S.cart.length ? '<button class="btn sec sm" onclick="S.cart=[];S.benefit=null;A.cart()">Vaciar</button>' : ''}`;
   },
@@ -432,10 +435,14 @@ const A = window.A = {
     S.benefit = { name, product_id: pid };
     closeModal(); A.cart();
   },
+  mix(total) {
+    const nq = Number(S.nq) || 0;
+    $('#mix').innerHTML = nq > 0 && nq < total ? `Efectivo: <b>${money(total - nq)}</b> · Nequi: <b>${money(nq)}</b>` : 'El monto por Nequi debe ser menor al total.';
+  },
   async sell() {
-    const r = await act(() => api('/sales', 'POST', { method: S.method, items: S.cart.map((c) => ({ product_id: c.id, qty: c.qty })),
+    const r = await act(() => api('/sales', 'POST', { method: S.method, nequi_amount: S.method === 'mixto' ? Number(S.nq) || 0 : undefined, items: S.cart.map((c) => ({ product_id: c.id, qty: c.qty })),
       benefit: S.benefit ? { name: S.benefit.name, product_id: S.benefit.product_id } : undefined }));
-    if (r) { S.cart = []; S.benefit = null; toast('Venta registrada: ' + money(r.total)); views.vender(); }
+    if (r) { S.cart = []; S.benefit = null; S.nq = ''; toast('Venta registrada: ' + money(r.total)); views.vender(); }
   },
   wdFee() {
     const a = Number(val('wa')) || 0;
