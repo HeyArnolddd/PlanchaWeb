@@ -159,6 +159,15 @@ UPDATE sales SET cash_amount=CASE WHEN method='efectivo' THEN total ELSE 0 END,
 ALTER TABLE sales ALTER COLUMN cash_amount SET NOT NULL;
 ALTER TABLE sales ALTER COLUMN nequi_amount SET NOT NULL;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS track_stock INTEGER NOT NULL DEFAULT 1;
+CREATE TABLE IF NOT EXISTS write_offs (
+  id SERIAL PRIMARY KEY,
+  product_id INTEGER NOT NULL REFERENCES products(id),
+  qty INTEGER NOT NULL,
+  cost BIGINT NOT NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL
+);
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'implementos';
 CREATE TABLE IF NOT EXISTS benefit_uses (
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -789,6 +798,36 @@ app.post('/api/register/adjust', auth, admin, wrap(async (req) => {
     await audit(t, req.user, 'Ajuste de dinero', `${amount > 0 ? '+' : ''}${amount} (${m}) · ${note}`);
   });
   return { ok: true };
+}));
+
+// ---------- Productos descartados: salen del stock y cuentan como pérdida (al costo), sin tocar la caja ----------
+app.post('/api/write-offs', auth, admin, wrap(async (req) => {
+  const items = Array.isArray(req.body.items) ? req.body.items : [];
+  if (!items.length || items.length > 500) throw bad('Elige al menos un producto');
+  const note = String(req.body.note || '').trim().slice(0, 200) || null;
+  return tx(async (t) => {
+    let total = 0, n = 0;
+    for (const it of items) {
+      const id = int(it.product_id, 'producto'), qty = int(it.qty, 'cantidad', { min: 1 });
+      const p = await t.get('SELECT * FROM products WHERE id=$1 FOR UPDATE', [id]);
+      if (!p) throw new HttpError(404, 'No existe el producto');
+      if (!p.track_stock) throw bad(`"${p.name}" no controla stock`);
+      if (qty > p.stock) throw bad(`Solo quedan ${p.stock} de "${p.name}"`);
+      await t.run('UPDATE products SET stock=stock-$1 WHERE id=$2', [qty, id]);
+      await t.run('INSERT INTO write_offs (product_id,qty,cost,user_id,note,created_at) VALUES ($1,$2,$3,$4,$5,$6)',
+        [id, qty, p.buy_price, req.user.id, note, now()]);
+      await audit(t, req.user, 'Descartó producto', `${p.name}: -${qty} (stock ${p.stock} → ${p.stock - qty}) · pérdida ${qty * p.buy_price}${note ? ' · ' + note : ''}`);
+      total += qty * p.buy_price; n++;
+    }
+    return { ok: true, total, n };
+  });
+}));
+app.get('/api/write-offs', auth, admin, wrap(async (req) => {
+  const { a, b } = range(req.query);
+  const rows = await D.all(`SELECT w.*, p.name AS product, u.name AS "user" FROM write_offs w
+    JOIN products p ON p.id=w.product_id JOIN users u ON u.id=w.user_id
+    WHERE w.created_at>=$1 AND w.created_at<$2 ORDER BY w.id DESC`, [a, b]);
+  return { rows, total: rows.reduce((t, r) => t + r.qty * r.cost, 0) };
 }));
 
 // ---------- Gastos: implementos (cucharas, vasos, etc.) y pagos de pedidos a proveedores ----------

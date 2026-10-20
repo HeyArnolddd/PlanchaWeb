@@ -259,7 +259,9 @@ const views = {
   },
 
   async dinero() {
-    const { register, adjustments } = await api('/register');
+    const [{ register, adjustments }, prods] = await Promise.all([api('/register'), api('/products')]);
+    S.prods = prods;
+    const wo = prods.filter((p) => p.active && p.track_stock && p.stock > 0);
     $('#main').innerHTML = `<h2>Dinero total en caja</h2>
       <div class="grid"><div class="stat"><span>Efectivo</span><b>${money(register.cash)}</b></div>
       <div class="stat"><span>Nequi</span><b>${money(register.nequi)}</b></div>
@@ -270,8 +272,20 @@ const views = {
         <div><label>Monto (+ ingreso / − retiro)</label><input id="aa" type="number" inputmode="numeric"></div>
         <div><label>Motivo</label><input id="an" maxlength="200"></div></div>
         <p><button class="btn" onclick="A.adjust()">Registrar</button></p></div>
+      <div class="card tw"><h3>Descartar productos (pérdida)</h3>
+        <p class="mute">Producto que no se vendió y se regala o se bota. Sale del stock y se cuenta como pérdida al costo; no entra dinero ni cambia la caja ni la ganancia.</p>
+        ${wo.length ? `<table><tr><th>Producto</th><th class="n">Stock</th><th class="n">Costo</th><th class="n">Descartar</th></tr>
+        ${wo.map((p) => `<tr><td>${esc(p.name)}</td><td class="n">${p.stock}</td><td class="n">${money(p.buy_price)}</td>
+          <td class="n"><input class="wq" data-id="${p.id}" type="number" min="0" max="${p.stock}" inputmode="numeric" style="width:5rem"></td></tr>`).join('')}</table>
+        <div class="row"><div><label>Motivo (opcional)</label><input id="wn" maxlength="200" placeholder="Ej. sobrante del día"></div></div>
+        <p><button class="btn" onclick="A.writeOff()">Descartar lo indicado</button>
+        <button class="btn sec" onclick="A.writeOff(true)">Vaciar todo el stock</button></p>` : '<span class="mute">No hay productos con stock.</span>'}</div>
+      <div class="card tw"><h3>Reporte de pérdidas</h3>
+        <div class="row"><div><label>Desde</label><input id="wf" type="date"></div><div><label>Hasta</label><input id="wt" type="date"></div>
+        <div><label>&nbsp;</label><button class="btn sec" onclick="A.writeOffReport()">Ver</button></div></div><div id="wr"></div></div>
       <div class="card tw"><h3>Movimientos manuales</h3><table><tr><th>Fecha</th><th>Quién</th><th>Medio</th><th class="n">Monto</th><th>Motivo</th></tr>
       ${adjustments.map((a) => `<tr><td>${dt(a.created_at)}</td><td>${esc(a.user)}</td><td>${a.method}</td><td class="n ${a.amount < 0 ? 'err' : 'ok'}">${money(a.amount)}</td><td>${esc(a.note)}</td></tr>`).join('') || '<tr><td colspan="5" class="mute">Sin movimientos.</td></tr>'}</table></div>`;
+    A.writeOffReport();
   },
 
   async gastos() {
@@ -661,6 +675,30 @@ const A = window.A = {
   // Dinero
   async adjust() {
     if (await act(() => api('/register/adjust', 'POST', { method: val('am'), amount: val('aa'), note: val('an') }), 'Registrado')) boot();
+  },
+
+  async writeOff(all) {
+    const items = [...document.querySelectorAll('.wq')].map((i) => ({ product_id: +i.dataset.id, qty: all ? +i.max : +i.value })).filter((i) => i.qty > 0);
+    if (!items.length) return toast('Indica cuántas unidades descartar');
+    const cost = items.reduce((t, i) => t + i.qty * S.prods.find((p) => p.id === i.product_id).buy_price, 0);
+    if (!confirm(`${all ? '¿Vaciar TODO el stock?' : '¿Descartar estos productos?'} Se registra una pérdida de ${money(cost)}.`)) return;
+    const r = await act(() => api('/write-offs', 'POST', { items, note: val('wn') }));
+    if (r) { toast(`Pérdida registrada: ${money(r.total)}`); boot(); }
+  },
+  async writeOffReport() {
+    const iso = (t) => t.toISOString().slice(0, 10);
+    const n = new Date(Date.now() - 5 * 36e5);
+    const to = val('wt') || iso(n); n.setUTCDate(n.getUTCDate() - 6);
+    const from = val('wf') || iso(n);
+    const r = await act(() => api(`/write-offs?from=${from}&to=${to}`));
+    if (!r) return;
+    const by = {};
+    r.rows.forEach((x) => { const o = by[x.product] ||= { qty: 0, loss: 0 }; o.qty += x.qty; o.loss += x.qty * x.cost; });
+    $('#wr').innerHTML = `<p>Pérdida total del ${from} al ${to}: <b class="err">${money(r.total)}</b></p>` + (r.rows.length
+      ? `<table><tr><th>Producto</th><th class="n">Unidades</th><th class="n">Pérdida</th></tr>${Object.entries(by).map(([k, o]) => `<tr><td>${esc(k)}</td><td class="n">${o.qty}</td><td class="n">${money(o.loss)}</td></tr>`).join('')}</table>
+      <h3 style="margin-top:1rem">Detalle</h3><table><tr><th>Fecha</th><th>Quién</th><th>Producto</th><th class="n">Cant.</th><th class="n">Pérdida</th><th>Motivo</th></tr>
+      ${r.rows.map((x) => `<tr><td>${dt(x.created_at)}</td><td>${esc(x.user)}</td><td>${esc(x.product)}</td><td class="n">${x.qty}</td><td class="n">${money(x.qty * x.cost)}</td><td>${esc(x.note || '')}</td></tr>`).join('')}</table>`
+      : '<span class="mute">Sin descartes en este rango.</span>');
   },
 
   kind(k) {
