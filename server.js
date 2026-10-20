@@ -179,6 +179,7 @@ CREATE TABLE IF NOT EXISTS payouts (
   user_id INTEGER NOT NULL REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL
 );
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS payee TEXT;
 ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS payout_id INTEGER;
 ALTER TABLE write_offs ADD COLUMN IF NOT EXISTS payout_id INTEGER;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'implementos';
@@ -843,7 +844,9 @@ app.get('/api/write-offs', auth, admin, wrap(async (req) => {
   return { rows, total: rows.reduce((t, r) => t + r.qty * r.cost, 0) };
 }));
 
-// ---------- Pago a emprendimientos (viernes): costo de lo vendido + lo descartado, por categoría ----------
+// ---------- Pago a emprendimientos (viernes): costo de lo vendido + 60% del costo de lo descartado ----------
+const LOST_PAY = 0.6; // de lo descartado solo se paga el 60% del precio de compra acordado
+const isEmp = (name) => /^emprendimiento/i.test(name || '');
 async function pendingPayouts(x, catId, lock = false) {
   const cond = catId == null ? 'p.category_id IS NULL' : 'p.category_id=$1';
   const args = catId == null ? [] : [catId];
@@ -854,10 +857,10 @@ async function pendingPayouts(x, catId, lock = false) {
       WHERE w.payout_id IS NULL AND ${cond}${lock ? ' FOR UPDATE OF w' : ''}`, args),
   ]);
   const f = (rows) => rows.reduce((t, r) => t + r.qty * r.cost, 0);
-  return { sold, lost, sold_cost: f(sold), lost_cost: f(lost), sold_qty: sold.reduce((t, r) => t + r.qty, 0), lost_qty: lost.reduce((t, r) => t + r.qty, 0) };
+  return { sold, lost, sold_cost: f(sold), lost_cost: Math.round(f(lost) * LOST_PAY), sold_qty: sold.reduce((t, r) => t + r.qty, 0), lost_qty: lost.reduce((t, r) => t + r.qty, 0) };
 }
 app.get('/api/payouts', auth, admin, wrap(async () => {
-  const cats = [...(await D.all('SELECT id, name FROM categories ORDER BY name')), { id: null, name: 'Sin categoría' }];
+  const cats = (await D.all('SELECT id, name FROM categories ORDER BY name')).filter((c) => isEmp(c.name));
   const pending = [];
   for (const c of cats) {
     const p = await pendingPayouts(D, c.id);
@@ -869,23 +872,24 @@ app.get('/api/payouts', auth, admin, wrap(async () => {
 }));
 app.post('/api/payouts', auth, admin, wrap(async (req) => {
   const m = method(req.body.method);
-  const catId = req.body.category_id == null || req.body.category_id === '' ? null : int(req.body.category_id, 'categoría');
+  const catId = int(req.body.category_id, 'categoría');
+  const payee = str(req.body.payee, 'A nombre de quién se paga', 100);
   return tx(async (t) => {
-    const cat = catId == null ? { name: 'Sin categoría' } : await t.get('SELECT name FROM categories WHERE id=$1', [catId]);
-    if (!cat) throw new HttpError(404, 'No existe la categoría');
+    const cat = await t.get('SELECT name FROM categories WHERE id=$1', [catId]);
+    if (!cat || !isEmp(cat.name)) throw new HttpError(404, 'No existe el emprendimiento');
     const p = await pendingPayouts(t, catId, true);
     const total = p.sold_cost + p.lost_cost;
     if (total <= 0) throw bad('No hay nada pendiente por pagar');
     const r = await t.get('SELECT cash,nequi FROM register WHERE id=1 FOR UPDATE');
     if (r[col(m)] < total) throw bad(`No hay suficiente ${m} en caja para este pago`);
-    const { id } = await t.get(`INSERT INTO payouts (category_id,category,sold_cost,lost_cost,total,method,user_id,created_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`, [catId, cat.name, p.sold_cost, p.lost_cost, total, m, req.user.id, now()]);
+    const { id } = await t.get(`INSERT INTO payouts (category_id,category,sold_cost,lost_cost,total,method,user_id,created_at,payee)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, [catId, cat.name, p.sold_cost, p.lost_cost, total, m, req.user.id, now(), payee]);
     if (p.sold.length) await t.run('UPDATE sale_items SET payout_id=$1 WHERE id = ANY($2::int[])', [id, p.sold.map((x) => x.id)]);
     if (p.lost.length) await t.run('UPDATE write_offs SET payout_id=$1 WHERE id = ANY($2::int[])', [id, p.lost.map((x) => x.id)]);
     await t.run(`UPDATE register SET ${col(m)}=${col(m)}-$1 WHERE id=1`, [total]);
     await t.run('INSERT INTO expenses (user_id,description,amount,method,kind,created_at) VALUES ($1,$2,$3,$4,$5,$6)',
-      [req.user.id, `Pago emprendimiento ${cat.name} · vendido ${p.sold_cost} + descartado ${p.lost_cost}`, total, m, 'pedido', now()]);
-    await audit(t, req.user, 'Pagó a emprendimiento', `${cat.name} · ${total} (${m}) · vendido ${p.sold_cost} · descartado ${p.lost_cost}`);
+      [req.user.id, `Pago emprendimiento ${cat.name} a nombre de ${payee} · vendido ${p.sold_cost} + descartado (60%) ${p.lost_cost}`, total, m, 'pedido', now()]);
+    await audit(t, req.user, 'Pagó a emprendimiento', `${cat.name} a nombre de ${payee} · ${total} (${m}) · vendido ${p.sold_cost} · descartado (60%) ${p.lost_cost}`);
     return { ok: true, total };
   });
 }));
