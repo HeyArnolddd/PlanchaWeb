@@ -463,6 +463,14 @@ app.put('/api/products/:id', auth, admin, wrap(async (req) => {
     if (old.min_stock !== p.min_stock) ch.push(`stock mínimo ${old.min_stock} → ${p.min_stock}`);
     if (old.category_id !== p.category_id) ch.push('cambió de categoría');
     if (old.track_stock !== p.track_stock) ch.push(p.track_stock ? 'controla stock' : 'sin control de stock');
+    // Corrección de digitación: cambia el stock sin registrar pérdida ni ingreso
+    if (p.track_stock && req.body.stock !== undefined && req.body.stock !== '') {
+      const ns = int(req.body.stock, 'stock');
+      if (ns !== old.stock) {
+        await D.run('UPDATE products SET stock=$1 WHERE id=$2', [ns, id]);
+        ch.push(`stock corregido ${old.stock} → ${ns} (sin pérdida)`);
+      }
+    }
     if (ch.length) await audit(D, req.user, 'Editó producto', `${old.name}: ${ch.join(', ')}`);
   }
   return { ok: true };

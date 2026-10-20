@@ -666,14 +666,14 @@ const A = window.A = {
       <div><label>Precio de venta</label><input id="ps" type="number" inputmode="numeric" min="0" value="${p.sell_price}"></div></div>
       <label><input type="checkbox" id="pt" style="width:auto" ${p.track_stock ? 'checked' : ''} onchange="$('#stk').style.display=this.checked?'':'none'"> Controlar stock</label>
       <p class="mute" style="margin:0">Desmárcalo para cosas como el vaso de gaseosa del combo: siempre se puede vender y solo registra el dinero.</p>
-      <div class="row" id="stk" style="${p.track_stock ? '' : 'display:none'}">${id ? '' : '<div><label>Cantidad inicial</label><input id="pq" type="number" min="0" value="0"></div>'}
+      <div class="row" id="stk" style="${p.track_stock ? '' : 'display:none'}">${id ? `<div><label>Stock actual</label><input id="pq" type="number" inputmode="numeric" min="0" value="${p.stock}"></div>` : '<div><label>Cantidad inicial</label><input id="pq" type="number" min="0" value="0"></div>'}
       <div><label>Avisar si stock ≤</label><input id="pm" type="number" min="0" value="${p.min_stock}"></div></div>
       ${id ? `<label><input type="checkbox" id="pa" style="width:auto" ${p.active ? 'checked' : ''}> Activo (visible para vender)</label>` : ''}
       <p><button class="btn" onclick="A.saveProduct(${id || 0})">Guardar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);
   },
   async saveProduct(id) {
     const body = { name: val('pn'), category_id: val('pc'), buy_price: val('pb'), sell_price: val('ps'), min_stock: val('pm'), track_stock: $('#pt').checked };
-    if (id) body.active = $('#pa').checked; else body.stock = val('pq');
+    if (id) { body.active = $('#pa').checked; if ($('#pt').checked) body.stock = val('pq'); } else body.stock = val('pq');
     const r = await act(() => api(id ? `/products/${id}` : '/products', id ? 'PUT' : 'POST', body), 'Guardado');
     if (!r) return;
     const pid = id || r.id;
