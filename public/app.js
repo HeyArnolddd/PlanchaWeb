@@ -510,20 +510,31 @@ const A = window.A = {
     const words = norm(S.q).split(/\s+/).filter(Boolean);
     const list = S.prods.filter((p) => (S.cat === 'all' || (p.category || 'Sin categoría') === S.cat)
       && words.every((w) => norm(p.name + ' ' + (p.category || '')).includes(w)));
-    $('#grid').innerHTML = list.map((p) => `<button class="prod" ${p.track_stock && p.stock <= 0 ? 'disabled' : ''} onclick="A.add(${p.id})">
-      ${p.photo ? `<img loading="lazy" src="${photoUrl(p)}" alt="">` : ''}<b>${esc(p.name)}</b>${money(p.sell_price)}<br><small>${p.track_stock ? p.stock + ' disp.' : 'sin control de stock'}</small></button>`).join('') || '<span class="mute">Sin resultados.</span>';
+    $('#grid').innerHTML = list.map((p) => `<button class="prod" data-p="${p.id}" ${p.track_stock && p.stock <= 0 ? 'disabled' : ''} onclick="A.add(${p.id})">
+      ${p.photo ? `<img loading="lazy" src="${photoUrl(p)}" alt="">` : ''}<b>${esc(p.name)}</b>${money(p.sell_price)}<br><small>${p.track_stock ? p.stock + ' disp.' : 'sin control de stock'}</small>${A.badge(p.id)}</button>`).join('') || '<span class="mute">Sin resultados.</span>';
+  },
+  badge(id) {
+    const c = S.cart.find((x) => x.id === id);
+    return c ? `<em class="bdg">${c.qty}</em>` : '';
+  },
+  flash(id) {
+    const b = document.querySelector(`.prod[data-p="${id}"]`);
+    if (!b) return;
+    b.querySelector('.bdg')?.remove();
+    b.insertAdjacentHTML('beforeend', A.badge(id));
+    b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop');
   },
   add(id) {
     const p = S.prods.find((x) => x.id === id), c = S.cart.find((x) => x.id === id);
     if (c) { if (!p.track_stock || c.qty < p.stock) c.qty++; else toast('No hay más stock'); } else S.cart.push({ id, qty: 1 });
-    A.cart();
+    A.cart(); A.flash(id);
   },
   chg(id, d) {
     const c = S.cart.find((x) => x.id === id), p = S.prods.find((x) => x.id === id);
     c.qty += d;
     if (p.track_stock && c.qty > p.stock) { c.qty = p.stock; toast('No hay más stock'); }
     if (c.qty <= 0) S.cart = S.cart.filter((x) => x.id !== id);
-    A.cart();
+    A.cart(); A.flash(id);
   },
   cart() {
     if (S.benefit && !S.cart.find((c) => c.id === S.benefit.product_id)) S.benefit = null;

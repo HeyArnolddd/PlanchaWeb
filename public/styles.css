@@ -121,6 +121,10 @@ body:has(.login-wrap){overflow-x:hidden}
   transition:transform .25s var(--ease),border-color .2s,box-shadow .25s;animation:pop .4s var(--ease) both}
 .prod:hover:not(:disabled){border-color:var(--sky);transform:translateY(-3px);box-shadow:var(--shadow-lg)}
 .prod:active:not(:disabled){transform:scale(.96)}
+.prod{position:relative}
+.prod.pop{animation:pop .3s ease}
+@keyframes pop{0%{transform:scale(1)}40%{transform:scale(.93);border-color:var(--brand);box-shadow:0 0 0 4px rgba(37,99,235,.25)}100%{transform:scale(1)}}
+.prod .bdg{position:absolute;top:.4rem;right:.4rem;min-width:1.5rem;height:1.5rem;padding:0 .35rem;border-radius:999px;background:var(--brand);color:#fff;font-style:normal;font-weight:700;font-size:.85rem;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.25)}
 .prod:disabled{opacity:.4;cursor:not-allowed}
 .prod b{display:block;color:var(--navy)}.prod small{color:var(--mute)}
 .chips{display:flex;gap:.4rem;flex-wrap:wrap;margin:.6rem 0}
