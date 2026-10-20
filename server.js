@@ -180,6 +180,9 @@ CREATE TABLE IF NOT EXISTS payouts (
   created_at TIMESTAMPTZ NOT NULL
 );
 ALTER TABLE payouts ADD COLUMN IF NOT EXISTS payee TEXT;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS product_id INTEGER;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS sold_qty INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE payouts ADD COLUMN IF NOT EXISTS lost_qty INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS payout_id INTEGER;
 ALTER TABLE write_offs ADD COLUMN IF NOT EXISTS payout_id INTEGER;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'implementos';
@@ -847,49 +850,48 @@ app.get('/api/write-offs', auth, admin, wrap(async (req) => {
 // ---------- Pago a emprendimientos (viernes): costo de lo vendido + 60% del costo de lo descartado ----------
 const LOST_PAY = 0.6; // de lo descartado solo se paga el 60% del precio de compra acordado
 const isEmp = (name) => /^emprendimiento/i.test(name || '');
-async function pendingPayouts(x, catId, lock = false) {
-  const cond = catId == null ? 'p.category_id IS NULL' : 'p.category_id=$1';
-  const args = catId == null ? [] : [catId];
+async function pendingPayouts(x, productId, lock = false) {
   const [sold, lost] = await Promise.all([
-    x.all(`SELECT i.id, i.qty, i.cost FROM sale_items i JOIN sales s ON s.id=i.sale_id JOIN products p ON p.id=i.product_id
-      WHERE s.voided=0 AND i.payout_id IS NULL AND ${cond}${lock ? ' FOR UPDATE OF i' : ''}`, args),
-    x.all(`SELECT w.id, w.qty, w.cost FROM write_offs w JOIN products p ON p.id=w.product_id
-      WHERE w.payout_id IS NULL AND ${cond}${lock ? ' FOR UPDATE OF w' : ''}`, args),
+    x.all(`SELECT i.id, i.qty, i.cost FROM sale_items i JOIN sales s ON s.id=i.sale_id
+      WHERE s.voided=0 AND i.payout_id IS NULL AND i.product_id=$1${lock ? ' FOR UPDATE OF i' : ''}`, [productId]),
+    x.all(`SELECT w.id, w.qty, w.cost FROM write_offs w WHERE w.payout_id IS NULL AND w.product_id=$1${lock ? ' FOR UPDATE OF w' : ''}`, [productId]),
   ]);
   const f = (rows) => rows.reduce((t, r) => t + r.qty * r.cost, 0);
   return { sold, lost, sold_cost: f(sold), lost_cost: Math.round(f(lost) * LOST_PAY), sold_qty: sold.reduce((t, r) => t + r.qty, 0), lost_qty: lost.reduce((t, r) => t + r.qty, 0) };
 }
 app.get('/api/payouts', auth, admin, wrap(async () => {
-  const cats = (await D.all('SELECT id, name FROM categories ORDER BY name')).filter((c) => isEmp(c.name));
+  const prods = (await D.all(`SELECT p.id, p.name, c.name AS category FROM products p JOIN categories c ON c.id=p.category_id ORDER BY p.name`))
+    .filter((p) => isEmp(p.category));
   const pending = [];
-  for (const c of cats) {
-    const p = await pendingPayouts(D, c.id);
-    if (p.sold_cost || p.lost_cost) pending.push({ category_id: c.id, category: c.name, sold_qty: p.sold_qty, sold_cost: p.sold_cost,
-      lost_qty: p.lost_qty, lost_cost: p.lost_cost, total: p.sold_cost + p.lost_cost });
+  for (const p of prods) {
+    const x = await pendingPayouts(D, p.id);
+    if (x.sold_qty || x.lost_qty) pending.push({ product_id: p.id, product: p.name, sold_qty: x.sold_qty, sold_cost: x.sold_cost,
+      lost_qty: x.lost_qty, lost_cost: x.lost_cost, total: x.sold_cost + x.lost_cost });
   }
   const history = await D.all(`SELECT y.*, u.name AS "user" FROM payouts y JOIN users u ON u.id=y.user_id ORDER BY y.id DESC LIMIT 100`);
   return { pending, history, register: await reg() };
 }));
 app.post('/api/payouts', auth, admin, wrap(async (req) => {
   const m = method(req.body.method);
-  const catId = int(req.body.category_id, 'categoría');
+  const productId = int(req.body.product_id, 'producto');
   const payee = str(req.body.payee, 'A nombre de quién se paga', 100);
   return tx(async (t) => {
-    const cat = await t.get('SELECT name FROM categories WHERE id=$1', [catId]);
-    if (!cat || !isEmp(cat.name)) throw new HttpError(404, 'No existe el emprendimiento');
-    const p = await pendingPayouts(t, catId, true);
+    const pr = await t.get('SELECT p.name, c.name AS category FROM products p JOIN categories c ON c.id=p.category_id WHERE p.id=$1', [productId]);
+    if (!pr || !isEmp(pr.category)) throw new HttpError(404, 'No existe el producto de emprendimiento');
+    const p = await pendingPayouts(t, productId, true);
     const total = p.sold_cost + p.lost_cost;
     if (total <= 0) throw bad('No hay nada pendiente por pagar');
     const r = await t.get('SELECT cash,nequi FROM register WHERE id=1 FOR UPDATE');
     if (r[col(m)] < total) throw bad(`No hay suficiente ${m} en caja para este pago`);
-    const { id } = await t.get(`INSERT INTO payouts (category_id,category,sold_cost,lost_cost,total,method,user_id,created_at,payee)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, [catId, cat.name, p.sold_cost, p.lost_cost, total, m, req.user.id, now(), payee]);
+    const { id } = await t.get(`INSERT INTO payouts (category_id,category,sold_cost,lost_cost,total,method,user_id,created_at,payee,product_id,sold_qty,lost_qty)
+      VALUES (NULL,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+      [pr.name, p.sold_cost, p.lost_cost, total, m, req.user.id, now(), payee, productId, p.sold_qty, p.lost_qty]);
     if (p.sold.length) await t.run('UPDATE sale_items SET payout_id=$1 WHERE id = ANY($2::int[])', [id, p.sold.map((x) => x.id)]);
     if (p.lost.length) await t.run('UPDATE write_offs SET payout_id=$1 WHERE id = ANY($2::int[])', [id, p.lost.map((x) => x.id)]);
     await t.run(`UPDATE register SET ${col(m)}=${col(m)}-$1 WHERE id=1`, [total]);
     await t.run('INSERT INTO expenses (user_id,description,amount,method,kind,created_at) VALUES ($1,$2,$3,$4,$5,$6)',
-      [req.user.id, `Pago emprendimiento ${cat.name} a nombre de ${payee} · vendido ${p.sold_cost} + descartado (60%) ${p.lost_cost}`, total, m, 'pedido', now()]);
-    await audit(t, req.user, 'Pagó a emprendimiento', `${cat.name} a nombre de ${payee} · ${total} (${m}) · vendido ${p.sold_cost} · descartado (60%) ${p.lost_cost}`);
+      [req.user.id, `Pago emprendimiento ${pr.name} a nombre de ${payee} · vendidos ${p.sold_qty} (${p.sold_cost}) + perdidos ${p.lost_qty} al 60% (${p.lost_cost})`, total, m, 'pedido', now()]);
+    await audit(t, req.user, 'Pagó a emprendimiento', `${pr.name} a nombre de ${payee} · ${total} (${m}) · vendidos ${p.sold_qty} · perdidos ${p.lost_qty} (60%: ${p.lost_cost})`);
     return { ok: true, total };
   });
 }));

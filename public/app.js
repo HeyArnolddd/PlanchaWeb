@@ -291,14 +291,18 @@ const views = {
   async emprendimientos() {
     const { pending, history, register } = await api('/payouts');
     $('#main').innerHTML = `<h2>Pago a emprendimientos</h2>
-      <p class="mute">Lo pendiente por pagar es el costo de lo vendido más el 60% del costo de lo descartado (para evitar pérdidas masivas) desde el último pago de cada emprendimiento. Al pagar se descuenta de la caja y la pérdida de los descartes se resta de la ganancia neta.</p>
+      <p class="mute">Cada producto de emprendimientos se paga por separado, a nombre de quien corresponda. Se paga el costo de lo vendido más el 60% del costo de lo perdido (descartado) desde el último pago de ese producto. Al pagar se descuenta de la caja y la pérdida se resta de la ganancia neta.</p>
       <div class="grid"><div class="stat"><span>Efectivo en caja</span><b>${money(register.cash)}</b></div><div class="stat"><span>Nequi en caja</span><b>${money(register.nequi)}</b></div></div><br>
-      <div class="card tw"><h3>Pendiente de pago</h3>${pending.length ? `<table><tr><th>Emprendimiento</th><th class="n">Vendido</th><th class="n">Descartado (60%)</th><th class="n">A pagar</th><th>A nombre de</th><th>Pagar con</th><th></th></tr>
-      ${pending.map((p, i) => `<tr><td>${esc(p.category)}</td><td class="n">${p.sold_qty} · ${money(p.sold_cost)}</td><td class="n">${p.lost_qty} · ${money(p.lost_cost)}</td><td class="n"><b>${money(p.total)}</b></td>
-        <td><input id="pp${i}" maxlength="100" placeholder="Nombre" style="min-width:8rem"></td><td><select id="pm${i}"><option value="efectivo">Efectivo</option><option value="nequi">Nequi</option></select></td>
-        <td class="n"><button class="btn sm" onclick="A.payout(${p.category_id}, ${i}, ${p.total}, '${esc(p.category).replace(/'/g, '')}')">Pagar</button></td></tr>`).join('')}</table>` : '<span class="mute">Nada pendiente en emprendimientos.</span>'}</div>
-      <div class="card tw"><h3>Pagos realizados</h3><table><tr><th>Fecha</th><th>Quién</th><th>Emprendimiento</th><th>A nombre de</th><th>Medio</th><th class="n">Vendido</th><th class="n">Descartado</th><th class="n">Total</th></tr>
-      ${history.map((y) => `<tr><td>${dt(y.created_at)}</td><td>${esc(y.user)}</td><td>${esc(y.category)}</td><td>${esc(y.payee || '—')}</td><td>${y.method}</td><td class="n">${money(y.sold_cost)}</td><td class="n">${money(y.lost_cost)}</td><td class="n">${money(y.total)}</td></tr>`).join('') || '<tr><td colspan="8" class="mute">Sin pagos.</td></tr>'}</table></div>`;
+      <div class="card tw"><h3>Pendiente de pago</h3>${pending.length ? `<table><tr><th>Producto</th><th class="n">Vendidos</th><th class="n">Perdidos</th><th class="n">A pagar</th><th>A nombre de</th><th>Pagar con</th><th></th></tr>
+      ${pending.map((p, i) => `<tr><td><b>${esc(p.product)}</b></td>
+        <td class="n">${p.sold_qty} · ${money(p.sold_cost)}</td>
+        <td class="n ${p.lost_qty ? 'err' : ''}">${p.lost_qty} · ${money(p.lost_cost)}<br><small class="mute">60%</small></td>
+        <td class="n"><b>${money(p.total)}</b></td>
+        <td><input id="pp${i}" maxlength="100" placeholder="Nombre" style="min-width:8rem"></td>
+        <td><select id="pm${i}"><option value="efectivo">Efectivo</option><option value="nequi">Nequi</option></select></td>
+        <td class="n"><button class="btn sm" onclick="A.payout(${p.product_id}, ${i}, ${p.total}, '${esc(p.product).replace(/'/g, '')}')">Pagar</button></td></tr>`).join('')}</table>` : '<span class="mute">Nada pendiente en emprendimientos.</span>'}</div>
+      <div class="card tw"><h3>Pagos realizados</h3><table><tr><th>Fecha</th><th>Producto</th><th>A nombre de</th><th>Medio</th><th class="n">Vendidos</th><th class="n">Perdidos</th><th class="n">Total</th></tr>
+      ${history.map((y) => `<tr><td>${dt(y.created_at)}</td><td>${esc(y.category)}</td><td>${esc(y.payee || '—')}</td><td>${y.method}</td><td class="n">${y.sold_qty} · ${money(y.sold_cost)}</td><td class="n">${y.lost_qty} · ${money(y.lost_cost)}</td><td class="n">${money(y.total)}</td></tr>`).join('') || '<tr><td colspan="7" class="mute">Sin pagos.</td></tr>'}</table></div>`;
   },
 
   async gastos() {
@@ -722,8 +726,8 @@ const A = window.A = {
   async payout(cat, i, total, name) {
     const m = val('pm' + i), payee = val('pp' + i).trim();
     if (!payee) return toast('Escribe a nombre de quién se paga');
-    if (!confirm(`¿Pagar ${money(total)} a ${payee} (${name}) con ${m}? Se descuenta de la caja.`)) return;
-    if (await act(() => api('/payouts', 'POST', { category_id: cat, method: m, payee }), 'Pago registrado')) views.emprendimientos();
+    if (!confirm(`¿Pagar ${money(total)} a ${payee} por ${name} con ${m}? Se descuenta de la caja.`)) return;
+    if (await act(() => api('/payouts', 'POST', { product_id: cat, method: m, payee }), 'Pago registrado')) views.emprendimientos();
   },
 
   kind(k) {
