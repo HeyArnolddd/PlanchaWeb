@@ -168,6 +168,19 @@ CREATE TABLE IF NOT EXISTS write_offs (
   note TEXT,
   created_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS payouts (
+  id SERIAL PRIMARY KEY,
+  category_id INTEGER,
+  category TEXT NOT NULL,
+  sold_cost BIGINT NOT NULL,
+  lost_cost BIGINT NOT NULL,
+  total BIGINT NOT NULL,
+  method TEXT NOT NULL,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  created_at TIMESTAMPTZ NOT NULL
+);
+ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS payout_id INTEGER;
+ALTER TABLE write_offs ADD COLUMN IF NOT EXISTS payout_id INTEGER;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'implementos';
 CREATE TABLE IF NOT EXISTS benefit_uses (
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -830,6 +843,53 @@ app.get('/api/write-offs', auth, admin, wrap(async (req) => {
   return { rows, total: rows.reduce((t, r) => t + r.qty * r.cost, 0) };
 }));
 
+// ---------- Pago a emprendimientos (viernes): costo de lo vendido + lo descartado, por categoría ----------
+async function pendingPayouts(x, catId, lock = false) {
+  const cond = catId == null ? 'p.category_id IS NULL' : 'p.category_id=$1';
+  const args = catId == null ? [] : [catId];
+  const [sold, lost] = await Promise.all([
+    x.all(`SELECT i.id, i.qty, i.cost FROM sale_items i JOIN sales s ON s.id=i.sale_id JOIN products p ON p.id=i.product_id
+      WHERE s.voided=0 AND i.payout_id IS NULL AND ${cond}${lock ? ' FOR UPDATE OF i' : ''}`, args),
+    x.all(`SELECT w.id, w.qty, w.cost FROM write_offs w JOIN products p ON p.id=w.product_id
+      WHERE w.payout_id IS NULL AND ${cond}${lock ? ' FOR UPDATE OF w' : ''}`, args),
+  ]);
+  const f = (rows) => rows.reduce((t, r) => t + r.qty * r.cost, 0);
+  return { sold, lost, sold_cost: f(sold), lost_cost: f(lost), sold_qty: sold.reduce((t, r) => t + r.qty, 0), lost_qty: lost.reduce((t, r) => t + r.qty, 0) };
+}
+app.get('/api/payouts', auth, admin, wrap(async () => {
+  const cats = [...(await D.all('SELECT id, name FROM categories ORDER BY name')), { id: null, name: 'Sin categoría' }];
+  const pending = [];
+  for (const c of cats) {
+    const p = await pendingPayouts(D, c.id);
+    if (p.sold_cost || p.lost_cost) pending.push({ category_id: c.id, category: c.name, sold_qty: p.sold_qty, sold_cost: p.sold_cost,
+      lost_qty: p.lost_qty, lost_cost: p.lost_cost, total: p.sold_cost + p.lost_cost });
+  }
+  const history = await D.all(`SELECT y.*, u.name AS "user" FROM payouts y JOIN users u ON u.id=y.user_id ORDER BY y.id DESC LIMIT 100`);
+  return { pending, history, register: await reg() };
+}));
+app.post('/api/payouts', auth, admin, wrap(async (req) => {
+  const m = method(req.body.method);
+  const catId = req.body.category_id == null || req.body.category_id === '' ? null : int(req.body.category_id, 'categoría');
+  return tx(async (t) => {
+    const cat = catId == null ? { name: 'Sin categoría' } : await t.get('SELECT name FROM categories WHERE id=$1', [catId]);
+    if (!cat) throw new HttpError(404, 'No existe la categoría');
+    const p = await pendingPayouts(t, catId, true);
+    const total = p.sold_cost + p.lost_cost;
+    if (total <= 0) throw bad('No hay nada pendiente por pagar');
+    const r = await t.get('SELECT cash,nequi FROM register WHERE id=1 FOR UPDATE');
+    if (r[col(m)] < total) throw bad(`No hay suficiente ${m} en caja para este pago`);
+    const { id } = await t.get(`INSERT INTO payouts (category_id,category,sold_cost,lost_cost,total,method,user_id,created_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`, [catId, cat.name, p.sold_cost, p.lost_cost, total, m, req.user.id, now()]);
+    if (p.sold.length) await t.run('UPDATE sale_items SET payout_id=$1 WHERE id = ANY($2::int[])', [id, p.sold.map((x) => x.id)]);
+    if (p.lost.length) await t.run('UPDATE write_offs SET payout_id=$1 WHERE id = ANY($2::int[])', [id, p.lost.map((x) => x.id)]);
+    await t.run(`UPDATE register SET ${col(m)}=${col(m)}-$1 WHERE id=1`, [total]);
+    await t.run('INSERT INTO expenses (user_id,description,amount,method,kind,created_at) VALUES ($1,$2,$3,$4,$5,$6)',
+      [req.user.id, `Pago emprendimiento ${cat.name} · vendido ${p.sold_cost} + descartado ${p.lost_cost}`, total, m, 'pedido', now()]);
+    await audit(t, req.user, 'Pagó a emprendimiento', `${cat.name} · ${total} (${m}) · vendido ${p.sold_cost} · descartado ${p.lost_cost}`);
+    return { ok: true, total };
+  });
+}));
+
 // ---------- Gastos: implementos (cucharas, vasos, etc.) y pagos de pedidos a proveedores ----------
 // method = de dónde salió la plata; si es null, no se descuenta de la caja.
 app.get('/api/expenses', auth, admin, wrap(() =>
@@ -904,7 +964,7 @@ function range(q, maxDays = 366) {
 }
 
 async function weekTotals(a, b) {
-  const [sales, items, exp, wd] = await Promise.all([
+  const [sales, items, exp, wd, lost] = await Promise.all([
     D.all(`SELECT to_char(${DAY},'YYYY-MM-DD') AS day, SUM(total) AS total, COUNT(*) AS n FROM sales
       WHERE voided=0 AND created_at>=$1 AND created_at<$2 GROUP BY 1`, [a, b]),
     D.all(`SELECT to_char((s.created_at AT TIME ZONE '${TZ}')::date,'YYYY-MM-DD') AS day, SUM((i.price-i.cost)*i.qty) AS profit
@@ -913,8 +973,10 @@ async function weekTotals(a, b) {
       COALESCE(SUM(amount) FILTER (WHERE kind='pedido'),0) AS ped FROM expenses WHERE created_at>=$1 AND created_at<$2 GROUP BY 1`, [a, b]),
     D.all(`SELECT to_char(${DAY},'YYYY-MM-DD') AS day, SUM(fee) AS fees FROM withdrawals
       WHERE voided=0 AND created_at>=$1 AND created_at<$2 GROUP BY 1`, [a, b]),
+    D.all(`SELECT to_char(${DAY},'YYYY-MM-DD') AS day, SUM(lost_cost) AS lost FROM payouts
+      WHERE created_at>=$1 AND created_at<$2 GROUP BY 1`, [a, b]),
   ]);
-  return { sales, items, exp, wd };
+  return { sales, items, exp, wd, lost };
 }
 app.get('/api/reports/week', auth, admin, wrap(async (req) => {
   const start = mondayOf(req.query.start ? ymd(req.query.start, 'semana') : today());
@@ -931,11 +993,11 @@ app.get('/api/reports/week', auth, admin, wrap(async (req) => {
     const day = addDays(start, k);
     const e = find(cur.exp, day);
     return { day, total: find(cur.sales, day).total || 0, n: find(cur.sales, day).n || 0,
-      profit: (find(cur.items, day).profit || 0) + (find(cur.wd, day).fees || 0), impl: e.impl || 0, ped: e.ped || 0 };
+      profit: (find(cur.items, day).profit || 0) + (find(cur.wd, day).fees || 0), impl: e.impl || 0, ped: e.ped || 0, lost: find(cur.lost, day).lost || 0 };
   });
   const sum = (w) => {
     const f = (rows, k) => rows.reduce((t, r) => t + (r[k] || 0), 0);
-    return { total: f(w.sales, 'total'), n: f(w.sales, 'n'), profit: f(w.items, 'profit') + f(w.wd, 'fees'), impl: f(w.exp, 'impl'), ped: f(w.exp, 'ped') };
+    return { total: f(w.sales, 'total'), n: f(w.sales, 'n'), profit: f(w.items, 'profit') + f(w.wd, 'fees'), impl: f(w.exp, 'impl'), ped: f(w.exp, 'ped'), lost: f(w.lost, 'lost') };
   };
   return { start, end: addDays(start, 6), days, totals: sum(cur), previous: sum(old), top };
 }));

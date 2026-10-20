@@ -42,7 +42,7 @@ async function act(fn, ok) {
 }
 
 const S = { user: null, view: null, chat: [], peerRead: 0, peer: null, chatOpen: false, cart: [], benefit: null, method: 'efectivo', cat: 'all', q: '' };
-const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['gastos', 'Gastos'], ['reportes', 'Reportes'], ['turnos', 'Turnos'], ['horario', 'Horario'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
+const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['emprendimientos', 'Emprendimientos'], ['gastos', 'Gastos'], ['reportes', 'Reportes'], ['turnos', 'Turnos'], ['horario', 'Horario'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
 const TURNO_TABS = [['caja', 'Caja'], ['vender', 'Vender'], ['inventario', 'Productos'], ['turnos', 'Mis turnos'], ['horario', 'Horario']];
 
 function modal(html) {
@@ -273,7 +273,7 @@ const views = {
         <div><label>Motivo</label><input id="an" maxlength="200"></div></div>
         <p><button class="btn" onclick="A.adjust()">Registrar</button></p></div>
       <div class="card tw"><h3>Descartar productos (pérdida)</h3>
-        <p class="mute">Producto que no se vendió y se regala o se bota. Sale del stock y se cuenta como pérdida al costo; no entra dinero ni cambia la caja ni la ganancia.</p>
+        <p class="mute">Producto que no se vendió y se regala o se bota. Sale del stock y se cuenta como pérdida al costo; no entra dinero ni cambia la caja. La pérdida se descuenta de la ganancia neta cuando pagues al emprendimiento (pestaña Emprendimientos).</p>
         ${wo.length ? `<table><tr><th>Producto</th><th class="n">Stock</th><th class="n">Costo</th><th class="n">Descartar</th></tr>
         ${wo.map((p) => `<tr><td>${esc(p.name)}</td><td class="n">${p.stock}</td><td class="n">${money(p.buy_price)}</td>
           <td class="n"><input class="wq" data-id="${p.id}" type="number" min="0" max="${p.stock}" inputmode="numeric" style="width:5rem"></td></tr>`).join('')}</table>
@@ -286,6 +286,19 @@ const views = {
       <div class="card tw"><h3>Movimientos manuales</h3><table><tr><th>Fecha</th><th>Quién</th><th>Medio</th><th class="n">Monto</th><th>Motivo</th></tr>
       ${adjustments.map((a) => `<tr><td>${dt(a.created_at)}</td><td>${esc(a.user)}</td><td>${a.method}</td><td class="n ${a.amount < 0 ? 'err' : 'ok'}">${money(a.amount)}</td><td>${esc(a.note)}</td></tr>`).join('') || '<tr><td colspan="5" class="mute">Sin movimientos.</td></tr>'}</table></div>`;
     A.writeOffReport();
+  },
+
+  async emprendimientos() {
+    const { pending, history, register } = await api('/payouts');
+    $('#main').innerHTML = `<h2>Pago a emprendimientos</h2>
+      <p class="mute">Lo pendiente por pagar es el costo de lo vendido más el costo de lo descartado desde el último pago de cada emprendimiento (categoría). Al pagar se descuenta de la caja y la pérdida de los descartes se resta de la ganancia neta.</p>
+      <div class="grid"><div class="stat"><span>Efectivo en caja</span><b>${money(register.cash)}</b></div><div class="stat"><span>Nequi en caja</span><b>${money(register.nequi)}</b></div></div><br>
+      <div class="card tw"><h3>Pendiente de pago</h3>${pending.length ? `<table><tr><th>Emprendimiento</th><th class="n">Vendido</th><th class="n">Descartado</th><th class="n">A pagar</th><th>Pagar con</th><th></th></tr>
+      ${pending.map((p, i) => `<tr><td>${esc(p.category)}</td><td class="n">${p.sold_qty} · ${money(p.sold_cost)}</td><td class="n">${p.lost_qty} · ${money(p.lost_cost)}</td><td class="n"><b>${money(p.total)}</b></td>
+        <td><select id="pm${i}"><option value="efectivo">Efectivo</option><option value="nequi">Nequi</option></select></td>
+        <td class="n"><button class="btn sm" onclick="A.payout(${p.category_id}, ${i}, ${p.total}, '${esc(p.category).replace(/'/g, '')}')">Pagar</button></td></tr>`).join('')}</table>` : '<span class="mute">Nada pendiente.</span>'}</div>
+      <div class="card tw"><h3>Pagos realizados</h3><table><tr><th>Fecha</th><th>Quién</th><th>Emprendimiento</th><th>Medio</th><th class="n">Vendido</th><th class="n">Descartado</th><th class="n">Total</th></tr>
+      ${history.map((y) => `<tr><td>${dt(y.created_at)}</td><td>${esc(y.user)}</td><td>${esc(y.category)}</td><td>${y.method}</td><td class="n">${money(y.sold_cost)}</td><td class="n">${money(y.lost_cost)}</td><td class="n">${money(y.total)}</td></tr>`).join('') || '<tr><td colspan="7" class="mute">Sin pagos.</td></tr>'}</table></div>`;
   },
 
   async gastos() {
@@ -327,7 +340,7 @@ const views = {
     const dn = (s) => new Date(s + 'T12:00:00Z').toLocaleDateString('es-CO', { timeZone: 'UTC', weekday: 'short', day: 'numeric' });
     const pct = (a, b) => b ? `<small class="${a >= b ? 'ok' : 'err'}">${a >= b ? '▲' : '▼'} ${Math.abs(Math.round((a - b) / b * 100))}% vs semana anterior</small>` : '<small class="mute">Sin semana anterior</small>';
     const t = w.totals, pv = w.previous, max = Math.max(1, ...w.days.map((d) => d.total));
-    const net = t.profit - t.impl;
+    const net = t.profit - t.impl - t.lost;
     $('#main').innerHTML = `<h2>Reporte semanal</h2>
       <div class="row" style="align-items:center;margin-bottom:1rem">
         <button class="btn sec sm" onclick="A.week(-7)">← Anterior</button>
@@ -337,7 +350,8 @@ const views = {
         <div class="stat"><span>Ventas (${t.n})</span><b>${money(t.total)}</b>${pct(t.total, pv.total)}</div>
         <div class="stat"><span>Ganancia</span><b>${money(t.profit)}</b>${pct(t.profit, pv.profit)}</div>
         <div class="stat"><span>Gastos de implementos</span><b>${money(t.impl)}</b></div>
-        <div class="stat"><span>Ganancia neta</span><b>${money(net)}</b>${pct(net, pv.profit - pv.impl)}</div>
+        <div class="stat"><span>Ganancia neta</span><b>${money(net)}</b>${pct(net, pv.profit - pv.impl - pv.lost)}</div>
+        <div class="stat"><span>Pérdidas por descartes (pagadas)</span><b>${money(t.lost)}</b></div>
         <div class="stat"><span>Pagos de pedidos</span><b>${money(t.ped)}</b></div>
       </div><br>
       <div class="card tw"><h3>Por día</h3><table><tr><th>Día</th><th class="n">Ventas</th><th class="n">Total</th><th></th><th class="n">Ganancia</th><th class="n">Gastos</th><th class="n">Pedidos</th></tr>
@@ -699,6 +713,12 @@ const A = window.A = {
       <h3 style="margin-top:1rem">Detalle</h3><table><tr><th>Fecha</th><th>Quién</th><th>Producto</th><th class="n">Cant.</th><th class="n">Pérdida</th><th>Motivo</th></tr>
       ${r.rows.map((x) => `<tr><td>${dt(x.created_at)}</td><td>${esc(x.user)}</td><td>${esc(x.product)}</td><td class="n">${x.qty}</td><td class="n">${money(x.qty * x.cost)}</td><td>${esc(x.note || '')}</td></tr>`).join('')}</table>`
       : '<span class="mute">Sin descartes en este rango.</span>');
+  },
+
+  async payout(cat, i, total, name) {
+    const m = val('pm' + i);
+    if (!confirm(`¿Pagar ${money(total)} a ${name} con ${m}? Se descuenta de la caja.`)) return;
+    if (await act(() => api('/payouts', 'POST', { category_id: cat, method: m }), 'Pago registrado')) views.emprendimientos();
   },
 
   kind(k) {
