@@ -274,12 +274,12 @@ const views = {
         <p><button class="btn" onclick="A.adjust()">Registrar</button></p></div>
       <div class="card tw"><h3>Descartar productos (pérdida)</h3>
         <p class="mute">Producto que no se vendió y se regala o se bota. Sale del stock y se cuenta como pérdida al costo; no entra dinero ni cambia la caja. La pérdida se descuenta de la ganancia neta cuando pagues al emprendimiento (pestaña Emprendimientos).</p>
-        ${wo.length ? `<table><tr><th>Producto</th><th class="n">Stock</th><th class="n">Costo</th><th class="n">Descartar</th></tr>
-        ${wo.map((p) => `<tr><td>${esc(p.name)}</td><td class="n">${p.stock}</td><td class="n">${money(p.buy_price)}</td>
+        ${wo.length ? `<input id="wsq" placeholder="Buscar por nombre o categoría" oninput="A.filterWo()" style="margin-bottom:.5rem"><table id="wot"><tr><th>Producto</th><th class="n">Stock</th><th class="n">Costo</th><th class="n">Descartar</th></tr>
+        ${wo.map((p) => `<tr data-s="${esc((p.name + ' ' + (p.category || '')).toLowerCase())}"><td>${esc(p.name)}${p.category ? ` <small class="mute">${esc(p.category)}</small>` : ''}</td><td class="n">${p.stock}</td><td class="n">${money(p.buy_price)}</td>
           <td class="n"><input class="wq" data-id="${p.id}" type="number" min="0" max="${p.stock}" inputmode="numeric" style="width:5rem"></td></tr>`).join('')}</table>
         <div class="row"><div><label>Motivo (opcional)</label><input id="wn" maxlength="200" placeholder="Ej. sobrante del día"></div></div>
         <p><button class="btn" onclick="A.writeOff()">Descartar lo indicado</button>
-        <button class="btn sec" onclick="A.writeOff(true)">Vaciar todo el stock</button></p>` : '<span class="mute">No hay productos con stock.</span>'}</div>
+        <button class="btn sec" onclick="A.writeOff(true)">Vaciar stock mostrado</button></p>` : '<span class="mute">No hay productos con stock.</span>'}</div>
       <div class="card tw"><h3>Reporte de pérdidas</h3>
         <div class="row"><div><label>Desde</label><input id="wf" type="date"></div><div><label>Hasta</label><input id="wt" type="date"></div>
         <div><label>&nbsp;</label><button class="btn sec" onclick="A.writeOffReport()">Ver</button></div></div><div id="wr"></div></div>
@@ -691,11 +691,15 @@ const A = window.A = {
     if (await act(() => api('/register/adjust', 'POST', { method: val('am'), amount: val('aa'), note: val('an') }), 'Registrado')) boot();
   },
 
+  filterWo() {
+    const q = val('wsq').trim().toLowerCase();
+    document.querySelectorAll('#wot tr[data-s]').forEach((r) => { r.style.display = r.dataset.s.includes(q) ? '' : 'none'; });
+  },
   async writeOff(all) {
-    const items = [...document.querySelectorAll('.wq')].map((i) => ({ product_id: +i.dataset.id, qty: all ? +i.max : +i.value })).filter((i) => i.qty > 0);
+    const items = [...document.querySelectorAll('.wq')].filter((i) => i.closest('tr').style.display !== 'none').map((i) => ({ product_id: +i.dataset.id, qty: all ? +i.max : +i.value })).filter((i) => i.qty > 0);
     if (!items.length) return toast('Indica cuántas unidades descartar');
     const cost = items.reduce((t, i) => t + i.qty * S.prods.find((p) => p.id === i.product_id).buy_price, 0);
-    if (!confirm(`${all ? '¿Vaciar TODO el stock?' : '¿Descartar estos productos?'} Se registra una pérdida de ${money(cost)}.`)) return;
+    if (!confirm(`${all ? '¿Vaciar el stock de los productos mostrados?' : '¿Descartar estos productos?'} Se registra una pérdida de ${money(cost)}.`)) return;
     const r = await act(() => api('/write-offs', 'POST', { items, note: val('wn') }));
     if (r) { toast(`Pérdida registrada: ${money(r.total)}`); boot(); }
   },
