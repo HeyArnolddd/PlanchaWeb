@@ -273,7 +273,7 @@ const views = {
         <div><label>Motivo</label><input id="an" maxlength="200"></div></div>
         <p><button class="btn" onclick="A.adjust()">Registrar</button></p></div>
       <div class="card tw"><h3>Descartar productos (pérdida)</h3>
-        <p class="mute">Producto que no se vendió y se regala o se bota. Sale del stock y se cuenta como pérdida al costo; no entra dinero ni cambia la caja. La pérdida se descuenta de la ganancia neta cuando pagues al emprendimiento (pestaña Emprendimientos).</p>
+        <p class="mute">Producto que no se vendió y se regala o se bota. Sale del stock y se cuenta como pérdida al costo (las empanadas salen del stock sin generar pérdida, porque se pagan en Gastos); no entra dinero ni cambia la caja. La pérdida se descuenta de la ganancia neta cuando pagues al emprendimiento (pestaña Emprendimientos).</p>
         ${wo.length ? `<input id="wsq" placeholder="Buscar por nombre o categoría" oninput="A.filterWo()" style="margin-bottom:.5rem"><table id="wot"><tr><th>Producto</th><th class="n">Stock</th><th class="n">Costo</th><th class="n">Descartar</th></tr>
         ${wo.map((p) => `<tr data-s="${esc((p.name + ' ' + (p.category || '')).toLowerCase())}"><td>${esc(p.name)}${p.category ? ` <small class="mute">${esc(p.category)}</small>` : ''}</td><td class="n">${p.stock}</td><td class="n">${money(p.buy_price)}</td>
           <td class="n"><input class="wq" data-id="${p.id}" type="number" min="0" max="${p.stock}" inputmode="numeric" style="width:5rem"></td></tr>`).join('')}</table>
@@ -291,7 +291,7 @@ const views = {
   async emprendimientos() {
     const { pending, history, register } = await api('/payouts');
     $('#main').innerHTML = `<h2>Pago a emprendimientos</h2>
-      <p class="mute">Cada producto de emprendimientos se paga por separado, a nombre de quien corresponda. Se paga el costo de lo vendido más el 60% del costo de lo perdido (descartado; las empanadas perdidas se pagan al 100%) desde el último pago de ese producto. Al pagar se descuenta de la caja y la pérdida se resta de la ganancia neta.</p>
+      <p class="mute">Cada producto de emprendimientos se paga por separado, a nombre de quien corresponda. Se paga el costo de lo vendido más el 60% del costo de lo perdido (descartado) desde el último pago de ese producto. Al pagar se descuenta de la caja y la pérdida se resta de la ganancia neta.</p>
       <div class="grid"><div class="stat"><span>Efectivo en caja</span><b>${money(register.cash)}</b></div><div class="stat"><span>Nequi en caja</span><b>${money(register.nequi)}</b></div></div><br>
       <div class="card tw"><h3>Pendiente de pago</h3>${pending.length ? `<table><tr><th>Producto</th><th class="n">Vendidos</th><th class="n">Perdidos</th><th class="n">A pagar</th><th>A nombre de</th><th>Pagar con</th><th></th></tr>
       ${pending.map((p, i) => `<tr><td><b>${esc(p.product)}</b></td>
@@ -702,7 +702,7 @@ const A = window.A = {
   async writeOff(all) {
     const items = [...document.querySelectorAll('.wq')].filter((i) => i.closest('tr').style.display !== 'none').map((i) => ({ product_id: +i.dataset.id, qty: all ? +i.max : +i.value })).filter((i) => i.qty > 0);
     if (!items.length) return toast('Indica cuántas unidades descartar');
-    const cost = items.reduce((t, i) => t + i.qty * S.prods.find((p) => p.id === i.product_id).buy_price, 0);
+    const cost = items.reduce((t, i) => { const p = S.prods.find((x) => x.id === i.product_id); return t + (/^empanada/i.test(p.category || '') ? 0 : i.qty * p.buy_price); }, 0);
     if (!confirm(`${all ? '¿Vaciar el stock de los productos mostrados?' : '¿Descartar estos productos?'} Se registra una pérdida de ${money(cost)}.`)) return;
     const r = await act(() => api('/write-offs', 'POST', { items, note: val('wn') }));
     if (r) { toast(`Pérdida registrada: ${money(r.total)}`); boot(); }

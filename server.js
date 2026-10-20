@@ -826,15 +826,17 @@ app.post('/api/write-offs', auth, admin, wrap(async (req) => {
     let total = 0, n = 0;
     for (const it of items) {
       const id = int(it.product_id, 'producto'), qty = int(it.qty, 'cantidad', { min: 1 });
-      const p = await t.get('SELECT * FROM products WHERE id=$1 FOR UPDATE', [id]);
+      const p = await t.get('SELECT p.*, (SELECT c.name FROM categories c WHERE c.id=p.category_id) AS category FROM products p WHERE p.id=$1 FOR UPDATE OF p', [id]);
       if (!p) throw new HttpError(404, 'No existe el producto');
+      const free = /^empanada/i.test(p.category || ''); // las empanadas se pagan en gastos de pedidos: salen del stock sin pérdida
       if (!p.track_stock) throw bad(`"${p.name}" no controla stock`);
       if (qty > p.stock) throw bad(`Solo quedan ${p.stock} de "${p.name}"`);
       await t.run('UPDATE products SET stock=stock-$1 WHERE id=$2', [qty, id]);
       await t.run('INSERT INTO write_offs (product_id,qty,cost,user_id,note,created_at) VALUES ($1,$2,$3,$4,$5,$6)',
-        [id, qty, p.buy_price, req.user.id, note, now()]);
-      await audit(t, req.user, 'Descartó producto', `${p.name}: -${qty} (stock ${p.stock} → ${p.stock - qty}) · pérdida ${qty * p.buy_price}${note ? ' · ' + note : ''}`);
-      total += qty * p.buy_price; n++;
+        [id, qty, free ? 0 : p.buy_price, req.user.id, note, now()]);
+      const loss = free ? 0 : qty * p.buy_price;
+      await audit(t, req.user, 'Descartó producto', `${p.name}: -${qty} (stock ${p.stock} → ${p.stock - qty}) · ${free ? 'sin pérdida' : 'pérdida ' + loss}${note ? ' · ' + note : ''}`);
+      total += loss; n++;
     }
     return { ok: true, total, n };
   });
@@ -849,25 +851,24 @@ app.get('/api/write-offs', auth, admin, wrap(async (req) => {
 
 // ---------- Pago a emprendimientos (viernes): costo de lo vendido + 60% del costo de lo descartado ----------
 const LOST_PAY = 0.6; // de lo descartado solo se paga el 60% del precio de compra acordado
-const isEmp = (name) => /^(emprendimiento|empanada)/i.test(name || '');
-const lostRate = (cat) => (/^empanada/i.test(cat || '') ? 1 : LOST_PAY); // las empanadas perdidas se pagan completas
-async function pendingPayouts(x, productId, rate, lock = false) {
+const isEmp = (name) => /^emprendimiento/i.test(name || '');
+async function pendingPayouts(x, productId, lock = false) {
   const [sold, lost] = await Promise.all([
     x.all(`SELECT i.id, i.qty, i.cost FROM sale_items i JOIN sales s ON s.id=i.sale_id
       WHERE s.voided=0 AND i.payout_id IS NULL AND i.product_id=$1${lock ? ' FOR UPDATE OF i' : ''}`, [productId]),
     x.all(`SELECT w.id, w.qty, w.cost FROM write_offs w WHERE w.payout_id IS NULL AND w.product_id=$1${lock ? ' FOR UPDATE OF w' : ''}`, [productId]),
   ]);
   const f = (rows) => rows.reduce((t, r) => t + r.qty * r.cost, 0);
-  return { sold, lost, sold_cost: f(sold), lost_cost: Math.round(f(lost) * rate), sold_qty: sold.reduce((t, r) => t + r.qty, 0), lost_qty: lost.reduce((t, r) => t + r.qty, 0) };
+  return { sold, lost, sold_cost: f(sold), lost_cost: Math.round(f(lost) * LOST_PAY), sold_qty: sold.reduce((t, r) => t + r.qty, 0), lost_qty: lost.reduce((t, r) => t + r.qty, 0) };
 }
 app.get('/api/payouts', auth, admin, wrap(async () => {
   const prods = (await D.all(`SELECT p.id, p.name, c.name AS category FROM products p JOIN categories c ON c.id=p.category_id ORDER BY p.name`))
     .filter((p) => isEmp(p.category));
   const pending = [];
   for (const p of prods) {
-    const x = await pendingPayouts(D, p.id, lostRate(p.category));
+    const x = await pendingPayouts(D, p.id);
     if (x.sold_qty || x.lost_qty) pending.push({ product_id: p.id, product: p.name, sold_qty: x.sold_qty, sold_cost: x.sold_cost,
-      lost_qty: x.lost_qty, lost_cost: x.lost_cost, rate: lostRate(p.category) * 100, total: x.sold_cost + x.lost_cost });
+      lost_qty: x.lost_qty, lost_cost: x.lost_cost, total: x.sold_cost + x.lost_cost });
   }
   const history = await D.all(`SELECT y.*, u.name AS "user" FROM payouts y JOIN users u ON u.id=y.user_id ORDER BY y.id DESC LIMIT 100`);
   return { pending, history, register: await reg() };
@@ -879,7 +880,7 @@ app.post('/api/payouts', auth, admin, wrap(async (req) => {
   return tx(async (t) => {
     const pr = await t.get('SELECT p.name, c.name AS category FROM products p JOIN categories c ON c.id=p.category_id WHERE p.id=$1', [productId]);
     if (!pr || !isEmp(pr.category)) throw new HttpError(404, 'No existe el producto de emprendimiento');
-    const p = await pendingPayouts(t, productId, lostRate(pr.category), true);
+    const p = await pendingPayouts(t, productId, true);
     const total = p.sold_cost + p.lost_cost;
     if (total <= 0) throw bad('No hay nada pendiente por pagar');
     const r = await t.get('SELECT cash,nequi FROM register WHERE id=1 FOR UPDATE');
@@ -891,8 +892,8 @@ app.post('/api/payouts', auth, admin, wrap(async (req) => {
     if (p.lost.length) await t.run('UPDATE write_offs SET payout_id=$1 WHERE id = ANY($2::int[])', [id, p.lost.map((x) => x.id)]);
     await t.run(`UPDATE register SET ${col(m)}=${col(m)}-$1 WHERE id=1`, [total]);
     await t.run('INSERT INTO expenses (user_id,description,amount,method,kind,created_at) VALUES ($1,$2,$3,$4,$5,$6)',
-      [req.user.id, `Pago emprendimiento ${pr.name} a nombre de ${payee} · vendidos ${p.sold_qty} (${p.sold_cost}) + perdidos ${p.lost_qty} al ${lostRate(pr.category) * 100}% (${p.lost_cost})`, total, m, 'pedido', now()]);
-    await audit(t, req.user, 'Pagó a emprendimiento', `${pr.name} a nombre de ${payee} · ${total} (${m}) · vendidos ${p.sold_qty} · perdidos ${p.lost_qty} (${lostRate(pr.category) * 100}%: ${p.lost_cost})`);
+      [req.user.id, `Pago emprendimiento ${pr.name} a nombre de ${payee} · vendidos ${p.sold_qty} (${p.sold_cost}) + perdidos ${p.lost_qty} al 60% (${p.lost_cost})`, total, m, 'pedido', now()]);
+    await audit(t, req.user, 'Pagó a emprendimiento', `${pr.name} a nombre de ${payee} · ${total} (${m}) · vendidos ${p.sold_qty} · perdidos ${p.lost_qty} (60%: ${p.lost_cost})`);
     return { ok: true, total };
   });
 }));
