@@ -953,6 +953,20 @@ app.get('/api/dashboard', auth, admin, wrap(async () => {
   return { register, today: { ...t, profit: profit.p + wd.fees, expenses: exp.impl, orders: exp.ped, withdrawals: wd.n, fees: wd.fees }, top, low, inventory: inv, open_shift: shift || null };
 }));
 
+// Resumen para quien atiende: sin dinero en caja, costos ni ganancias
+app.get('/api/summary', auth, wrap(async () => {
+  const start = new Date(); start.setUTCHours(5, 0, 0, 0);
+  if (start > new Date()) start.setUTCDate(start.getUTCDate() - 1);
+  const [t, top, low, shift] = await Promise.all([
+    D.get('SELECT COALESCE(SUM(total),0) AS total, COUNT(*) AS n FROM sales WHERE voided=0 AND created_at>=$1', [start]),
+    D.all(`SELECT i.name, SUM(i.qty) AS qty FROM sale_items i JOIN sales s ON s.id=i.sale_id
+      WHERE s.voided=0 AND s.created_at>=$1 GROUP BY i.product_id, i.name ORDER BY qty DESC LIMIT 8`, [start]),
+    D.all('SELECT name, stock, min_stock FROM products WHERE active=1 AND track_stock=1 AND stock<=min_stock ORDER BY stock'),
+    openShift(),
+  ]);
+  return { today: t, top, low, open_shift: shift || null };
+}));
+
 // ---------- Reportes, extracto CSV y registro de actividad (admin) ----------
 const TZ = 'America/Bogota';
 const ymd = (v, name) => {

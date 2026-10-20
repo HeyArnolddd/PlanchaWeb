@@ -43,7 +43,7 @@ async function act(fn, ok) {
 
 const S = { user: null, view: null, chat: [], peerRead: 0, peer: null, chatOpen: false, cart: [], benefit: null, method: 'efectivo', cat: 'all', q: '' };
 const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['emprendimientos', 'Emprendimientos'], ['gastos', 'Gastos'], ['reportes', 'Reportes'], ['turnos', 'Turnos'], ['horario', 'Horario'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
-const TURNO_TABS = [['caja', 'Caja'], ['vender', 'Vender'], ['inventario', 'Productos'], ['turnos', 'Mis turnos'], ['horario', 'Horario']];
+const TURNO_TABS = [['resumen', 'Resumen'], ['caja', 'Caja'], ['vender', 'Vender'], ['inventario', 'Productos'], ['turnos', 'Mis turnos'], ['horario', 'Horario']];
 
 function modal(html) {
   const m = document.createElement('div'); m.className = 'modal';
@@ -162,6 +162,17 @@ function loginView() {
 // ---------- Vistas ----------
 const views = {
   async resumen() {
+    if (S.user.role !== 'admin') {
+      const d = await api('/summary'), s = d.open_shift;
+      $('#main').innerHTML = `<h2>Resumen</h2>
+        <div class="grid"><div class="stat"><span>Ventas de hoy (${d.today.n})</span><b>${money(d.today.total)}</b></div></div><br>
+        <div class="card"><h3>Turno actual</h3>${s ? `<b>${esc(s.user_name)}</b> abrió caja ${dt(s.opened_at)}` : '<span class="mute">No hay caja abierta.</span>'}</div>
+        <div class="grid">
+          <div class="card"><h3>Stock bajo</h3>${d.low.length ? `<table>${d.low.map((p) => `<tr><td>${esc(p.name)}</td><td class="n ${p.stock === 0 ? 'err' : 'warn'}">${p.stock}</td></tr>`).join('')}</table>` : '<span class="mute">Todo bien.</span>'}</div>
+          <div class="card"><h3>Más vendidos hoy</h3>${d.top.length ? `<table>${d.top.map((p) => `<tr><td>${esc(p.name)}</td><td class="n">${p.qty}</td></tr>`).join('')}</table>` : '<span class="mute">Sin ventas aún.</span>'}</div>
+        </div>`;
+      return;
+    }
     const d = await api('/dashboard');
     const s = d.open_shift;
     $('#main').innerHTML = `
