@@ -380,95 +380,25 @@ const views = {
 
   async productos() {
     const [prods, cats] = await Promise.all([api('/products'), api('/categories')]);
-    S.prods = prods; S.cats = cats;
-    $('#main').innerHTML = `<div class="row" style="align-items:center"><h2 style="flex:3">Productos y stock</h2>
-      <button class="btn" onclick="A.productForm()">+ Producto</button>
-      <button class="btn sec" onclick="A.catManager()">Categorías</button></div>
-      <div class="card tw"><table><tr><th>Producto</th><th>Categoría</th><th class="n">Compra</th><th class="n">Venta</th><th class="n">Stock</th><th></th></tr>
-      ${prods.map((p) => `<tr style="${p.active ? '' : 'opacity:.5'}"><td>${p.photo ? `<img class="thumb" loading="lazy" src="${photoUrl(p)}" alt="">` : ''}${esc(p.name)}</td><td>${esc(p.category || '—')}</td>
-        <td class="n">${money(p.buy_price)}</td><td class="n">${money(p.sell_price)}</td>
-        <td class="n ${p.track_stock && p.stock <= p.min_stock ? 'err' : ''}"><b>${p.track_stock ? p.stock : '—'}</b></td>
-        <td class="n">${p.track_stock ? `<button class="btn sm" onclick="A.stockForm(${p.id})">+ Stock</button>` : ''}
-        <button class="btn sec sm" onclick="A.productForm(${p.id})">Editar</button></td></tr>`).join('') || '<tr><td colspan="6" class="mute">Aún no hay productos.</td></tr>'}</table></div>`;
+    S.prods = prods; S.cats = cats; S.pq = ''; S.pcat = 'all'; S.pst = 'all';
+    const act = prods.filter((p) => p.active), tr = act.filter((p) => p.track_stock);
+    const cost = tr.reduce((s, p) => s + p.stock * p.buy_price, 0), value = tr.reduce((s, p) => s + p.stock * p.sell_price, 0);
+    $('#main').innerHTML = `<div class="ph"><h2>Productos y stock</h2><span class="sp"></span>
+        <button class="btn" onclick="A.productForm()">+ Producto</button><button class="btn sec" onclick="A.catManager()">Categorías</button></div>
+      <div class="grid">
+        <div class="stat"><span>Productos activos</span><b>${act.length}</b><small>${prods.length - act.length} desactivados</small></div>
+        <div class="stat"><span>Inventario (costo → venta)</span><b style="font-size:1.1rem">${money(cost)} → ${money(value)}</b><small>Ganancia potencial ${money(value - cost)}</small></div>
+        <div class="stat"><span>Stock bajo</span><b>${tr.filter((p) => p.stock > 0 && p.stock <= p.min_stock).length}</b><small>Por debajo del mínimo</small></div>
+        <div class="stat"><span>Agotados</span><b>${tr.filter((p) => p.stock <= 0).length}</b><small>Sin unidades</small></div>
+      </div>${prodToolbar(true)}<div class="pgrid" id="pgrid"></div>`;
+    A.pgrid();
   },
-
-  async dinero() {
-    const [{ register, adjustments }, prods] = await Promise.all([api('/register'), api('/products')]);
-    S.prods = prods;
-    const wo = prods.filter((p) => p.active && p.track_stock && p.stock > 0);
-    $('#main').innerHTML = `<h2>Dinero total en caja</h2>
-      <div class="grid"><div class="stat"><span>Efectivo</span><b>${money(register.cash)}</b></div>
-      <div class="stat"><span>Nequi</span><b>${money(register.nequi)}</b></div>
-      <div class="stat"><span>Total</span><b>${money(register.cash + register.nequi)}</b></div></div><br>
-      <div class="card"><h3>Registrar ingreso o retiro</h3>
-        <p class="mute">Úsalo para fijar la base inicial, consignar, o sacar dinero (ej. para comprar mercancía). Usa un valor negativo para retirar.</p>
-        <div class="row"><div><label>Medio</label><select id="am"><option value="efectivo">Efectivo</option><option value="nequi">Nequi</option></select></div>
-        <div><label>Monto (+ ingreso / − retiro)</label><input id="aa" type="number" inputmode="numeric"></div>
-        <div><label>Motivo</label><input id="an" maxlength="200"></div></div>
-        <p><button class="btn" onclick="A.adjust()">Registrar</button></p></div>
-      <div class="card tw"><h3>Descartar productos (pérdida)</h3>
-        <p class="mute">Producto que no se vendió y se regala o se bota. Sale del stock y se cuenta como pérdida al costo (las empanadas salen del stock sin generar pérdida, porque se pagan en Gastos); no entra dinero ni cambia la caja. La pérdida se descuenta de la ganancia neta cuando pagues al emprendimiento (pestaña Emprendimientos).</p>
-        ${wo.length ? `<input id="wsq" placeholder="Buscar por nombre o categoría" oninput="A.filterWo()" style="margin-bottom:.5rem"><table id="wot"><tr><th>Producto</th><th class="n">Stock</th><th class="n">Costo</th><th class="n">Descartar</th></tr>
-        ${wo.map((p) => `<tr data-s="${esc((p.name + ' ' + (p.category || '')).toLowerCase())}"><td>${esc(p.name)}${p.category ? ` <small class="mute">${esc(p.category)}</small>` : ''}</td><td class="n">${p.stock}</td><td class="n">${money(p.buy_price)}</td>
-          <td class="n"><input class="wq" data-id="${p.id}" type="number" min="0" max="${p.stock}" inputmode="numeric" style="width:5rem"></td></tr>`).join('')}</table>
-        <div class="row"><div><label>Motivo (opcional)</label><input id="wn" maxlength="200" placeholder="Ej. sobrante del día"></div></div>
-        <p><button class="btn" onclick="A.writeOff()">Descartar lo indicado</button>
-        <button class="btn sec" onclick="A.writeOff(true)">Vaciar stock mostrado</button></p>` : '<span class="mute">No hay productos con stock.</span>'}</div>
-      <div class="card tw"><h3>Reporte de pérdidas</h3>
-        <div class="row"><div><label>Desde</label><input id="wf" type="date"></div><div><label>Hasta</label><input id="wt" type="date"></div>
-        <div><label>&nbsp;</label><button class="btn sec" onclick="A.writeOffReport()">Ver</button></div></div><div id="wr"></div></div>
-      <div class="card tw"><h3>Movimientos manuales</h3><table><tr><th>Fecha</th><th>Quién</th><th>Medio</th><th class="n">Monto</th><th>Motivo</th></tr>
-      ${adjustments.map((a) => `<tr><td>${dt(a.created_at)}</td><td>${esc(a.user)}</td><td>${a.method}</td><td class="n ${a.amount < 0 ? 'err' : 'ok'}">${money(a.amount)}</td><td>${esc(a.note)}</td></tr>`).join('') || '<tr><td colspan="5" class="mute">Sin movimientos.</td></tr>'}</table></div>`;
-    A.writeOffReport();
-  },
-
-  async emprendimientos() {
-    const { pending, history, register } = await api('/payouts');
-    $('#main').innerHTML = `<h2>Pago a emprendimientos</h2>
-      <p class="mute">Cada producto de emprendimientos se paga por separado, a nombre de quien corresponda. Se paga el costo de lo vendido más el 60% del costo de lo perdido (descartado) desde el último pago de ese producto. Al pagar se descuenta de la caja y la pérdida se resta de la ganancia neta.</p>
-      <div class="grid"><div class="stat"><span>Efectivo en caja</span><b>${money(register.cash)}</b></div><div class="stat"><span>Nequi en caja</span><b>${money(register.nequi)}</b></div></div><br>
-      <div class="card tw"><h3>Pendiente de pago</h3>${pending.length ? `<table><tr><th>Producto</th><th class="n">Vendidos</th><th class="n">Perdidos</th><th class="n">A pagar</th><th>A nombre de</th><th>Pagar con</th><th></th></tr>
-      ${pending.map((p, i) => `<tr><td><b>${esc(p.product)}</b></td>
-        <td class="n">${p.sold_qty} · ${money(p.sold_cost)}</td>
-        <td class="n ${p.lost_qty ? 'err' : ''}">${p.lost_qty} · ${money(p.lost_cost)}<br><small class="mute">${p.rate}%</small></td>
-        <td class="n"><b>${money(p.total)}</b></td>
-        <td><input id="pp${i}" maxlength="100" placeholder="Nombre" style="min-width:8rem"></td>
-        <td><select id="pm${i}"><option value="efectivo">Efectivo</option><option value="nequi">Nequi</option></select></td>
-        <td class="n"><button class="btn sm" onclick="A.payout(${p.product_id}, ${i}, ${p.total}, '${esc(p.product).replace(/'/g, '')}')">Pagar</button></td></tr>`).join('')}</table>` : '<span class="mute">Nada pendiente en emprendimientos.</span>'}</div>
-      <div class="card tw"><h3>Pagos realizados</h3><table><tr><th>Fecha</th><th>Producto</th><th>A nombre de</th><th>Medio</th><th class="n">Vendidos</th><th class="n">Perdidos</th><th class="n">Total</th></tr>
-      ${history.map((y) => `<tr><td>${dt(y.created_at)}</td><td>${esc(y.category)}</td><td>${esc(y.payee || '—')}</td><td>${y.method}</td><td class="n">${y.sold_qty} · ${money(y.sold_cost)}</td><td class="n">${y.lost_qty} · ${money(y.lost_cost)}</td><td class="n">${money(y.total)}</td></tr>`).join('') || '<tr><td colspan="7" class="mute">Sin pagos.</td></tr>'}</table></div>`;
-  },
-
-  async gastos() {
-    const [rows, cats] = await Promise.all([api('/expenses'), api('/categories')]);
-    S.cats = cats;
-    const sum = (k) => rows.filter((e) => e.kind === k).reduce((t, e) => t + e.amount, 0);
-    $('#main').innerHTML = `<h2>Gastos</h2>
-      <div class="card"><div class="seg" style="margin-bottom:.5rem">
-        <button id="k1" class="on" onclick="A.kind('pedido')">🚚 Pago de pedido</button>
-        <button id="k2" onclick="A.kind('implementos')">🥄 Implementos</button></div>
-        <p class="mute" id="kh"></p>
-        <div class="row"><div id="gcw"><label>Proveedor / categoría</label><select id="gc"><option value="">Otro</option>${cats.map((c) => `<option>${esc(c.name)}</option>`).join('')}</select></div>
-        <div style="flex:2"><label id="gdl">Nota (opcional)</label><input id="gd" maxlength="150"></div>
-        <div><label>Monto</label><input id="ga" type="number" inputmode="numeric" min="1"></div>
-        <div><label>¿De dónde salió?</label><select id="gm"><option value="">Fuera de la caja</option><option value="efectivo">Efectivo de la caja</option><option value="nequi">Nequi de la caja</option></select></div></div>
-        <p><button class="btn" onclick="A.addExpense()">Registrar gasto</button></p></div>
-      <div class="grid"><div class="stat"><span>Total pedidos pagados</span><b>${money(sum('pedido'))}</b></div>
-        <div class="stat"><span>Total implementos</span><b>${money(sum('implementos'))}</b></div></div><br>
-      <div class="card tw"><h3>Historial</h3><table><tr><th>Fecha</th><th>Tipo</th><th>Descripción</th><th>Salió de</th><th class="n">Monto</th><th></th></tr>
-      ${rows.map((e) => `<tr><td>${dt(e.created_at)}</td><td><span class="tag">${e.kind === 'pedido' ? 'Pedido' : 'Implementos'}</span></td><td>${esc(e.description)}</td><td>${e.method || 'Fuera de caja'}</td><td class="n">${money(e.amount)}</td>
-        <td class="n"><button class="btn sec sm" onclick="A.delExpense(${e.id})">Borrar</button></td></tr>`).join('') || '<tr><td colspan="6" class="mute">Sin gastos.</td></tr>'}</table></div>`;
-    S.kind = 'pedido'; A.kind('pedido');
-  },
-
-  // Solo lectura: precios y stock para quien atiende
   async inventario() {
-    S.prods = (await api('/products')).filter((p) => p.active);
-    $('#main').innerHTML = `<h2>Productos y stock</h2>
-      <input id="iq" placeholder="Buscar producto…" oninput="A.invRows()">
-      <div class="card tw" style="margin-top:1rem"><table><thead><tr><th>Producto</th><th>Categoría</th><th class="n">Precio</th><th class="n">Stock</th></tr></thead><tbody id="irows"></tbody></table></div>`;
-    A.invRows();
+    S.prods = (await api('/products')).filter((p) => p.active); S.pq = ''; S.pcat = 'all'; S.pst = 'all';
+    $('#main').innerHTML = `<div class="ph"><h2>Productos y stock</h2></div>${prodToolbar(false)}<div class="pgrid" id="pgrid"></div>`;
+    A.pgrid();
   },
+
 
   async reportes() {
     S.week ||= null; S.rp ||= 30;
@@ -841,14 +771,16 @@ const A = window.A = {
   },
 
   // Productos
-  invRows() {
-    const words = norm(val('iq')).split(/\s+/).filter(Boolean);
-    const list = S.prods.filter((p) => words.every((w) => norm(p.name + ' ' + (p.category || '')).includes(w)));
-    $('#irows').innerHTML = list.map((p) => `<tr><td>${p.photo ? `<img class="thumb" loading="lazy" src="${photoUrl(p)}" alt="">` : ''}${esc(p.name)}</td>
-      <td>${esc(p.category || '—')}</td><td class="n">${money(p.sell_price)}</td>
-      <td class="n ${p.track_stock && p.stock <= p.min_stock ? 'err' : ''}"><b>${p.track_stock ? p.stock : '—'}</b></td></tr>`).join('')
-      || '<tr><td colspan="4" class="mute">Sin resultados.</td></tr>';
+  pgrid() {
+    const words = norm(S.pq).split(/\s+/).filter(Boolean), admin = S.user.role === 'admin';
+    const st = (p) => (!p.track_stock ? 'free' : p.stock <= 0 ? 'out' : p.stock <= p.min_stock ? 'low' : 'ok');
+    const list = S.prods.filter((p) => (S.pcat === 'all' || (p.category || 'Sin categoría') === S.pcat)
+      && (S.pst === 'all' || (S.pst === 'off' ? !p.active : p.active && st(p) === S.pst))
+      && words.every((w) => norm(p.name + ' ' + (p.category || '')).includes(w)));
+    $('#pgrid').innerHTML = list.map((p, i) => productCard(p, admin, st(p), i)).join('') || '<div class="card mute" style="grid-column:1/-1">Sin resultados.</div>';
   },
+  pset(k, v) { S[k] = v; document.querySelectorAll(`[data-pf="${k}"]`).forEach((b) => b.classList.toggle('on', b.dataset.v === v)); A.pgrid(); },
+
   async pickPhoto(inp) {
     if (!inp.files[0]) return;
     try { S.photo = await shrink(inp.files[0]); } catch (e) { return toast('No se pudo leer la imagen'); }
@@ -1018,7 +950,7 @@ boot();
 const STAT_TONES = [
   [/nequi/i, 'nequi', 'caja'], [/efectivo/i, 'cash', 'dinero'], [/p[eé]rdida|descart/i, 'loss', 'gastos'],
   [/gasto|implemento|comisi/i, 'exp', 'gastos'], [/pedido/i, 'orders', 'productos'], [/ganancia/i, 'gain', 'reportes'], [/rentabilidad/i, 'gain', 'reportes'], [/pagad|por pagar/i, 'ped', 'dinero'],
-  [/inventario/i, 'inv', 'productos'], [/inicio|deber[ií]a/i, 'slate', 'turnos'], [/ticket|promedio/i, 'inv', 'reportes'], [/mejor/i, 'ped', 'reportes'], [/salida/i, 'loss', 'gastos'], [/saldo|entrada/i, 'gain', 'dinero'], [/venta|total/i, 'sales', 'vender'],
+  [/inventario/i, 'inv', 'productos'], [/inicio|deber[ií]a/i, 'slate', 'turnos'], [/agotad/i, 'loss', 'gastos'], [/stock bajo/i, 'exp', 'gastos'], [/productos activos/i, 'inv', 'productos'], [/ticket|promedio/i, 'inv', 'reportes'], [/mejor/i, 'ped', 'reportes'], [/salida/i, 'loss', 'gastos'], [/saldo|entrada/i, 'gain', 'dinero'], [/venta|total/i, 'sales', 'vender'],
 ];
 function decorateStats(root = document) {
   root.querySelectorAll('.stat:not([data-t])').forEach((el) => {
@@ -1213,3 +1145,25 @@ document.addEventListener('click', (e) => {
   document.body.appendChild(z);
 }, true);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.zoom').forEach((x) => x.remove()); });
+
+// ---------- Productos: tarjetas ----------
+function prodToolbar(admin) {
+  const cats = [...new Set(S.prods.filter((p) => admin || p.active).map((p) => p.category || 'Sin categoría'))];
+  const chip = (k, v, l) => `<button class="${S[k] === v ? 'on' : ''}" data-pf="${k}" data-v="${esc(v)}" onclick="A.pset('${k}', this.dataset.v)">${l}</button>`;
+  return `<div class="ptool"><input id="pq" placeholder="Buscar producto…" oninput="S.pq=this.value;A.pgrid()">
+    <div class="chips">${chip('pcat', 'all', 'Todas')}${cats.map((c) => chip('pcat', c, esc(c))).join('')}</div>
+    <div class="chips">${chip('pst', 'all', 'Todos')}${chip('pst', 'ok', 'Disponibles')}${chip('pst', 'low', 'Stock bajo')}${chip('pst', 'out', 'Agotados')}${admin ? chip('pst', 'off', 'Desactivados') : ''}</div></div>`;
+}
+function productCard(p, admin, st, i) {
+  const label = { ok: 'Disponible', low: 'Stock bajo', out: 'Agotado', free: 'Sin control de stock' }[st];
+  const cap = Math.max(p.min_stock * 3, 10), pct = st === 'free' ? 0 : Math.max(st === 'out' ? 0 : 6, Math.min(100, p.stock / cap * 100));
+  const unit = admin ? p.sell_price - p.buy_price : 0;
+  return `<article class="pc ${p.active ? '' : 'off'}" style="--i:${Math.min(i, 14)}">
+    <div class="pc-img">${p.photo ? `<img loading="lazy" src="${photoUrl(p)}" alt="">` : `<span class="pc-ph">${icon('productos')}</span>`}
+      <em class="pc-cat">${esc(p.category || 'Sin categoría')}</em>${p.favorite ? `<i class="pc-fav" title="Favorito">${icon('estrella')}</i>` : ''}${p.active ? '' : '<em class="pc-off">Desactivado</em>'}</div>
+    <div class="pc-body"><h4 title="${esc(p.name)}">${esc(p.name)}</h4>
+      <div class="pc-price"><b>${money(p.sell_price)}</b>${admin ? `<span>compra ${money(p.buy_price)}</span><em class="${unit >= 0 ? 'ok' : 'err'}">${unit >= 0 ? '+' : '−'}${money(Math.abs(unit))} · ${p.sell_price ? Math.round(unit / p.sell_price * 100) : 0}%</em>` : ''}</div>
+      <div class="pc-stock ${st}"><div class="pc-bar"><i style="width:${pct}%"></i></div>
+        <div class="pc-st"><span>${label}</span><b>${st === 'free' ? '—' : p.stock + ' uds'}</b></div>${st === 'free' ? '' : `<small>Mínimo ${p.min_stock}</small>`}</div>
+      ${admin ? `<div class="pc-act">${p.track_stock ? `<button class="btn sm" onclick="A.stockForm(${p.id})">+ Stock</button>` : ''}<button class="btn sec sm" onclick="A.productForm(${p.id})">Editar</button></div>` : ''}</div></article>`;
+}
