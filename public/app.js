@@ -204,10 +204,10 @@ const SAMI_DANCE = ['happy', 'w1', 'w3', 'happy', 'w5', 'w7', 'jump', 'happy', '
 function danceSami() {
   const img = $('#hero'); if (!img) return;
   const hero = $('.hero'), user = $('#lu'), pass = $('#lp');
-  ['sr', 'cf', 'pf', 'right', 'sad', 'sf', ...SAMI_DANCE].forEach((n) => { new Image().src = `/sami/${n}.png`; });
+  ['sr', 'cf', 'pf', 'right', 'sad', 'sf', ...SAMI_DANCE].forEach((n) => { new Image().src = `/sami/hd/${n}.png`; });
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let i = 0, side = 1, pose = null, noticed = false, hold = 0;
-  const show = (n, flip = 1) => { if (img.dataset.n !== n) { img.dataset.n = n; img.src = `/sami/${n}.png`; } img.style.transform = flip === 1 ? '' : `scaleX(${flip})`; };
+  const show = (n, flip = 1) => { if (img.dataset.n !== n) { img.dataset.n = n; img.src = `/sami/hd/${n}.png`; } img.style.transform = flip === 1 ? '' : `scaleX(${flip})`; };
   window.samiPose = (p, ms = 0) => { hold = ms ? Date.now() + ms : 0; pose = p; paint(); };
   const state = () => {
     if (hold > Date.now()) return pose;
@@ -241,7 +241,7 @@ function loginView() {
   $('#app').innerHTML = `<div class="login-wrap"><i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i>
     <div class="hero" aria-hidden="true"><div class="hero-say">¡Bienvenido! 🎉</div>
       <i class="note n1">♪</i><i class="note n2">♫</i><i class="note n3">♪</i><i class="note n4">♫</i>
-      <div class="hero-bob"><img id="hero" src="/sami/happy.png" alt="" draggable="false"></div><div class="hero-shd"></div></div>
+      <div class="hero-bob"><img id="hero" src="/sami/hd/happy.png" alt="" draggable="false"></div><div class="hero-shd"></div></div>
     <div class="login"><img src="/logo.png" alt="ACEIS"><h2>La Plancha</h2><p class="mute">Asociación de Ingeniería de Sistemas</p>
     <label>Usuario</label><input id="lu" autocomplete="username" autocapitalize="none">
     <label>Contraseña</label><div class="pw"><input id="lp" type="password" autocomplete="current-password">
