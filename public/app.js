@@ -196,12 +196,30 @@ function chatStart() {
 }
 window.go = (v) => { S.view = v; boot(); };
 
+// Sami baila en el login: alterna sus cuadros (feliz, pasos, salto) y cambia de lado cada compás
+function danceSami() {
+  const img = $('#hero'); if (!img) return;
+  const seq = ['happy', 'w1', 'w3', 'happy', 'w5', 'w7', 'jump', 'happy', 'left', 'happy', 'right', 'happy', 'blink', 'happy'];
+  seq.forEach((n) => { new Image().src = `/sami/${n}.png`; });
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  let i = 0, side = 1;
+  const t = setInterval(() => {
+    if (!img.isConnected) return clearInterval(t);
+    const n = seq[i++ % seq.length]; img.src = `/sami/${n}.png`;
+    if (i % 4 === 0) side = -side;
+    img.style.transform = n === 'left' || n === 'right' ? '' : `scaleX(${side})`;
+  }, 230);
+}
 function loginView() {
   $('#app').innerHTML = `<div class="login-wrap"><i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i>
+    <div class="hero" aria-hidden="true"><div class="hero-say">¡Bienvenido! 🎉</div>
+      <i class="note n1">♪</i><i class="note n2">♫</i><i class="note n3">♪</i><i class="note n4">♫</i>
+      <div class="hero-bob"><img id="hero" src="/sami/happy.png" alt="" draggable="false"></div><div class="hero-shd"></div></div>
     <div class="login"><img src="/logo.png" alt="ACEIS"><h2>La Plancha</h2><p class="mute">Asociación de Ingeniería de Sistemas</p>
     <label>Usuario</label><input id="lu" autocomplete="username" autocapitalize="none">
     <label>Contraseña</label><input id="lp" type="password" autocomplete="current-password">
     <button class="btn" id="lb">Ingresar</button></div></div>`;
+  danceSami();
   const go = async () => {
     const u = await act(() => api('/login', 'POST', { username: val('lu'), password: val('lp') }));
     if (u) boot();
