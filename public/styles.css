@@ -296,10 +296,9 @@ body:has(.login-wrap){overflow-x:hidden}
 @keyframes bubble{0%,100%{transform:translateX(-50%) rotate(-2deg)}50%{transform:translateX(-50%) rotate(2deg) translateY(-4px)}}
 body:has(.login-wrap) .pingu{display:none}
 .hero{position:relative;width:min(380px,36vw);flex:none;display:flex;flex-direction:column;align-items:center;z-index:1;animation:pop .8s var(--ease) .15s both}
-.hero-bob{width:100%;animation:bob 1.1s ease-in-out infinite;transform-origin:50% 100%}
-.hero-bob img{width:100%;height:auto;display:block;image-rendering:pixelated;filter:drop-shadow(0 18px 24px rgba(0,0,60,.4))}
-.hero-shd{width:55%;height:16px;border-radius:50%;background:rgba(0,0,40,.55);filter:blur(7px);margin-top:-6px;animation:shd 1.1s ease-in-out infinite}
-.hero-say{position:absolute;top:-6px;left:50%;background:#fff;color:var(--navy);font-weight:800;padding:.55rem .95rem;border-radius:16px;box-shadow:0 12px 26px -10px rgba(0,0,60,.6);white-space:nowrap;animation:bubble 2.2s ease-in-out infinite;z-index:2}
+.hero-bob{width:100%}
+.hero-shd{width:55%;height:16px;border-radius:50%;background:rgba(0,0,40,.55);filter:blur(7px);margin-top:-6px;animation:shd 1.2s ease-in-out infinite}
+.hero-say{position:absolute;top:-46px;left:50%;background:#fff;color:var(--navy);font-weight:800;padding:.55rem .95rem;border-radius:16px;box-shadow:0 12px 26px -10px rgba(0,0,60,.6);white-space:nowrap;animation:bubble 2.2s ease-in-out infinite;z-index:2}
 .hero-say::after{content:"";position:absolute;top:100%;left:50%;margin-left:-7px;border:7px solid transparent;border-top-color:#fff}
 .note{position:absolute;font-style:normal;font-size:2rem;font-weight:800;color:#fff;text-shadow:0 2px 12px #3b82f6;opacity:0;animation:noteUp 2.6s ease-out infinite;pointer-events:none}
 .note.n1{left:6%;top:38%;--dx:-30px}.note.n2{right:4%;top:30%;--dx:34px;animation-delay:.7s}
@@ -311,12 +310,6 @@ body:has(.login-wrap) .pingu{display:none}
 @media(max-height:560px) and (max-width:860px){.hero{display:none}}
 
 /* ---------- Ojito de la contraseña y reacciones de Sami ---------- */
-@keyframes nod{0%,100%{transform:translateY(0)}40%{transform:translateY(-7px) rotate(2deg)}}
-@keyframes breathe{0%,100%{transform:scale(1,1)}50%{transform:scale(1.015,.985)}}
-.hero.calm .hero-bob{animation:breathe 2.6s ease-in-out infinite}
-.hero.calm.nod .hero-bob{animation:nod .3s var(--ease),breathe 2.6s ease-in-out .3s infinite}
-.hero.calm .hero-shd{animation:none;opacity:.35}
-.hero.calm .note{animation-play-state:paused;opacity:0}
 .pw{position:relative}
 .pw input{padding-right:2.8rem}
 .eye{position:absolute;right:.35rem;top:50%;transform:translateY(-50%);width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:9px;background:none;color:var(--mute);cursor:pointer;
@@ -325,3 +318,73 @@ body:has(.login-wrap) .pingu{display:none}
 .eye:active{transform:translateY(-50%) scale(.88)}
 .eye.on{color:var(--brand);background:var(--ice)}
 .eye .ic{width:20px;height:20px}
+
+/* ---------- Sami vectorial ---------- */
+@keyframes sBob{0%,100%{transform:translateY(0) rotate(-4deg)}25%{transform:translateY(-22px) rotate(0)}50%{transform:translateY(0) rotate(4deg)}75%{transform:translateY(-22px) rotate(0)}}
+@keyframes sHop{0%,100%{transform:translateY(0) scale(1.06,.92)}35%,65%{transform:translateY(-64px) scale(.95,1.06)}}
+@keyframes sTurn{0%,100%{transform:translateY(0) scaleX(1)}25%{transform:translateY(-28px) scaleX(0)}50%{transform:translateY(0) scaleX(-1)}75%{transform:translateY(-28px) scaleX(0)}}
+@keyframes sArmL{0%,100%{transform:rotate(10deg)}50%{transform:rotate(100deg)}}
+@keyframes sArmR{0%,100%{transform:rotate(-10deg)}50%{transform:rotate(-100deg)}}
+@keyframes sFoot{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+@keyframes sHead{0%,100%{transform:rotate(5deg)}50%{transform:rotate(-5deg)}}
+@keyframes sFlapL{0%,100%{transform:rotate(0)}50%{transform:rotate(-9deg)}}
+@keyframes sFlapR{0%,100%{transform:rotate(0)}50%{transform:rotate(9deg)}}
+@keyframes sBlink{0%,92%,100%{transform:scaleY(1)}96%{transform:scaleY(.08)}}
+@keyframes sNod{0%,100%{transform:translateY(0)}40%{transform:translateY(8px) rotate(2deg)}}
+@keyframes sPeek{0%,100%{transform:rotate(137deg)}50%{transform:rotate(122deg)}}
+@keyframes sTear{0%{transform:translateY(-4px);opacity:0}25%{opacity:1}100%{transform:translateY(46px);opacity:0}}
+@keyframes sSpark{0%{opacity:0;transform:scale(.6)}30%{opacity:1;transform:scale(1.15)}100%{opacity:1;transform:scale(1)}}
+.sami{width:100%;height:auto;display:block;overflow:visible;filter:drop-shadow(0 20px 22px rgba(0,0,60,.38))}
+.sami .all{transform-origin:150px 322px}
+.sami .head{transform-origin:150px 205px}
+.sami .face{transform-origin:150px 150px}
+.sami .arm.l,.sami .armW.l{transform-origin:76px 192px}
+.sami .arm.r,.sami .armW.r{transform-origin:224px 192px}
+.sami .flap.l{transform-origin:84px 102px}.sami .flap.r{transform-origin:216px 102px}
+.sami .foot.l{transform-origin:112px 319px}.sami .foot.r{transform-origin:188px 319px}
+.sami .ey.l{transform-origin:122px 144px}.sami .ey.r{transform-origin:178px 144px}
+.sami .arm{transition:transform .55s cubic-bezier(.34,1.45,.5,1)}
+.sami .arm.l{transform:rotate(6deg)}.sami .arm.r{transform:rotate(-6deg)}
+.sami .head,.sami .face,.sami .ey{transition:transform .45s cubic-bezier(.34,1.4,.5,1)}
+.sami .eyeOpen,.sami .eyeHappy{transition:opacity .2s;transform-box:fill-box;transform-origin:center}
+.sami .eyeOpen{opacity:0}.sami .eyeHappy{opacity:1}
+.sami .eyeOpen .pupil{transition:transform .4s var(--ease)}
+.sami .eyeOpen{animation:sBlink 4.2s infinite}
+.sami .tears,.sami .sparks{opacity:0}
+/* baile */
+.sami[data-s=dance] .all,.sami[data-s=happy] .all{animation:sBob 1.2s ease-in-out infinite}
+.sami[data-s=dance][data-v=hop] .all{animation:sHop 1s ease-in-out infinite}
+.sami[data-s=dance][data-v=turn] .all{animation:sTurn 1.6s ease-in-out infinite}
+.sami[data-s=happy] .all{animation:sHop .7s ease-in-out infinite}
+.sami[data-s=dance] .armW.l,.sami[data-s=happy] .armW.l{animation:sArmL 1.2s ease-in-out infinite}
+.sami[data-s=dance] .armW.r,.sami[data-s=happy] .armW.r{animation:sArmR 1.2s ease-in-out infinite}
+.sami[data-s=dance] .foot.l,.sami[data-s=happy] .foot.l{animation:sFoot 1.2s ease-in-out infinite}
+.sami[data-s=dance] .foot.r,.sami[data-s=happy] .foot.r{animation:sFoot 1.2s ease-in-out -.6s infinite}
+.sami[data-s=dance] .head,.sami[data-s=happy] .head{animation:sHead 1.2s ease-in-out infinite}
+.sami[data-s=dance] .flap.l,.sami[data-s=happy] .flap.l{animation:sFlapL 1.2s ease-in-out infinite}
+.sami[data-s=dance] .flap.r,.sami[data-s=happy] .flap.r{animation:sFlapR 1.2s ease-in-out infinite}
+.sami[data-s=dance] .eyeOpen,.sami[data-s=happy] .eyeOpen{animation:none}
+/* mira al usuario mientras escribe */
+.sami[data-s=notice] .eyeOpen,.sami[data-s=watch] .eyeOpen,.sami[data-s=sad] .eyeOpen,.sami[data-s=peek] .ey.l .eyeOpen{opacity:1}
+.sami[data-s=notice] .eyeHappy,.sami[data-s=watch] .eyeHappy,.sami[data-s=sad] .eyeHappy,.sami[data-s=peek] .eyeHappy,.sami[data-s=cover] .eyeHappy{opacity:0}
+.sami[data-s=notice] .face,.sami[data-s=watch] .face{transform:translateX(11px)}
+.sami[data-s=notice] .head,.sami[data-s=watch] .head{transform:rotate(5deg)}
+.sami[data-s=notice] .ey{transform:scale(1.3)}
+.sami[data-s=notice] .sparks{opacity:1;animation:sSpark .45s var(--ease) both}
+.sami[data-s=notice] .all,.sami[data-s=watch] .all{transform:rotate(2deg)}
+.sami.nod .head{animation:sNod .3s var(--ease)}
+/* se tapa los ojos con la contraseña */
+.sami[data-s=cover] .arm.l{transform:rotate(-137deg)}.sami[data-s=cover] .arm.r{transform:rotate(137deg)}
+.sami[data-s=cover] .head{transform:translateY(4px)}
+/* con el ojito: un ojo tapado y el otro espía */
+.sami[data-s=peek] .arm.r{animation:sPeek 2.4s ease-in-out .5s infinite;transform:rotate(137deg)}
+.sami[data-s=peek] .arm.l{transform:rotate(18deg)}
+.sami[data-s=peek] .head{transform:rotate(-6deg)}
+.sami[data-s=peek] .ey.l .pupil{transform:translateX(5px)}
+/* contraseña incorrecta */
+.sami[data-s=sad] .all{transform:translateY(8px) scale(1.02,.96)}
+.sami[data-s=sad] .head{transform:rotate(-5deg) translateY(6px)}
+.sami[data-s=sad] .eyeOpen .pupil{transform:translateY(5px)}
+.sami[data-s=sad] .tears{opacity:1}
+.sami .tear{animation:sTear 1.3s ease-in infinite}.sami .tear.t2{animation-delay:.5s}
+.hero-shd{transition:opacity .3s}
