@@ -3,7 +3,6 @@
   const DIR = 'sami/';
   const NAMES = ['front', 'back', 'left', 'right', 'happy', 'blink', 'wow', 'sad', 'jump',
     ...Array.from({ length: 8 }, (_, i) => 'w' + (i + 1))];
-  NAMES.forEach((n) => { new Image().src = `${DIR}${n}.png`; });
 
   const W = 92, H = Math.round(W * 167 / 151), G = 1900;
   const css = document.createElement('style');
@@ -11,7 +10,9 @@
   .pingu{position:fixed;left:0;bottom:0;width:${W}px;height:${H}px;z-index:6;cursor:grab;will-change:transform;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
   .pingu.held{cursor:grabbing}
   .pingu .shd{position:absolute;left:50%;bottom:0;width:${W * .5}px;height:8px;margin-left:${-W * .25}px;border-radius:50%;background:rgba(2,0,95,.28);filter:blur(2px)}
-  .pingu .sp{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;pointer-events:none;transform-origin:50% 100%}
+  .pingu .sp{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;transform-origin:50% 100%}
+  .pingu .sp img{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;visibility:hidden}
+  .pingu .sp img.on{visibility:visible}
   .pingu .say{position:absolute;bottom:100%;left:50%;transform:translateX(-50%) scale(.85);margin-bottom:2px;white-space:nowrap;background:#fff;color:#02005f;
     font:700 12px/1 'Plus Jakarta Sans',system-ui,sans-serif;padding:.45rem .6rem;border-radius:10px;box-shadow:0 6px 16px -6px rgba(2,0,95,.5);
     opacity:0;transition:opacity .2s,transform .2s;pointer-events:none}
@@ -20,9 +21,13 @@
   document.head.appendChild(css);
 
   const el = document.createElement('div'); el.className = 'pingu';
-  el.innerHTML = '<div class="say"></div><div class="shd"></div><img class="sp" alt="" draggable="false">';
+  el.innerHTML = '<div class="say"></div><div class="shd"></div><div class="sp"></div>';
   document.body.appendChild(el);
   const sp = el.querySelector('.sp'), say = el.querySelector('.say'), shd = el.querySelector('.shd');
+
+  const frames = {};
+  NAMES.forEach((n) => { const im = new Image(); im.alt = ''; im.draggable = false; im.src = `${DIR}${n}.png`; sp.appendChild(im); frames[n] = im; });
+  const showFrame = (n) => { if (sp.dataset.n === n) return; if (frames[sp.dataset.n]) frames[sp.dataset.n].classList.remove('on'); sp.dataset.n = n; frames[n].classList.add('on'); };
 
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const LINES = ['¡Hola! 🐧', '¿Un cafecito?', 'ACEIS al 100', '¡Cuadra la caja!', 'Soto Hp', '¡Vamos a vender!', 'Soy Sami 🎩', '¡Qué frío! ❄️'];
@@ -151,8 +156,7 @@
     }
     // los sprites de perfil miran a la derecha; "left" ya trae su propia dirección
     const flip = (name[0] === 'w' && name.length === 2) || name === 'jump' ? dir : (emote || name === 'wow') ? dir : 1;
-    const src = `${DIR}${name}.png`;
-    if (sp.dataset.n !== name) { sp.dataset.n = name; sp.src = src; }
+    showFrame(name);
 
     sq += (1 - sq) * Math.min(1, dt * 11);
     const st = mode === 'air' && vy > 0 ? 1.1 : 1 + (1 - sq) * -1, sx = 1 + (1 - sq) * .7;
@@ -163,7 +167,7 @@
     requestAnimationFrame(tick);
   }
 
-  sp.src = `${DIR}front.png`;
+  showFrame('front');
   if (reduce) { el.style.transform = `translateX(${x}px)`; el.addEventListener('click', () => talk(pick(LINES))); }
   else requestAnimationFrame(tick);
 })();
