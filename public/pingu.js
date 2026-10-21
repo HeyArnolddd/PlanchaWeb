@@ -30,7 +30,7 @@
   const showFrame = (n) => { if (sp.dataset.n === n) return; if (frames[sp.dataset.n]) frames[sp.dataset.n].classList.remove('on'); sp.dataset.n = n; frames[n].classList.add('on'); };
 
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const LINES = ['¡Hola! 🐧', '¿Un cafecito?', 'ACEIS al 100', '¡Cuadra la caja!', 'Soto Hp', '¡Vamos a vender!', 'Soy Sami 🎩', '¡Qué frío! ❄️'];
+  const LINES = ['¡Hola! 🐧', 'Maldito sea la republica independiente de florida', 'hptas de florida', '¡Cuadra la caja!', 'Soto Hp','67?'];
   const rnd = (a, b) => a + Math.random() * (b - a);
   const pick = (a) => a[Math.floor(Math.random() * a.length)];
   const maxX = () => Math.max(0, innerWidth - W);
