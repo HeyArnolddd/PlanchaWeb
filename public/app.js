@@ -3,6 +3,10 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 // Minúsculas y sin tildes, para que la búsqueda no sea exacta
 const norm = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const photoUrl = (p) => `/api/products/${p.id}/photo?v=${p.photo}`;
+// Avatar: foto de perfil o, si no tiene, la inicial del nombre
+const avatar = (u, cls = '') => u.photo
+  ? `<img class="av ${cls}" src="/api/users/${u.id}/photo?v=${u.photo}" alt="">`
+  : `<b class="av ${cls}">${esc((u.name || '?').trim()[0] || '?').toUpperCase()}</b>`;
 // Reduce la foto a un cuadrado de 240px (JPEG) para que pese pocos KB
 async function shrink(file) {
   const bmp = await createImageBitmap(file);
@@ -78,7 +82,7 @@ function sideHTML(tabs) {
   return `<div class="side-head"><img src="/logo.png" alt="ACEIS"><i>La Plancha</i>
       <button class="side-col" onclick="A.sideCollapse()" aria-label="Contraer menú" title="Contraer / expandir">${icon('colapsar')}</button></div>
     <div class="side-nav">${groups}</div>
-    <div class="side-foot"><div class="me"><b>${esc(S.user.name.trim()[0] || '?').toUpperCase()}</b><span>${esc(S.user.name)}<small>${S.user.role === 'admin' ? 'Administrador' : 'Turno'}</small></span></div>
+    <div class="side-foot"><div class="me" onclick="A.profile()" title="Cambiar foto de perfil">${avatar(S.user)}<span>${esc(S.user.name)}<small>${S.user.role === 'admin' ? 'Administrador' : 'Turno'}</small></span></div>
       <button onclick="A.password()" title="Contraseña">${icon('clave')}<span>Contraseña</span></button>
       <button onclick="A.logout()" title="Salir">${icon('salir')}<span>Salir</span></button></div>`;
 }
@@ -107,7 +111,7 @@ async function boot() {
       <aside class="side"></aside>
       <div class="content">
         <div class="top"><button class="burger" onclick="A.sideOpen()" aria-label="Abrir menú">${icon('menu')}</button><h1 id="ttl"></h1><span class="sp"></span>
-          <small data-i="${esc(S.user.name.trim()[0] || '?').toUpperCase()}"><span>${esc(S.user.name)} · ${S.user.role === 'admin' ? 'Admin' : 'Turno'}</span></small></div>
+          <small id="tme" onclick="A.profile()">${avatar(S.user)}<span>${esc(S.user.name)} · ${S.user.role === 'admin' ? 'Admin' : 'Turno'}</span></small></div>
         <main id="main"></main>
       </div></div>`;
   }
@@ -149,8 +153,8 @@ function chatDraw() {
 }
 function chatPaintSide() {
   const side = $('#chatside'); if (!side || !S.chatUsers) return;
-  const row = (id, name, n) => `<button onclick="A.openChat(${id})"><span>${id ? '' : '👥 '}${esc(name)}</span>${n ? `<b class="badge">${n}</b>` : ''}</button>`;
-  side.innerHTML = row(0, 'Equipo (todos)', S.chatUsers.general) + S.chatUsers.users.map((u) => row(u.id, u.name, u.unread)).join('');
+  const row = (id, name, n, photo) => `<button onclick="A.openChat(${id})"><span class="crow">${id ? avatar({ id, name, photo }, 'sm') : '<b class="av sm">👥</b>'}${esc(name)}</span>${n ? `<b class="badge">${n}</b>` : ''}</button>`;
+  side.innerHTML = row(0, 'Equipo (todos)', S.chatUsers.general) + S.chatUsers.users.map((u) => row(u.id, u.name, u.unread, u.photo)).join('');
 }
 function chatPaintBadge() {
   const d = $('#cwbadge'); if (!d || !S.chatUsers) return;
@@ -500,6 +504,25 @@ const A = window.A = {
   sideClose() { $('.shell').classList.remove('open'); },
   sideCollapse() { const c = $('.shell').classList.toggle('col'); lsSet('side-col', c ? '1' : '0'); },
   async logout() { await api('/logout', 'POST'); S.view = null; S.cart = []; S.benefit = null; clearInterval(S.chatTimer); S.chat = []; S.peerRead = 0; S.peer = null; S.chatOpen = false; S.chatUsers = null; chatShell(); boot(); },
+  profile() {
+    S.avatar = undefined;
+    modal(`<h3>Foto de perfil</h3><div style="text-align:center"><div id="avbox">${avatar(S.user, 'xl')}</div>
+      <input id="avf" type="file" accept="image/*" onchange="A.pickAvatar(this)" style="margin-top:.8rem">
+      ${S.user.photo ? '<a href="#" onclick="A.rmAvatar();return false" class="mute">Quitar foto</a>' : ''}</div>
+      <div class="row" style="margin-top:1rem"><button class="btn sec" onclick="closeModal()">Cancelar</button><button class="btn" onclick="A.saveAvatar()">Guardar</button></div>`);
+  },
+  async pickAvatar(inp) {
+    if (!inp.files[0]) return;
+    try { S.avatar = await shrink(inp.files[0]); } catch (e) { return toast('No se pudo leer la imagen'); }
+    $('#avbox').innerHTML = `<img class="av xl" src="${S.avatar}" alt="">`;
+  },
+  rmAvatar() { S.avatar = 'remove'; $('#avbox').innerHTML = avatar({ ...S.user, photo: null }, 'xl'); },
+  async saveAvatar() {
+    if (!S.avatar) return closeModal();
+    const ok = S.avatar === 'remove' ? await act(() => api('/me/photo', 'DELETE'), 'Foto quitada')
+      : await act(() => api('/me/photo', 'PUT', { image: S.avatar }), 'Foto actualizada');
+    if (ok) { closeModal(); S.avatar = undefined; boot(); }
+  },
   password() {
     modal(`<h3>Cambiar contraseña</h3><label>Actual</label><input id="p0" type="password"><label>Nueva (mín. 6)</label><input id="p1" type="password">
       <p><button class="btn" onclick="A.savePassword()">Guardar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);

@@ -132,6 +132,12 @@ CREATE TABLE IF NOT EXISTS expenses (
   method TEXT CHECK (method IN ('efectivo','nequi')),
   created_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS user_photos (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  data BYTEA NOT NULL,
+  mime TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
 CREATE TABLE IF NOT EXISTS product_photos (
   product_id INTEGER PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
   data BYTEA NOT NULL,
@@ -310,7 +316,8 @@ app.use('/api', (req, res, next) => {
   const token = parseCookies(req).sid;
   if (!token) return next();
   req.token = token;
-  D.get(`SELECT u.id,u.username,u.name,u.role,u.must_change FROM sessions s
+  D.get(`SELECT u.id,u.username,u.name,u.role,u.must_change,
+    (SELECT extract(epoch FROM updated_at)::bigint FROM user_photos f WHERE f.user_id=u.id) AS photo FROM sessions s
     JOIN users u ON u.id=s.user_id WHERE s.token=$1 AND u.active=1`, [token])
     .then((u) => { req.user = u; next(); }, next);
 });
@@ -475,6 +482,28 @@ app.put('/api/products/:id', auth, admin, wrap(async (req) => {
   }
   return { ok: true };
 }));
+// Foto de perfil: cada quien cambia la suya (el navegador la reduce antes de enviarla)
+app.get('/api/users/:id/photo', auth, wrap(async (req, res) => {
+  const f = await D.get('SELECT data, mime FROM user_photos WHERE user_id=$1', [int(req.params.id, 'id')]);
+  if (!f) throw new HttpError(404, 'Sin foto');
+  res.set({ 'Content-Type': f.mime, 'Cache-Control': 'private, max-age=31536000' });
+  res.end(f.data);
+}));
+app.put('/api/me/photo', auth, wrap(async (req) => {
+  const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(req.body.image || ''));
+  if (!m) throw bad('Imagen inválida');
+  const data = Buffer.from(m[2], 'base64');
+  if (data.length > 200 * 1024) throw bad('La imagen es demasiado grande');
+  await D.run(`INSERT INTO user_photos (user_id,data,mime,updated_at) VALUES ($1,$2,$3,$4)
+    ON CONFLICT (user_id) DO UPDATE SET data=EXCLUDED.data, mime=EXCLUDED.mime, updated_at=EXCLUDED.updated_at`,
+    [req.user.id, data, m[1], now()]);
+  await audit(D, req.user, 'Cambió su foto de perfil');
+  return { ok: true };
+}));
+app.delete('/api/me/photo', auth, wrap(async (req) => {
+  await D.run('DELETE FROM user_photos WHERE user_id=$1', [req.user.id]);
+  return { ok: true };
+}));
 // Foto del producto (el navegador la reduce antes de enviarla)
 app.get('/api/products/:id/photo', auth, wrap(async (req, res) => {
   const f = await D.get('SELECT data, mime FROM product_photos WHERE product_id=$1', [int(req.params.id, 'id')]);
@@ -604,6 +633,7 @@ const convo = (me, peer) => (peer
 app.get('/api/chat/users', auth, wrap(async (req) => {
   const me = req.user.id;
   const users = await D.all(`SELECT u.id, u.name,
+    (SELECT extract(epoch FROM updated_at)::bigint FROM user_photos f WHERE f.user_id=u.id) AS photo,
     (SELECT COUNT(*) FROM chat_messages m WHERE m.user_id=u.id AND m.recipient_id=$1
       AND m.id > COALESCE((SELECT last_id FROM chat_reads r WHERE r.user_id=$1 AND r.peer_id=u.id),0))::int AS unread,
     (SELECT MAX(id) FROM chat_messages m WHERE (m.user_id=u.id AND m.recipient_id=$1) OR (m.user_id=$1 AND m.recipient_id=u.id)) AS last_id
