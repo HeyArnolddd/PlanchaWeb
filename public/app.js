@@ -883,3 +883,19 @@ const A = window.A = {
 window.closeModal = closeModal; window.boot = boot;
 
 boot();
+
+// Tarjetas de datos: según el texto de la etiqueta se les da color e icono
+const STAT_TONES = [
+  [/nequi/i, 'nequi', 'caja'], [/efectivo/i, 'cash', 'dinero'], [/p[eé]rdida|descart/i, 'loss', 'gastos'],
+  [/gasto|implemento|comisi/i, 'exp', 'gastos'], [/pedido/i, 'ped', 'productos'], [/ganancia/i, 'gain', 'reportes'],
+  [/inventario/i, 'inv', 'productos'], [/inicio|deber[ií]a/i, 'slate', 'turnos'], [/venta|total/i, 'sales', 'vender'],
+];
+function decorateStats(root = document) {
+  root.querySelectorAll('.stat:not([data-t])').forEach((el) => {
+    const label = (el.querySelector('span') || {}).textContent || '';
+    const [, tone, ic] = STAT_TONES.find(([re]) => re.test(label)) || [0, 'sales', 'resumen'];
+    el.dataset.t = tone;
+    el.insertAdjacentHTML('afterbegin', `<i class="si">${icon(ic)}</i>`);
+  });
+}
+new MutationObserver(() => decorateStats()).observe(document.body, { childList: true, subtree: true });
