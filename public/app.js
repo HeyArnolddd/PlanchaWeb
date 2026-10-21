@@ -461,15 +461,18 @@ const views = {
   },
 
   async reportes() {
-    S.week ||= null;
-    const w = await api('/reports/week' + (S.week ? `?start=${S.week}` : ''));
+    S.week ||= null; S.rp ||= 30;
+    const iso = (t) => t.toISOString().slice(0, 10);
+    const today = new Date(Date.now() - 5 * 36e5), rto = iso(today);
+    today.setUTCDate(today.getUTCDate() - S.rp + 1);
+    const [w, tr] = await Promise.all([api('/reports/week' + (S.week ? `?start=${S.week}` : '')), api(`/reports/trend?from=${iso(today)}&to=${rto}`)]);
     S.week = w.start;
     const d0 = (s) => new Date(s + 'T12:00:00Z').toLocaleDateString('es-CO', { timeZone: 'UTC', day: 'numeric', month: 'short' });
     const dn = (s) => new Date(s + 'T12:00:00Z').toLocaleDateString('es-CO', { timeZone: 'UTC', weekday: 'short', day: 'numeric' });
     const pct = (a, b) => b ? `<small class="${a >= b ? 'ok' : 'err'}">${a >= b ? '▲' : '▼'} ${Math.abs(Math.round((a - b) / b * 100))}% vs semana anterior</small>` : '<small class="mute">Sin semana anterior</small>';
     const t = w.totals, pv = w.previous, max = Math.max(1, ...w.days.map((d) => d.total));
     const net = t.profit - t.impl - t.lost;
-    $('#main').innerHTML = `<h2>Reporte semanal</h2>
+    $('#main').innerHTML = `<h2>Reportes</h2>${reportPanel(tr)}<h2 style="margin-top:1.6rem">Reporte semanal</h2>
       <div class="row" style="align-items:center;margin-bottom:1rem">
         <button class="btn sec sm" onclick="A.week(-7)">← Anterior</button>
         <b style="flex:2;text-align:center">${d0(w.start)} – ${d0(w.end)}</b>
@@ -495,7 +498,7 @@ const views = {
         <div class="row"><div><label>Desde</label><input id="xf" type="date" value="${w.start}"></div>
         <div><label>Hasta</label><input id="xt" type="date" value="${w.end}"></div></div>
         <p><button class="btn" onclick="A.exportCsv()">⬇ Descargar CSV</button></p></div>`;
-    A.hours('week');
+    A.hours('week'); reportCharts(tr);
   },
 
   async actividad() {
@@ -650,6 +653,7 @@ const A = window.A = {
       <span class="fav ${p.favorite ? 'on' : ''}" role="button" aria-label="${p.favorite ? 'Quitar de favoritos' : 'Marcar como favorito'}" title="${p.favorite ? 'Quitar de favoritos' : 'Favorito'}" onclick="A.fav(event, ${p.id})">${icon('estrella')}</span>
       ${p.photo ? `<img loading="lazy" src="${photoUrl(p)}" alt="">` : ''}<b>${esc(p.name)}</b>${money(p.sell_price)}<br><small>${p.track_stock ? p.stock + ' disp.' : 'sin control de stock'}</small>${A.badge(p.id)}</button>`).join('') || '<span class="mute">Sin resultados.</span>';
   },
+  rp(n) { S.rp = n; views.reportes(); },
   async fav(e, id) {
     e.stopPropagation();
     const p = S.prods.find((x) => x.id === id); if (!p) return;
@@ -959,7 +963,7 @@ boot();
 const STAT_TONES = [
   [/nequi/i, 'nequi', 'caja'], [/efectivo/i, 'cash', 'dinero'], [/p[eé]rdida|descart/i, 'loss', 'gastos'],
   [/gasto|implemento|comisi/i, 'exp', 'gastos'], [/pedido/i, 'ped', 'productos'], [/ganancia/i, 'gain', 'reportes'],
-  [/inventario/i, 'inv', 'productos'], [/inicio|deber[ií]a/i, 'slate', 'turnos'], [/venta|total/i, 'sales', 'vender'],
+  [/inventario/i, 'inv', 'productos'], [/inicio|deber[ií]a/i, 'slate', 'turnos'], [/ticket|promedio/i, 'inv', 'reportes'], [/mejor/i, 'ped', 'reportes'], [/venta|total/i, 'sales', 'vender'],
 ];
 function decorateStats(root = document) {
   root.querySelectorAll('.stat:not([data-t])').forEach((el) => {
@@ -971,3 +975,59 @@ function decorateStats(root = document) {
   });
 }
 new MutationObserver(() => decorateStats()).observe(document.body, { childList: true, subtree: true });
+
+// ---------- Reportes: panel de análisis ----------
+const RANGOS = [[7, '7 días'], [30, '30 días'], [90, '90 días'], [365, '12 meses']];
+function reportPanel(tr) {
+  const t = tr.totals, p = tr.previous, span = tr.days.length;
+  const sel = `<div class="seg rsel">${RANGOS.map(([n, l]) => `<button class="${S.rp === n ? 'on' : ''}" onclick="A.rp(${n})">${l}</button>`).join('')}</div>`;
+  if (!t.n) return `${sel}<div class="card"><span class="mute">Sin ventas en este periodo.</span></div>`;
+  const net = t.profit - t.impl - t.lost, pnet = p.profit - p.impl - p.lost;
+  const sm = (n) => (n < 0 ? '−' + money(-n) : money(n));
+  const cash = tr.days.reduce((s, d) => s + d.cash, 0), nq = tr.days.reduce((s, d) => s + d.nequi, 0), mix = cash + nq || 1;
+  const best = tr.days.reduce((b, d) => (d.total > b.total ? d : b), tr.days[0]);
+  const dl = (x, y) => (y ? `<small class="${x >= y ? 'ok' : 'err'}">${x >= y ? '▲' : '▼'} ${Math.abs(Math.round((x - y) / y * 100))}% vs periodo anterior</small>` : '');
+  const bestLbl = new Date(best.day + 'T12:00:00Z').toLocaleDateString('es-CO', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'short' });
+  const lg = (...xs) => `<div class="lg">${xs.map(([c, l]) => `<span><i style="background:${c}"></i>${l}</span>`).join('')}</div>`;
+  const C = Charts.COLOR;
+  return `${sel}
+    <div class="grid">
+      <div class="stat"><span>Ventas (${t.n})</span><b>${money(t.total)}</b>${dl(t.total, p.total)}</div>
+      <div class="stat"><span>Ganancia neta</span><b>${sm(net)}</b>${dl(net, pnet)}</div>
+      <div class="stat"><span>Margen de ganancia</span><b>${t.total ? (t.profit / t.total * 100).toFixed(1).replace('.', ',') : 0}%</b><small>Ganancia ${money(t.profit)} sobre ventas</small></div>
+      <div class="stat"><span>Ticket promedio</span><b>${money(Math.round(tr.ticket.avg))}</b><small>Mediana ${money(Math.round(tr.ticket.median))} · máx. ${money(tr.ticket.max)}</small></div>
+      <div class="stat"><span>Promedio por día</span><b>${money(Math.round(t.total / span))}</b><small>${(t.n / span).toFixed(1).replace('.', ',')} ventas/día · ${tr.units} unidades</small></div>
+      <div class="stat"><span>Mejor día</span><b style="font-size:1.15rem">${bestLbl[0].toUpperCase() + bestLbl.slice(1)}</b><small>${money(best.total)} en ${best.n} ventas</small></div>
+      <div class="stat"><span>Efectivo</span><b>${money(cash)}</b><small>${Math.round(cash / mix * 100)}% de lo cobrado</small></div>
+      <div class="stat"><span>Nequi</span><b>${money(nq)}</b><small>${Math.round(nq / mix * 100)}% de lo cobrado</small></div>
+    </div><br>
+    <div class="card"><h3>Ventas y ganancia por día</h3>${lg([C.ventas, 'Ventas'], [C.ganancia, 'Ganancia'])}<div id="ch1"></div>
+      <details class="dt"><summary>Ver tabla de datos</summary><div class="tw"><table><tr><th>Día</th><th class="n">Ventas</th><th class="n">Ganancia</th><th class="n">Efectivo</th><th class="n">Nequi</th><th class="n">#</th></tr>
+      ${tr.days.filter((d) => d.n).reverse().map((d) => `<tr><td>${d.day}</td><td class="n">${money(d.total)}</td><td class="n">${money(d.profit)}</td><td class="n">${money(d.cash)}</td><td class="n">${money(d.nequi)}</td><td class="n">${d.n}</td></tr>`).join('')}</table></div></details></div>
+    <div class="card"><h3>¿Cómo se cobró? Efectivo vs Nequi</h3>${lg([C.efectivo, `Efectivo ${Math.round(cash / mix * 100)}%`], [C.nequi, `Nequi ${Math.round(nq / mix * 100)}%`])}<div id="ch2"></div></div>
+    <div class="grid2">
+      <div class="card"><h3>De ventas a ganancia neta</h3><div id="ch3"></div>
+        <p class="mute" style="margin:.7rem 0 0;font-size:.82rem">Reposición pagada a proveedores (pedidos): <b>${money(t.ped)}</b>. No resta aquí porque ya está dentro del costo de los productos vendidos.</p></div>
+      <div class="card"><h3>Productos que más ingresan</h3><div id="ch5"></div></div>
+    </div>
+    <div class="card"><h3>Ganancia neta acumulada</h3><div id="ch4"></div></div>`;
+}
+function reportCharts(tr) {
+  if (!$('#ch1')) return;
+  const t = tr.totals, C = Charts.COLOR, net = t.profit - t.impl - t.lost;
+  Charts.series($('#ch1'), { days: tr.days, bars: { key: 'total', label: 'Ventas', color: C.ventas }, line: { key: 'profit', label: 'Ganancia', color: C.ganancia }, label: 'Ventas y ganancia por día' });
+  Charts.series($('#ch2'), { days: tr.days, stack: [{ key: 'cash', label: 'Efectivo', color: C.efectivo }, { key: 'nequi', label: 'Nequi', color: C.nequi }], label: 'Efectivo y Nequi por día' });
+  let acc = 0;
+  const cum = tr.days.map((d) => ({ day: d.day, net: (acc += d.profit - d.impl - d.lost) }));
+  Charts.series($('#ch4'), { days: cum, line: { key: 'net', label: 'Ganancia neta acumulada', color: C.ganancia, area: true, last: true }, label: 'Ganancia neta acumulada' });
+  const neg = (v) => (v ? '−' + money(v) : money(0));
+  Charts.hbars($('#ch3'), [
+    { label: 'Ventas', value: t.total, color: C.ventas },
+    { label: 'Costo de productos', value: tr.cogs, color: C.gasto, text: neg(tr.cogs) },
+    { label: 'Gastos de implementos', value: t.impl, color: C.gasto, text: neg(t.impl) },
+    { label: 'Pérdidas por descartes', value: t.lost, color: C.gasto, text: neg(t.lost) },
+    { label: 'Comisiones de retiros', value: tr.fees, color: C.ganancia, text: '+' + money(tr.fees) },
+    { label: 'Ganancia neta', value: Math.max(0, net), color: C.ganancia, text: `<strong>${net < 0 ? '−' + money(-net) : money(net)}</strong>` },
+  ], Math.max(t.total, 1));
+  Charts.hbars($('#ch5'), tr.top.map((p) => ({ label: p.name, value: p.total, color: C.ventas, text: `${p.qty} uds · ${money(p.total)}` })));
+}

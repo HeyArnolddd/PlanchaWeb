@@ -1070,6 +1070,40 @@ app.get('/api/reports/week', auth, admin, wrap(async (req) => {
   return { start, end: addDays(start, 6), days, totals: sum(cur), previous: sum(old), top };
 }));
 
+// Panel de análisis: serie diaria, mezcla de pagos, de ventas a ganancia, productos y estadísticos del rango
+async function trendOf(a, b) {
+  const [base, cash, ticket, cost, top] = await Promise.all([
+    weekTotals(a, b),
+    D.all(`SELECT to_char(${DAY},'YYYY-MM-DD') AS day, COALESCE(SUM(cash_amount),0) AS cash, COALESCE(SUM(nequi_amount),0) AS nequi FROM sales
+      WHERE voided=0 AND created_at>=$1 AND created_at<$2 GROUP BY 1`, [a, b]),
+    D.get(`SELECT COUNT(*) AS n, COALESCE(AVG(total),0) AS avg, COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY total),0) AS median, COALESCE(MAX(total),0) AS max
+      FROM sales WHERE voided=0 AND created_at>=$1 AND created_at<$2`, [a, b]),
+    D.get(`SELECT COALESCE(SUM(i.cost*i.qty),0) AS cogs, COALESCE(SUM(i.qty),0) AS units FROM sale_items i JOIN sales s ON s.id=i.sale_id
+      WHERE s.voided=0 AND s.created_at>=$1 AND s.created_at<$2`, [a, b]),
+    D.all(`SELECT i.name, SUM(i.qty) AS qty, SUM(i.price*i.qty) AS total FROM sale_items i JOIN sales s ON s.id=i.sale_id
+      WHERE s.voided=0 AND s.created_at>=$1 AND s.created_at<$2 GROUP BY i.product_id, i.name ORDER BY total DESC LIMIT 8`, [a, b]),
+  ]);
+  return { ...base, cash, ticket, cost, top };
+}
+app.get('/api/reports/trend', auth, admin, wrap(async (req) => {
+  const { from, to, a, b } = range(req.query, 366);
+  const span = Math.round((new Date(to) - new Date(from)) / 864e5) + 1;
+  const pf = addDays(from, -span);
+  const [cur, old] = await Promise.all([trendOf(a, b), weekTotals(startOf(pf), a)]);
+  const find = (rows, day) => rows.find((r) => r.day === day) || {};
+  const num = (v) => Number(v) || 0;
+  const days = Array.from({ length: span }, (_, k) => {
+    const day = addDays(from, k), c = find(cur.cash, day), e = find(cur.exp, day);
+    return { day, total: num(find(cur.sales, day).total), n: num(find(cur.sales, day).n), cash: num(c.cash), nequi: num(c.nequi),
+      profit: num(find(cur.items, day).profit) + num(find(cur.wd, day).fees), impl: num(e.impl), ped: num(e.ped), lost: num(find(cur.lost, day).lost) };
+  });
+  const f = (rows, k) => rows.reduce((t, r) => t + num(r[k]), 0);
+  const tot = (w) => ({ total: f(w.sales, 'total'), n: f(w.sales, 'n'), profit: f(w.items, 'profit') + f(w.wd, 'fees'), impl: f(w.exp, 'impl'), ped: f(w.exp, 'ped'), lost: f(w.lost, 'lost') });
+  return { from, to, days, totals: tot(cur), previous: tot(old), fees: f(cur.wd, 'fees'), cogs: num(cur.cost.cogs), units: num(cur.cost.units),
+    ticket: { n: num(cur.ticket.n), avg: num(cur.ticket.avg), median: num(cur.ticket.median), max: num(cur.ticket.max) },
+    top: cur.top.map((p) => ({ name: p.name, qty: num(p.qty), total: num(p.total) })) };
+}));
+
 // Ventas por hora del día y por día de la semana (hora de Colombia)
 app.get('/api/reports/hours', auth, admin, wrap(async (req) => {
   const { a, b } = range(req.query, 366);
