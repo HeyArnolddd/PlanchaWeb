@@ -1072,7 +1072,7 @@ app.get('/api/reports/week', auth, admin, wrap(async (req) => {
 
 // Panel de análisis: serie diaria, mezcla de pagos, de ventas a ganancia, productos y estadísticos del rango
 async function trendOf(a, b) {
-  const [base, cash, ticket, cost, top] = await Promise.all([
+  const [base, cash, ticket, cost, top, pays, cats, buckets, hours, dows] = await Promise.all([
     weekTotals(a, b),
     D.all(`SELECT to_char(${DAY},'YYYY-MM-DD') AS day, COALESCE(SUM(cash_amount),0) AS cash, COALESCE(SUM(nequi_amount),0) AS nequi FROM sales
       WHERE voided=0 AND created_at>=$1 AND created_at<$2 GROUP BY 1`, [a, b]),
@@ -1082,8 +1082,19 @@ async function trendOf(a, b) {
       WHERE s.voided=0 AND s.created_at>=$1 AND s.created_at<$2`, [a, b]),
     D.all(`SELECT i.name, SUM(i.qty) AS qty, SUM(i.price*i.qty) AS total FROM sale_items i JOIN sales s ON s.id=i.sale_id
       WHERE s.voided=0 AND s.created_at>=$1 AND s.created_at<$2 GROUP BY i.product_id, i.name ORDER BY total DESC LIMIT 8`, [a, b]),
+    D.all(`SELECT to_char(${DAY},'YYYY-MM-DD') AS day, COALESCE(SUM(total),0) AS pay FROM payouts WHERE created_at>=$1 AND created_at<$2 GROUP BY 1`, [a, b]),
+    D.all(`SELECT COALESCE(c.name,'Sin categoría') AS name, SUM(i.price*i.qty) AS total, SUM(i.qty) AS qty FROM sale_items i JOIN sales s ON s.id=i.sale_id
+      LEFT JOIN products p ON p.id=i.product_id LEFT JOIN categories c ON c.id=p.category_id
+      WHERE s.voided=0 AND s.created_at>=$1 AND s.created_at<$2 GROUP BY 1 ORDER BY total DESC`, [a, b]),
+    D.all(`SELECT CASE WHEN total<2000 THEN 0 WHEN total<4000 THEN 1 WHEN total<6000 THEN 2 WHEN total<8000 THEN 3 WHEN total<10000 THEN 4
+      WHEN total<15000 THEN 5 WHEN total<20000 THEN 6 WHEN total<30000 THEN 7 ELSE 8 END AS b, COUNT(*) AS n FROM sales
+      WHERE voided=0 AND created_at>=$1 AND created_at<$2 GROUP BY 1`, [a, b]),
+    D.all(`SELECT extract(hour from created_at AT TIME ZONE '${TZ}')::int AS h, COUNT(*) AS n, SUM(total) AS total FROM sales
+      WHERE voided=0 AND created_at>=$1 AND created_at<$2 GROUP BY 1`, [a, b]),
+    D.all(`SELECT extract(isodow from created_at AT TIME ZONE '${TZ}')::int AS d, COUNT(*) AS n, SUM(total) AS total FROM sales
+      WHERE voided=0 AND created_at>=$1 AND created_at<$2 GROUP BY 1`, [a, b]),
   ]);
-  return { ...base, cash, ticket, cost, top };
+  return { ...base, cash, ticket, cost, top, pays, cats, buckets, hours, dows };
 }
 app.get('/api/reports/trend', auth, admin, wrap(async (req) => {
   const { from, to, a, b } = range(req.query, 366);
@@ -1094,14 +1105,19 @@ app.get('/api/reports/trend', auth, admin, wrap(async (req) => {
   const num = (v) => Number(v) || 0;
   const days = Array.from({ length: span }, (_, k) => {
     const day = addDays(from, k), c = find(cur.cash, day), e = find(cur.exp, day);
+    const pay = num(find(cur.pays, day).pay);
     return { day, total: num(find(cur.sales, day).total), n: num(find(cur.sales, day).n), cash: num(c.cash), nequi: num(c.nequi),
-      profit: num(find(cur.items, day).profit) + num(find(cur.wd, day).fees), impl: num(e.impl), ped: num(e.ped), lost: num(find(cur.lost, day).lost) };
+      profit: num(find(cur.items, day).profit) + num(find(cur.wd, day).fees), impl: num(e.impl), ped: num(e.ped), lost: num(find(cur.lost, day).lost),
+      pay, out: num(e.impl) + num(e.ped) + pay };
   });
   const f = (rows, k) => rows.reduce((t, r) => t + num(r[k]), 0);
   const tot = (w) => ({ total: f(w.sales, 'total'), n: f(w.sales, 'n'), profit: f(w.items, 'profit') + f(w.wd, 'fees'), impl: f(w.exp, 'impl'), ped: f(w.exp, 'ped'), lost: f(w.lost, 'lost') });
   return { from, to, days, totals: tot(cur), previous: tot(old), fees: f(cur.wd, 'fees'), cogs: num(cur.cost.cogs), units: num(cur.cost.units),
     ticket: { n: num(cur.ticket.n), avg: num(cur.ticket.avg), median: num(cur.ticket.median), max: num(cur.ticket.max) },
-    top: cur.top.map((p) => ({ name: p.name, qty: num(p.qty), total: num(p.total) })) };
+    top: cur.top.map((p) => ({ name: p.name, qty: num(p.qty), total: num(p.total) })),
+    cats: cur.cats.map((c) => ({ name: c.name, qty: num(c.qty), total: num(c.total) })),
+    buckets: Array.from({ length: 9 }, (_, i) => num(cur.buckets.find((x) => x.b === i)?.n)),
+    hours: cur.hours.map((h) => ({ h: h.h, n: num(h.n), total: num(h.total) })), dows: cur.dows.map((d) => ({ d: d.d, n: num(d.n), total: num(d.total) })) };
 }));
 
 // Ventas por hora del día y por día de la semana (hora de Colombia)

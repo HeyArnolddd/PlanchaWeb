@@ -368,3 +368,20 @@ body:has(.login-wrap) .pingu{display:none}
 details.dt{margin-top:.6rem}
 details.dt summary{cursor:pointer;color:var(--brand);font-weight:600;font-size:.85rem}
 @media(max-width:560px){.hbx{grid-template-columns:1fr auto}.hbx .ht{grid-column:1/-1;order:3;margin-top:-.2rem}.grid2{grid-template-columns:1fr}}
+
+.grid3{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));margin-bottom:1rem}
+.grid3>.card{margin-bottom:0}
+.sub{margin:-.3rem 0 .4rem;font-size:.82rem}
+.donut{display:flex;flex-direction:column;align-items:center;gap:.8rem}
+.donut svg{width:190px;height:190px;overflow:visible}
+.donut svg [data-i]{transition:opacity .2s,transform .25s var(--ease);transform-origin:95px 95px;cursor:default}
+.donut svg [data-i]:hover{transform:scale(1.04)}
+.donut .dim{opacity:.3}
+.donut .dv{font:800 20px 'Plus Jakarta Sans',system-ui,sans-serif;fill:var(--navy)}
+.donut .ax{font:600 11px 'Plus Jakarta Sans',system-ui,sans-serif;fill:var(--mute)}
+.dl{list-style:none;margin:0;padding:0;width:100%;font-size:.84rem}
+.dl li{display:grid;grid-template-columns:12px 1fr auto auto;gap:.5rem;align-items:center;padding:.22rem .3rem;border-radius:8px;transition:background .15s,opacity .2s}
+.dl li:hover{background:var(--ice-2)}.dl li.dim{opacity:.35}
+.dl i{width:10px;height:10px;border-radius:3px}
+.dl span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.dl b{font-weight:800;color:var(--navy)}.dl em{font-style:normal;color:var(--mute);min-width:5.4rem;text-align:right}
