@@ -136,6 +136,11 @@ const inChat = () => S.chatOpen && S.peer !== null && $('#chatlist');
 const lastChatId = () => (S.chat.length ? S.chat[S.chat.length - 1].id : 0);
 const EMOJIS = '😀 😁 😂 🤣 😊 😍 😘 😎 🤔 😅 😢 😭 😡 🥳 😴 🙄 😬 🤗 👍 👎 👏 🙌 🙏 💪 👋 🤝 ✌️ 👌 🔥 ⭐ ❤️ 💙 💯 🎉 🎁 ✅ ❌ ⚠️ 💸 💵 📱 🍔 🍟 🥟 🥤 🍫 🍦 🍕 ☕ 🧹 🧾 📦 ⏰ 📌 👀 🚀'.split(' ');
 const peerName = () => (S.peer === 0 ? 'Equipo (todos)' : ((S.chatUsers && S.chatUsers.users.find((x) => x.id === S.peer)) || { name: 'Mensaje privado' }).name);
+// cabecera de una conversación: foto y nombre de con quién hablas
+function peerHead() {
+  const u = S.peer ? (S.chatUsers && S.chatUsers.users.find((x) => x.id === S.peer)) : null;
+  return (S.peer === 0 ? '<b class="av sm">👥</b>' : avatar(u || { id: S.peer, name: peerName() }, 'sm')) + esc(peerName());
+}
 function chatShell() {
   let w = $('#cw');
   if (!S.user) { if (w) w.remove(); return; }
@@ -146,11 +151,11 @@ function chatShell() {
 function chatDraw() {
   const w = $('#cw'); if (!w) return;
   if (!S.chatOpen) {
-    w.innerHTML = '<button class="cw-btn" onclick="A.chatToggle()">💬 Chat<b class="badge" id="cwbadge" hidden></b></button>';
+    w.innerHTML = '<button class="cw-btn" onclick="A.chatToggle()"><img class="cwi" src="/chaticon.png" alt="">Chat<b class="badge" id="cwbadge" hidden></b></button>';
     chatPaintBadge(); return;
   }
   w.innerHTML = `<div class="cw-panel"><div class="cw-head">${S.peer === null ? '' : '<button onclick="A.chatBack()" aria-label="Volver">←</button>'}
-    <b>${S.peer === null ? '💬 Chat' : esc(peerName())}</b><button onclick="A.chatToggle()" aria-label="Cerrar">✕</button></div>
+    <b class="cwt">${S.peer === null ? '<img class="cwi" src="/chaticon.png" alt="">Chat' : peerHead()}</b><button onclick="A.chatToggle()" aria-label="Cerrar">✕</button></div>
     ${S.peer === null ? '<div id="chatside" class="cw-list"></div>'
       : `<div id="chatlist" class="chatlist"></div><div id="cwpick" class="cw-pick" hidden></div><div class="cw-send"><button class="btn sec sm" onclick="A.pick()" aria-label="Emojis y stickers">😊</button><input id="cm" maxlength="500" placeholder="Escribe un mensaje…" onkeydown="if(event.key==='Enter')A.say()"><button class="btn sm" onclick="A.say()">Enviar</button></div>`}</div>`;
   chatPaintSide(); chatPaintList();
@@ -169,7 +174,7 @@ function chatPaintBadge() {
 function chatPaintList() {
   const box = $('#chatlist'); if (!box) return;
   const bottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
-  box.innerHTML = S.chat.map((m) => `<div class="msg ${m.user_id === S.user.id ? 'me' : ''}"><small>${m.user_id === S.user.id ? 'Tú' : esc(m.user_name)} · ${dt(m.created_at).split(', ').pop()}</small>${m.sticker_id ? `<img class="stk" src="/api/stickers/${m.sticker_id}/img" alt="sticker">` : `<div>${m.body ? esc(m.body) : '<i class="mute">🖼️ sticker eliminado</i>'}</div>`}${m.user_id === S.user.id && S.peer ? `<small class="seen">${m.id <= S.peerRead ? '✓✓ Visto' : '✓ Enviado'}</small>` : ''}</div>`).join('')
+  box.innerHTML = S.chat.map((m) => `<div class="mrow ${m.user_id === S.user.id ? 'me' : ''}">${avatar(m.user_id === S.user.id ? S.user : { id: m.user_id, name: m.user_name, photo: m.photo }, 'sm')}<div class="msg ${m.user_id === S.user.id ? 'me' : ''}"><small>${m.user_id === S.user.id ? 'Tú' : esc(m.user_name)} · ${dt(m.created_at).split(', ').pop()}</small>${m.sticker_id ? `<img class="stk" src="/api/stickers/${m.sticker_id}/img" alt="sticker">` : `<div>${m.body ? esc(m.body) : '<i class="mute">🖼️ sticker eliminado</i>'}</div>`}${m.user_id === S.user.id && S.peer ? `<small class="seen">${m.id <= S.peerRead ? '✓✓ Visto' : '✓ Enviado'}</small>` : ''}</div></div>`).join('')
     || '<span class="mute">Aún no hay mensajes. ¡Escribe el primero!</span>';
   if (bottom) box.scrollTop = box.scrollHeight;
 }
@@ -1009,7 +1014,7 @@ boot();
 // Tarjetas de datos: según el texto de la etiqueta se les da color e icono
 const STAT_TONES = [
   [/nequi/i, 'nequi', 'caja'], [/efectivo/i, 'cash', 'dinero'], [/p[eé]rdida|descart/i, 'loss', 'gastos'],
-  [/gasto|implemento|comisi/i, 'exp', 'gastos'], [/pedido/i, 'ped', 'productos'], [/ganancia/i, 'gain', 'reportes'], [/rentabilidad/i, 'gain', 'reportes'], [/pagad|por pagar/i, 'ped', 'dinero'],
+  [/gasto|implemento|comisi/i, 'exp', 'gastos'], [/pedido/i, 'orders', 'productos'], [/ganancia/i, 'gain', 'reportes'], [/rentabilidad/i, 'gain', 'reportes'], [/pagad|por pagar/i, 'ped', 'dinero'],
   [/inventario/i, 'inv', 'productos'], [/inicio|deber[ií]a/i, 'slate', 'turnos'], [/ticket|promedio/i, 'inv', 'reportes'], [/mejor/i, 'ped', 'reportes'], [/salida/i, 'loss', 'gastos'], [/saldo|entrada/i, 'gain', 'dinero'], [/venta|total/i, 'sales', 'vender'],
 ];
 function decorateStats(root = document) {
@@ -1017,7 +1022,7 @@ function decorateStats(root = document) {
     const label = (el.querySelector('span') || {}).textContent || '';
     const [, tone, ic] = STAT_TONES.find(([re]) => re.test(label)) || [0, 'sales', 'resumen'];
     el.dataset.t = tone;
-    const logo = { cash: '/efectivo.png', nequi: '/nequi.jpg' }[tone];
+    const logo = { cash: '/efectivo.png', nequi: '/nequi.jpg', orders: '/pedidos.png' }[tone];
     el.insertAdjacentHTML('afterbegin', logo ? `<i class="si logo"><img src="${logo}" alt=""></i>` : `<i class="si">${icon(ic)}</i>`);
   });
 }

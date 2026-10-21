@@ -669,7 +669,9 @@ app.get('/api/chat/users', auth, wrap(async (req) => {
 app.get('/api/chat', auth, wrap(async (req) => {
   const peer = peerOf(req.query.with), after = Number(req.query.after) || 0;
   const c = convo(req.user.id, peer), n = c.args.length;
-  const rows = await D.all(`SELECT id, user_id, user_name, recipient_id, body, sticker_id, created_at FROM chat_messages
+  // nombre actual y versión de la foto de quien escribió (si cambió el perfil, el chat lo refleja)
+  const rows = await D.all(`SELECT id, user_id, COALESCE((SELECT x.name FROM users x WHERE x.id=chat_messages.user_id), user_name) AS user_name, recipient_id, body, sticker_id, created_at,
+      (SELECT extract(epoch FROM f.updated_at)::bigint FROM user_photos f WHERE f.user_id=chat_messages.user_id) AS photo FROM chat_messages
     WHERE ${c.where} ${after ? `AND id>$${n + 1}` : ''} ORDER BY id ${after ? 'ASC' : 'DESC'} LIMIT ${after ? 200 : 100}`,
     after ? [...c.args, after] : c.args);
   // peer_read: hasta qué mensaje de esta conversación ha leído la otra persona (para mostrar "Visto")

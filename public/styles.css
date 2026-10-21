@@ -62,7 +62,8 @@ main{max-width:1040px;margin:0 auto;padding:1.2rem 1rem 5rem}
 .stat .si .ic{width:20px;height:20px}
 .stat .si.logo{background:#fff;box-shadow:0 4px 10px -2px #0004;overflow:hidden;padding:0}
 .stat .si.logo img{width:100%;height:100%;object-fit:contain;display:block}
-.stat[data-t=cash] .si.logo img{padding:5px}
+.stat[data-t=cash] .si.logo img,.stat[data-t=orders] .si.logo img{padding:5px}
+.stat[data-t=orders]{--c1:#b45309;--c2:#f59e0b}
 .stat span{display:block;color:#ffffffd9;font-size:.78rem;font-weight:600;letter-spacing:.02em}
 .stat b{display:block;font-size:1.6rem;font-weight:800;color:#fff;letter-spacing:-.02em;margin-top:.1rem;text-shadow:0 2px 10px #0003}
 .stat small{display:block;margin-top:.35rem;font-size:.74rem;color:#ffffffd0;font-weight:600}
@@ -398,3 +399,13 @@ tr.tot td{border-top:2px solid var(--line);background:var(--ice-2)}
 .pf-sec{margin-top:1rem;padding-top:.8rem;border-top:1px solid var(--line)}
 .pf-sec h4{margin:0}
 .cw-pick{margin-top:.4rem;border:1px solid var(--line);border-radius:12px}
+
+/* ---------- Chat: foto de quien escribe e icono propio ---------- */
+.mrow{display:flex;align-items:flex-end;gap:.4rem;max-width:92%;align-self:flex-start}
+.mrow.me{align-self:flex-end;flex-direction:row-reverse}
+.mrow .msg{max-width:none;min-width:0;align-self:auto}
+.mrow .av{width:28px;height:28px;font-size:.75rem;box-shadow:none;flex:none}
+.cw-btn{display:inline-flex;align-items:center;gap:.5rem}
+.cwi{width:26px;height:26px;background:#fff;border-radius:50%;padding:3px;box-shadow:0 2px 6px rgba(2,0,95,.25);flex:none}
+.cw-head .cwt{display:flex;align-items:center;gap:.5rem}
+.cw-head .cwt .av{width:28px;height:28px;font-size:.75rem;box-shadow:0 0 0 2px #ffffff55}
