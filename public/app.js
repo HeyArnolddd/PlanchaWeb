@@ -895,7 +895,8 @@ function decorateStats(root = document) {
     const label = (el.querySelector('span') || {}).textContent || '';
     const [, tone, ic] = STAT_TONES.find(([re]) => re.test(label)) || [0, 'sales', 'resumen'];
     el.dataset.t = tone;
-    el.insertAdjacentHTML('afterbegin', `<i class="si">${icon(ic)}</i>`);
+    const logo = { cash: '/efectivo.png', nequi: '/nequi.jpg' }[tone];
+    el.insertAdjacentHTML('afterbegin', logo ? `<i class="si logo"><img src="${logo}" alt=""></i>` : `<i class="si">${icon(ic)}</i>`);
   });
 }
 new MutationObserver(() => decorateStats()).observe(document.body, { childList: true, subtree: true });
