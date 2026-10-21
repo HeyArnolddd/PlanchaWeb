@@ -44,6 +44,44 @@ async function act(fn, ok) {
 const S = { user: null, view: null, chat: [], peerRead: 0, peer: null, chatOpen: false, cart: [], benefit: null, method: 'efectivo', cat: 'all', q: '' };
 const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['emprendimientos', 'Emprendimientos'], ['gastos', 'Gastos'], ['reportes', 'Reportes'], ['turnos', 'Turnos'], ['horario', 'Horario'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
 const TURNO_TABS = [['resumen', 'Resumen'], ['caja', 'Caja'], ['vender', 'Vender'], ['inventario', 'Productos'], ['turnos', 'Mis turnos'], ['horario', 'Horario']];
+// Menú lateral: grupos de vistas (las que el rol no tenga se omiten)
+const NAV_GROUPS = [['Principal', ['resumen']], ['Ventas', ['vender', 'caja']], ['Inventario', ['productos', 'inventario', 'emprendimientos']], ['Finanzas', ['dinero', 'gastos', 'reportes']], ['Equipo', ['turnos', 'horario', 'actividad', 'usuarios']]];
+const ICONS = {
+  resumen: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+  vender: '<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.7 11.4a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.5L21 7H6"/>',
+  caja: '<rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M6 15h3"/>',
+  productos: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
+  inventario: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
+  emprendimientos: '<path d="M3 9 4.5 4h15L21 9"/><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0M5 12v8h14v-8"/>',
+  dinero: '<circle cx="12" cy="12" r="9"/><path d="M14.8 9a2.8 2.8 0 0 0-2.8-1.5c-1.7 0-2.8.9-2.8 2.1s1.1 1.8 2.8 2.4 2.8 1.2 2.8 2.4-1.1 2.1-2.8 2.1A2.8 2.8 0 0 1 9.2 15M12 6v1.5M12 16.5V18"/>',
+  gastos: '<path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+  reportes: '<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>',
+  turnos: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  horario: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/>',
+  actividad: '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+  usuarios: '<circle cx="9" cy="8" r="3.5"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14c2.5.6 4 2.5 4 5"/>',
+  salir: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+  clave: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  colapsar: '<path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/>'
+};
+const icon = (k) => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k] || ''}</svg>`;
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+function sideHTML(tabs) {
+  const label = Object.fromEntries(tabs);
+  let i = 0;
+  const groups = NAV_GROUPS.map(([g, ks]) => {
+    const items = ks.filter((k) => label[k]).map((k) => `<button class="${k === S.view ? 'on' : ''}" data-k="${k}" style="--i:${i++}" onclick="go('${k}')" title="${esc(label[k])}">${icon(k)}<span>${esc(label[k])}</span></button>`).join('');
+    return items ? `<div class="grp"><em>${g}</em>${items}</div>` : '';
+  }).join('');
+  return `<div class="side-head"><img src="/logo.png" alt="ACEIS"><i>La Plancha</i>
+      <button class="side-col" onclick="A.sideCollapse()" aria-label="Contraer menú" title="Contraer / expandir">${icon('colapsar')}</button></div>
+    <div class="side-nav">${groups}</div>
+    <div class="side-foot"><div class="me"><b>${esc(S.user.name.trim()[0] || '?').toUpperCase()}</b><span>${esc(S.user.name)}<small>${S.user.role === 'admin' ? 'Administrador' : 'Turno'}</small></span></div>
+      <button onclick="A.password()" title="Contraseña">${icon('clave')}<span>Contraseña</span></button>
+      <button onclick="A.logout()" title="Salir">${icon('salir')}<span>Salir</span></button></div>`;
+}
 
 function modal(html) {
   const m = document.createElement('div'); m.className = 'modal';
@@ -62,13 +100,22 @@ async function boot() {
   if (!S.user) { clearInterval(S.chatTimer); S.chatOpen = false; S.peer = null; S.chat = []; chatShell(); return loginView(); }
   const tabs = S.user.role === 'admin' ? ADMIN_TABS : TURNO_TABS;
   if (!S.view || !tabs.find((t) => t[0] === S.view)) S.view = tabs[0][0];
-  $('#app').innerHTML = `
-    <div class="top"><div class="brand"><img src="/logo.png" alt="ACEIS"><i>La Plancha</i></div><span class="sp"></span>
-      <small data-i="${esc(S.user.name.trim()[0] || '?').toUpperCase()}"><span>${esc(S.user.name)} · ${S.user.role === 'admin' ? 'Admin' : 'Turno'}</span></small>
-      <button class="btn sec sm" onclick="A.password()">Contraseña</button>
-      <button class="btn sec sm" onclick="A.logout()">Salir</button></div>
-    <nav>${tabs.map(([k, l]) => `<button class="${k === S.view ? 'on' : ''}" onclick="go('${k}')">${l}</button>`).join('')}</nav>
-    <main id="main"></main>`;
+  const first = !$('.shell');
+  if (first) {
+    $('#app').innerHTML = `<div class="shell ${lsGet('side-col') === '1' ? 'col' : ''}">
+      <div class="scrim" onclick="A.sideClose()"></div>
+      <aside class="side"></aside>
+      <div class="content">
+        <div class="top"><button class="burger" onclick="A.sideOpen()" aria-label="Abrir menú">${icon('menu')}</button><h1 id="ttl"></h1><span class="sp"></span>
+          <small data-i="${esc(S.user.name.trim()[0] || '?').toUpperCase()}"><span>${esc(S.user.name)} · ${S.user.role === 'admin' ? 'Admin' : 'Turno'}</span></small></div>
+        <main id="main"></main>
+      </div></div>`;
+  }
+  $('.side').innerHTML = sideHTML(tabs);
+  $('#ttl').textContent = (tabs.find((t) => t[0] === S.view) || [, ''])[1];
+  document.querySelector('.shell').classList.remove('open');
+  if (first) setTimeout(() => { const sh = $('.shell'); if (sh) sh.classList.add('seen'); }, 900);
+  else $('.shell').classList.add('seen');
   await views[S.view]();
   chatShell(); chatStart();
   if (S.user.must_change) $('#main').insertAdjacentHTML('afterbegin',
@@ -449,6 +496,9 @@ function salesTable(sales, canVoid) {
 
 // ---------- Acciones ----------
 const A = window.A = {
+  sideOpen() { $('.shell').classList.add('open'); },
+  sideClose() { $('.shell').classList.remove('open'); },
+  sideCollapse() { const c = $('.shell').classList.toggle('col'); lsSet('side-col', c ? '1' : '0'); },
   async logout() { await api('/logout', 'POST'); S.view = null; S.cart = []; S.benefit = null; clearInterval(S.chatTimer); S.chat = []; S.peerRead = 0; S.peer = null; S.chatOpen = false; S.chatUsers = null; chatShell(); boot(); },
   password() {
     modal(`<h3>Cambiar contraseña</h3><label>Actual</label><input id="p0" type="password"><label>Nueva (mín. 6)</label><input id="p1" type="password">
