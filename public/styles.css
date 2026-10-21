@@ -325,3 +325,16 @@ body:has(.login-wrap) .pingu{display:none}
 .eye:active{transform:translateY(-50%) scale(.88)}
 .eye.on{color:var(--brand);background:var(--ice)}
 .eye .ic{width:20px;height:20px}
+
+/* ---------- Productos favoritos ---------- */
+@keyframes starPop{0%{transform:scale(.4) rotate(-30deg)}60%{transform:scale(1.35) rotate(10deg)}100%{transform:scale(1) rotate(0)}}
+.prod .fav{position:absolute;top:.4rem;left:.4rem;z-index:2;width:28px;height:28px;display:grid;place-items:center;border-radius:50%;background:#ffffffe6;color:#a9b6d6;
+  box-shadow:0 2px 8px -2px rgba(2,0,95,.35);transition:color .2s,transform .25s var(--ease),background .2s}
+.prod .fav .ic{width:16px;height:16px;fill:none}
+.prod .fav:hover{color:#f59e0b;transform:scale(1.15)}
+.prod .fav.on{color:#f59e0b;background:#fff7e0}
+.prod .fav.on .ic{fill:currentColor;animation:starPop .4s var(--ease)}
+.prod:has(.fav.on){border-color:#f6d98a}
+.chips .fchip{display:inline-flex;align-items:center;gap:.3rem}
+.chips .fchip .ic{width:14px;height:14px;fill:currentColor;color:#f59e0b}
+.chips .fchip.on .ic{color:#fff}

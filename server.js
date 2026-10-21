@@ -165,6 +165,7 @@ UPDATE sales SET cash_amount=CASE WHEN method='efectivo' THEN total ELSE 0 END,
 ALTER TABLE sales ALTER COLUMN cash_amount SET NOT NULL;
 ALTER TABLE sales ALTER COLUMN nequi_amount SET NOT NULL;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS track_stock INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS favorite INTEGER NOT NULL DEFAULT 0;
 CREATE TABLE IF NOT EXISTS write_offs (
   id SERIAL PRIMARY KEY,
   product_id INTEGER NOT NULL REFERENCES products(id),
@@ -429,6 +430,13 @@ app.get('/api/products', auth, wrap(async (req) => {
     delete r.buy_price;
   });
   return rows;
+}));
+// Favoritos: se marcan con la estrella en Vender y los ven todos primero (cualquiera puede marcar o quitar)
+app.post('/api/products/:id/favorite', auth, wrap(async (req) => {
+  const id = int(req.params.id, 'id');
+  if (!await D.get('SELECT 1 FROM products WHERE id=$1', [id])) throw new HttpError(404, 'No existe');
+  await D.run('UPDATE products SET favorite=$1 WHERE id=$2', [req.body.favorite ? 1 : 0, id]);
+  return { ok: true };
 }));
 async function productBody(b) {
   const category_id = b.category_id ? int(b.category_id, 'categoría') : null;

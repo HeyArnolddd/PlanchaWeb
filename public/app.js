@@ -69,6 +69,7 @@ const ICONS = {
   menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
   ojo: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   ojoOff: '<path d="M17.9 17.9A10.5 10.5 0 0 1 12 19c-6.4 0-10-7-10-7a17.6 17.6 0 0 1 4.1-5M9.9 5.2A9.7 9.7 0 0 1 12 5c6.4 0 10 7 10 7a17.7 17.7 0 0 1-2.2 3.2M1 1l22 22M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+  estrella: '<path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/>',
   colapsar: '<path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/>'
 };
 const icon = (k) => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k] || ''}</svg>`;
@@ -348,6 +349,7 @@ const views = {
     $('#main').innerHTML = `<div class="pos">
       <div><input id="q" placeholder="Buscar producto…" value="${esc(S.q)}" oninput="S.q=this.value;A.grid()">
         <div class="chips"><button class="${S.cat === 'all' ? 'on' : ''}" onclick="S.cat='all';views.vender()">Todos</button>
+        <button class="fchip ${S.cat === 'fav' ? 'on' : ''}" onclick="S.cat='fav';views.vender()">${icon('estrella')} Favoritos</button>
         ${cats.map((c) => `<button class="${S.cat === c ? 'on' : ''}" data-c="${esc(c)}" onclick="S.cat=this.dataset.c;views.vender()">${esc(c)}</button>`).join('')}</div>
         <div class="prods" id="grid"></div></div>
       <div class="card"><h3>Venta</h3><div id="cart"></div></div></div>
@@ -641,10 +643,19 @@ const A = window.A = {
   // Venta
   grid() {
     const words = norm(S.q).split(/\s+/).filter(Boolean);
-    const list = S.prods.filter((p) => (S.cat === 'all' || (p.category || 'Sin categoría') === S.cat)
-      && words.every((w) => norm(p.name + ' ' + (p.category || '')).includes(w)));
+    const list = S.prods.filter((p) => (S.cat === 'all' || (S.cat === 'fav' ? p.favorite : (p.category || 'Sin categoría') === S.cat))
+      && words.every((w) => norm(p.name + ' ' + (p.category || '')).includes(w)))
+      .sort((x, y) => y.favorite - x.favorite); // los favoritos van de primeros (el orden es estable)
     $('#grid').innerHTML = list.map((p) => `<button class="prod" data-p="${p.id}" ${p.track_stock && p.stock <= 0 ? 'disabled' : ''} onclick="A.add(${p.id})">
+      <span class="fav ${p.favorite ? 'on' : ''}" role="button" aria-label="${p.favorite ? 'Quitar de favoritos' : 'Marcar como favorito'}" title="${p.favorite ? 'Quitar de favoritos' : 'Favorito'}" onclick="A.fav(event, ${p.id})">${icon('estrella')}</span>
       ${p.photo ? `<img loading="lazy" src="${photoUrl(p)}" alt="">` : ''}<b>${esc(p.name)}</b>${money(p.sell_price)}<br><small>${p.track_stock ? p.stock + ' disp.' : 'sin control de stock'}</small>${A.badge(p.id)}</button>`).join('') || '<span class="mute">Sin resultados.</span>';
+  },
+  async fav(e, id) {
+    e.stopPropagation();
+    const p = S.prods.find((x) => x.id === id); if (!p) return;
+    p.favorite = p.favorite ? 0 : 1; A.grid();
+    try { await api(`/products/${id}/favorite`, 'POST', { favorite: !!p.favorite }); }
+    catch (err) { p.favorite = p.favorite ? 0 : 1; A.grid(); toast(err.message); }
   },
   badge(id) {
     const c = S.cart.find((x) => x.id === id);
