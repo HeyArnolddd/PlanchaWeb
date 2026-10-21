@@ -46,10 +46,10 @@ async function act(fn, ok) {
 }
 
 const S = { user: null, view: null, chat: [], peerRead: 0, peer: null, chatOpen: false, cart: [], benefit: null, method: 'efectivo', cat: 'all', q: '' };
-const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['emprendimientos', 'Emprendimientos'], ['gastos', 'Gastos'], ['reportes', 'Reportes'], ['turnos', 'Turnos'], ['horario', 'Horario'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
+const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['emprendimientos', 'Emprendimientos'], ['gastos', 'Gastos'], ['reportes', 'Reportes'], ['rentabilidad', 'Rentabilidad emprend.'], ['turnos', 'Turnos'], ['horario', 'Horario'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
 const TURNO_TABS = [['resumen', 'Resumen'], ['caja', 'Caja'], ['vender', 'Vender'], ['inventario', 'Productos'], ['turnos', 'Mis turnos'], ['horario', 'Horario']];
 // Menú lateral: grupos de vistas (las que el rol no tenga se omiten)
-const NAV_GROUPS = [['Principal', ['resumen']], ['Ventas', ['vender', 'caja']], ['Inventario', ['productos', 'inventario', 'emprendimientos']], ['Finanzas', ['dinero', 'gastos', 'reportes']], ['Equipo', ['turnos', 'horario', 'actividad', 'usuarios']]];
+const NAV_GROUPS = [['Principal', ['resumen']], ['Ventas', ['vender', 'caja']], ['Inventario', ['productos', 'inventario', 'emprendimientos']], ['Finanzas', ['dinero', 'gastos', 'reportes', 'rentabilidad']], ['Equipo', ['turnos', 'horario', 'actividad', 'usuarios']]];
 const ICONS = {
   resumen: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
   vender: '<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.7 11.4a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.5L21 7H6"/>',
@@ -59,6 +59,7 @@ const ICONS = {
   emprendimientos: '<path d="M3 9 4.5 4h15L21 9"/><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0M5 12v8h14v-8"/>',
   dinero: '<circle cx="12" cy="12" r="9"/><path d="M14.8 9a2.8 2.8 0 0 0-2.8-1.5c-1.7 0-2.8.9-2.8 2.1s1.1 1.8 2.8 2.4 2.8 1.2 2.8 2.4-1.1 2.1-2.8 2.1A2.8 2.8 0 0 1 9.2 15M12 6v1.5M12 16.5V18"/>',
   gastos: '<path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+  rentabilidad: '<path d="M3 17l5-5 4 4 8-9"/><path d="M14 7h6v6"/>',
   reportes: '<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>',
   turnos: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   horario: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/>',
@@ -465,9 +466,9 @@ const views = {
     const iso = (t) => t.toISOString().slice(0, 10);
     const today = new Date(Date.now() - 5 * 36e5), rto = iso(today);
     today.setUTCDate(today.getUTCDate() - S.rp + 1);
-    if (S.rtab === 'emp') {
+    if (S.view === 'rentabilidad') {
       const er = await api(`/reports/emprendimientos?from=${iso(today)}&to=${rto}`).catch((e) => ({ error: e.message }));
-      $('#main').innerHTML = `<h2>Reportes</h2>${reportTabs()}${empPanel(er)}`;
+      $('#main').innerHTML = `<h2>Rentabilidad de emprendimientos</h2>${reportTabs()}${empPanel(er)}`;
       return empCharts(er);
     }
     const [w, tr] = await Promise.all([api('/reports/week' + (S.week ? `?start=${S.week}` : '')), api(`/reports/trend?from=${iso(today)}&to=${rto}`).catch((e) => ({ error: e.message }))]);
@@ -505,6 +506,8 @@ const views = {
         <p><button class="btn" onclick="A.exportCsv()">⬇ Descargar CSV</button></p></div>`;
     A.hours('week'); reportCharts(tr);
   },
+
+  rentabilidad() { return views.reportes(); },
 
   async actividad() {
     S.aq ??= '';
@@ -1083,7 +1086,7 @@ function reportCharts(tr) {
 }
 
 // ---------- Reportes: emprendimientos (rentabilidad y pérdidas) ----------
-const reportTabs = () => `<div class="seg rtabs"><button class="${S.rtab === 'emp' ? '' : 'on'}" onclick="A.rtab('general')">General</button><button class="${S.rtab === 'emp' ? 'on' : ''}" onclick="A.rtab('emp')">Emprendimientos</button></div>`;
+const reportTabs = () => `<div class="seg rtabs"><button class="${S.view === 'rentabilidad' ? '' : 'on'}" onclick="go('reportes')">General</button><button class="${S.view === 'rentabilidad' ? 'on' : ''}" onclick="go('rentabilidad')">Emprendimientos</button></div>`;
 const pctOf = (x, y) => (y ? (x / y * 100).toFixed(1).replace('.', ',') + '%' : '—');
 function empPanel(er) {
   const sel = `<div class="seg rsel">${RANGOS.map(([n, l]) => `<button class="${S.rp === n ? 'on' : ''}" onclick="A.rp(${n})">${l}</button>`).join('')}</div>`;
