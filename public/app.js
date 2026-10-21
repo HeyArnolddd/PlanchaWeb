@@ -198,34 +198,50 @@ function chatStart() {
 }
 window.go = (v) => { S.view = v; boot(); };
 
-// Sami en el login (vector, data-s en el SVG): baila solo; mira al usuario mientras escribe su nombre,
-// se tapa los ojos con la contraseña y, si se muestra con el ojito, se tapa solo un ojo y espía
+// Sami en el login: baila solo; mira al usuario mientras escribe su nombre, se tapa los ojos con la
+// contraseña y, si se muestra con el ojito, se tapa solo un ojo y espía
+const SAMI_DANCE = ['happy', 'w1', 'w3', 'happy', 'w5', 'w7', 'jump', 'happy', 'left', 'happy', 'right', 'happy', 'blink', 'happy'];
 function danceSami() {
-  const sami = $('#sami'); if (!sami) return;
-  const user = $('#lu'), pass = $('#lp');
-  let pose = null, hold = 0, noticed = false;
+  const img = $('#hero'); if (!img) return;
+  const hero = $('.hero'), user = $('#lu'), pass = $('#lp');
+  ['sr', 'cf', 'pf', 'right', 'sad', 'sf', ...SAMI_DANCE].forEach((n) => { new Image().src = `/sami/${n}.png`; });
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let i = 0, side = 1, pose = null, noticed = false, hold = 0;
+  const show = (n, flip = 1) => { if (img.dataset.n !== n) { img.dataset.n = n; img.src = `/sami/${n}.png`; } img.style.transform = flip === 1 ? '' : `scaleX(${flip})`; };
+  window.samiPose = (p, ms = 0) => { hold = ms ? Date.now() + ms : 0; pose = p; paint(); };
   const state = () => {
     if (hold > Date.now()) return pose;
     if (document.activeElement === pass) return pass.type === 'text' ? 'peek' : 'cover';
-    if (document.activeElement === user) return noticed ? 'watch' : 'notice';
-    return 'dance';
+    if (document.activeElement === user) return 'watch';
+    return null;
   };
-  const paint = () => { sami.dataset.s = state(); };
-  window.samiPaint = paint;
-  window.samiPose = (p, ms) => { pose = p; hold = Date.now() + ms; paint(); setTimeout(paint, ms + 30); };
-  user.addEventListener('focus', () => { noticed = false; paint(); setTimeout(() => { noticed = true; paint(); }, 800); });
-  user.addEventListener('input', () => { noticed = true; paint(); sami.classList.remove('nod'); void sami.getBoundingClientRect(); sami.classList.add('nod'); });
-  [user, pass].forEach((el) => el.addEventListener('blur', () => setTimeout(paint, 0)));
+  const paint = () => {
+    const st = hold > Date.now() ? pose : state();
+    hero.classList.toggle('calm', !!st);
+    if (st === 'cover') show('cf'); else if (st === 'peek') show('pf');
+    else if (st === 'watch') show(noticed ? 'right' : 'sr');
+    else if (st === 'sad') show('sad'); else if (st === 'happy') show('happy');
+  };
+  user.addEventListener('focus', () => { noticed = false; paint(); setTimeout(() => { noticed = true; paint(); }, 700); });
+  user.addEventListener('input', () => { noticed = true; paint(); hero.classList.remove('nod'); void hero.offsetWidth; hero.classList.add('nod'); });
+  [user, pass].forEach((el) => { el.addEventListener('blur', () => setTimeout(paint, 0)); });
   pass.addEventListener('focus', paint);
-  const moves = ['groove', 'groove', 'hop', 'groove', 'turn'];
-  let i = 0;
-  const t = setInterval(() => { if (!sami.isConnected) return clearInterval(t); sami.dataset.v = moves[i++ % moves.length]; }, 2400);
+  window.samiPaint = paint;
+  if (calm) return;
+  const t = setInterval(() => {
+    if (!img.isConnected) return clearInterval(t);
+    if (hold > Date.now() || state()) return;
+    hero.classList.remove('calm');
+    const n = SAMI_DANCE[i++ % SAMI_DANCE.length];
+    if (i % 4 === 0) side = -side;
+    show(n, n === 'left' || n === 'right' ? 1 : side);
+  }, 230);
 }
 function loginView() {
   $('#app').innerHTML = `<div class="login-wrap"><i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i>
     <div class="hero" aria-hidden="true"><div class="hero-say">¡Bienvenido! 🎉</div>
       <i class="note n1">♪</i><i class="note n2">♫</i><i class="note n3">♪</i><i class="note n4">♫</i>
-      <div class="hero-bob">${samiSVG()}</div><div class="hero-shd"></div></div>
+      <div class="hero-bob"><img id="hero" src="/sami/happy.png" alt="" draggable="false"></div><div class="hero-shd"></div></div>
     <div class="login"><img src="/logo.png" alt="ACEIS"><h2>La Plancha</h2><p class="mute">Asociación de Ingeniería de Sistemas</p>
     <label>Usuario</label><input id="lu" autocomplete="username" autocapitalize="none">
     <label>Contraseña</label><div class="pw"><input id="lp" type="password" autocomplete="current-password">
