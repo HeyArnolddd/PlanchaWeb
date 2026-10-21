@@ -200,13 +200,18 @@ window.go = (v) => { S.view = v; boot(); };
 
 // Sami en el login: baila solo; mira al usuario mientras escribe su nombre, se tapa los ojos con la
 // contraseña y, si se muestra con el ojito, se tapa solo un ojo y espía
-const SAMI_DANCE = ['happy', 'w1', 'w3', 'happy', 'w5', 'w7', 'jump', 'happy', 'left', 'happy', 'right', 'happy', 'blink', 'happy'];
+// Coreografía: ciclo de 8 pasos (110 ms c/u) en el sitio, mirando a un lado y luego al otro, con remates felices
+const SAMI_STEPS = Array.from({ length: 8 }, (_, i) => 'w' + (i + 1));
+const SAMI_PLAN = [1, -1].flatMap((side) => [
+  ...SAMI_STEPS.concat(SAMI_STEPS).map((n) => [n, side, 110]),
+  ['happy', 1, 260], ['jump', 1, 340], ['happy', 1, 260], [side === 1 ? 'right' : 'left', 1, 280], ['blink', 1, 200],
+]);
 function danceSami() {
   const img = $('#hero'); if (!img) return;
   const hero = $('.hero'), user = $('#lu'), pass = $('#lp');
-  ['sr', 'cf', 'pf', 'right', 'sad', 'sf', ...SAMI_DANCE].forEach((n) => { new Image().src = `/sami/hd/${n}.png`; });
+  ['sr', 'cf', 'pf', 'right', 'sad', 'sf', ...SAMI_STEPS, 'happy', 'jump', 'left', 'blink'].forEach((n) => { new Image().src = `/sami/hd/${n}.png`; });
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let i = 0, side = 1, pose = null, noticed = false, hold = 0;
+  let i = 0, pose = null, noticed = false, hold = 0;
   const show = (n, flip = 1) => { if (img.dataset.n !== n) { img.dataset.n = n; img.src = `/sami/hd/${n}.png`; } img.style.transform = flip === 1 ? '' : `scaleX(${flip})`; };
   window.samiPose = (p, ms = 0) => { hold = ms ? Date.now() + ms : 0; pose = p; paint(); };
   const state = () => {
@@ -228,14 +233,15 @@ function danceSami() {
   pass.addEventListener('focus', paint);
   window.samiPaint = paint;
   if (calm) return;
-  const t = setInterval(() => {
-    if (!img.isConnected) return clearInterval(t);
-    if (hold > Date.now() || state()) return;
+  const step = () => {
+    if (!img.isConnected) return;
+    if (hold > Date.now() || state()) return setTimeout(step, 150);
     hero.classList.remove('calm');
-    const n = SAMI_DANCE[i++ % SAMI_DANCE.length];
-    if (i % 4 === 0) side = -side;
-    show(n, n === 'left' || n === 'right' ? 1 : side);
-  }, 230);
+    const [n, flip, ms] = SAMI_PLAN[i++ % SAMI_PLAN.length];
+    show(n, flip);
+    setTimeout(step, ms);
+  };
+  step();
 }
 function loginView() {
   $('#app').innerHTML = `<div class="login-wrap"><i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i>
