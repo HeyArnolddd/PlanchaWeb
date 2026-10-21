@@ -111,6 +111,7 @@ async function boot() {
   S.user = await api('/me').catch(() => null);
   if (!S.user) { clearInterval(S.chatTimer); S.chatOpen = false; S.peer = null; S.chat = []; chatShell(); return loginView(); }
   const tabs = S.user.role === 'admin' ? ADMIN_TABS : TURNO_TABS;
+  try { const rv = sessionStorage.getItem('reloadView'); if (rv) { sessionStorage.removeItem('reloadView'); if (!S.view) S.view = rv; } } catch {} // tras una actualización automática, vuelve a la misma vista
   if (!S.view || !tabs.find((t) => t[0] === S.view)) S.view = tabs[0][0];
   const first = !$('.shell');
   if (first) {
