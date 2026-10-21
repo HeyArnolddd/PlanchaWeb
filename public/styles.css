@@ -389,3 +389,12 @@ details.dt summary{cursor:pointer;color:var(--brand);font-weight:600;font-size:.
 .rtabs{margin-bottom:.8rem;max-width:380px}
 ul.ins{margin:0;padding-left:1.1rem;line-height:1.6}ul.ins li{margin:.25rem 0}
 tr.tot td{border-top:2px solid var(--line);background:var(--ice-2)}
+
+/* ---------- Mi perfil ---------- */
+.pf-top{display:flex;align-items:center;gap:1rem;margin-bottom:.4rem}
+.pf-top .av.xl{margin:0;width:96px;height:96px;font-size:2.1rem}
+.pf-btns{display:flex;flex-direction:column;gap:.4rem;align-items:flex-start}
+.pf-btns label.btn{cursor:pointer;display:inline-block;margin:0}
+.pf-sec{margin-top:1rem;padding-top:.8rem;border-top:1px solid var(--line)}
+.pf-sec h4{margin:0}
+.cw-pick{margin-top:.4rem;border:1px solid var(--line);border-radius:12px}

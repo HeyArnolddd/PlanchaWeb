@@ -490,6 +490,22 @@ app.put('/api/products/:id', auth, admin, wrap(async (req) => {
   }
   return { ok: true };
 }));
+// Perfil propio: nombre (admite emojis) y usuario; el usuario exige la contraseña actual
+app.put('/api/me/profile', auth, wrap(async (req) => {
+  const name = str(String(req.body.name ?? '').replace(/[\u0000-\u001f]/g, ' '), 'Nombre', 80);
+  if (Array.from(name).length > 30) throw bad('El nombre admite máximo 30 caracteres');
+  const username = str(req.body.username, 'Usuario', 30).toLowerCase();
+  const u = await D.get('SELECT * FROM users WHERE id=$1', [req.user.id]);
+  if (username !== u.username) {
+    if (!/^[a-z0-9._-]{3,30}$/.test(username)) throw bad('El usuario debe tener de 3 a 30 caracteres: minúsculas, números, punto, guion o guion bajo');
+    if (!bcrypt.compareSync(String(req.body.current || ''), u.password_hash)) throw bad('Para cambiar tu usuario escribe tu contraseña actual');
+  }
+  if (name === u.name && username === u.username) return { id: u.id, name, username };
+  try { await D.run('UPDATE users SET name=$1, username=$2 WHERE id=$3', [name, username, u.id]); } catch (e) { dup(e, 'Ese usuario ya existe'); }
+  const ch = [name !== u.name ? `nombre "${u.name}" → "${name}"` : '', username !== u.username ? `usuario ${u.username} → ${username}` : ''].filter(Boolean).join(' · ');
+  await audit(D, { ...req.user, name }, 'Actualizó su perfil', ch);
+  return { id: u.id, name, username };
+}));
 // Foto de perfil: cada quien cambia la suya (el navegador la reduce antes de enviarla)
 app.get('/api/users/:id/photo', auth, wrap(async (req, res) => {
   const f = await D.get('SELECT data, mime FROM user_photos WHERE user_id=$1', [int(req.params.id, 'id')]);

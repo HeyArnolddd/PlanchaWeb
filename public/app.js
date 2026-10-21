@@ -6,7 +6,7 @@ const photoUrl = (p) => `/api/products/${p.id}/photo?v=${p.photo}`;
 // Avatar: foto de perfil o, si no tiene, la inicial del nombre
 const avatar = (u, cls = '') => u.photo
   ? `<img class="av ${cls}" src="/api/users/${u.id}/photo?v=${u.photo}" alt="">`
-  : `<b class="av ${cls}">${esc((u.name || '?').trim()[0] || '?').toUpperCase()}</b>`;
+  : `<b class="av ${cls}">${esc(Array.from((u.name || '?').trim())[0] || '?').toUpperCase()}</b>`;
 // Reduce la foto a un cuadrado de 240px (JPEG) para que pese pocos KB
 async function shrink(file) {
   const bmp = await createImageBitmap(file);
@@ -71,6 +71,7 @@ const ICONS = {
   ojo: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   ojoOff: '<path d="M17.9 17.9A10.5 10.5 0 0 1 12 19c-6.4 0-10-7-10-7a17.6 17.6 0 0 1 4.1-5M9.9 5.2A9.7 9.7 0 0 1 12 5c6.4 0 10 7 10 7a17.7 17.7 0 0 1-2.2 3.2M1 1l22 22M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
   estrella: '<path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/>',
+  sonrisa: '<circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2.5 4 2.5S16 14 16 14M9 9.5h.01M15 9.5h.01"/>',
   colapsar: '<path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/>'
 };
 const icon = (k) => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k] || ''}</svg>`;
@@ -87,7 +88,7 @@ function sideHTML(tabs) {
       <button class="side-col" onclick="A.sideCollapse()" aria-label="Contraer menú" title="Contraer / expandir">${icon('colapsar')}</button></div>
     <div class="side-nav">${groups}</div>
     <div class="side-foot"><div class="me" onclick="A.profile()" title="Cambiar foto de perfil">${avatar(S.user)}<span>${esc(S.user.name)}<small>${S.user.role === 'admin' ? 'Administrador' : 'Turno'}</small></span></div>
-      <button onclick="A.password()" title="Contraseña">${icon('clave')}<span>Contraseña</span></button>
+      <button onclick="A.profile()" title="Mi perfil">${icon('usuarios')}<span>Mi perfil</span></button>
       <button onclick="A.logout()" title="Salir">${icon('salir')}<span>Salir</span></button></div>`;
 }
 
@@ -579,10 +580,31 @@ const A = window.A = {
   async logout() { await api('/logout', 'POST'); S.view = null; S.cart = []; S.benefit = null; clearInterval(S.chatTimer); S.chat = []; S.peerRead = 0; S.peer = null; S.chatOpen = false; S.chatUsers = null; chatShell(); boot(); },
   profile() {
     S.avatar = undefined;
-    modal(`<h3>Foto de perfil</h3><div style="text-align:center"><div id="avbox">${avatar(S.user, 'xl')}</div>
-      <input id="avf" type="file" accept="image/*" onchange="A.pickAvatar(this)" style="margin-top:.8rem">
-      ${S.user.photo ? '<a href="#" onclick="A.rmAvatar();return false" class="mute">Quitar foto</a>' : ''}</div>
-      <div class="row" style="margin-top:1rem"><button class="btn sec" onclick="closeModal()">Cancelar</button><button class="btn" onclick="A.saveAvatar()">Guardar</button></div>`);
+    modal(`<h3>Mi perfil</h3>
+      <div class="pf-top"><div id="avbox">${avatar(S.user, 'xl')}</div>
+        <div class="pf-btns"><label class="btn sec sm" for="avf">Cambiar foto</label><input id="avf" type="file" accept="image/*" onchange="A.pickAvatar(this)" hidden>
+        ${S.user.photo ? '<a href="#" onclick="A.rmAvatar();return false" class="mute">Quitar foto</a>' : ''}</div></div>
+      <label>Nombre (puedes usar emojis 😎)</label>
+      <div class="pw"><input id="pn" value="${esc(S.user.name)}" autocomplete="off" oninput="A.pcount()"><button type="button" class="eye" id="pemo" onmousedown="event.preventDefault()" onclick="A.profileEmoji()" title="Emojis" aria-label="Emojis">${icon('sonrisa')}</button></div>
+      <div id="pnpick" class="cw-pick" hidden></div><small id="pcnt" class="mute"></small>
+      <label>Usuario</label><input id="pu" value="${esc(S.user.username)}" autocomplete="off" autocapitalize="none" spellcheck="false">
+      <div class="pf-sec"><h4>Seguridad</h4>
+        <p class="mute" style="margin:.1rem 0 .3rem;font-size:.82rem">Escribe tu contraseña actual solo si cambias el usuario o la contraseña.</p>
+        <label>Contraseña actual</label><input id="pc" type="password" autocomplete="current-password">
+        <div class="row"><div><label>Nueva contraseña (mín. 6)</label><input id="pw1" type="password" autocomplete="new-password"></div>
+        <div><label>Repetir nueva</label><input id="pw2" type="password" autocomplete="new-password"></div></div></div>
+      <div class="row" style="margin-top:1rem"><button class="btn sec" onclick="closeModal()">Cancelar</button><button class="btn" id="psave" onclick="A.saveProfile()">Guardar</button></div>`);
+    A.pcount();
+  },
+  pcount() { const n = Array.from($('#pn').value).length; $('#pcnt').textContent = `${n}/30`; $('#pcnt').style.color = n > 30 ? 'var(--err)' : ''; },
+  profileEmoji() {
+    const el = $('#pnpick'); el.hidden = !el.hidden; if (el.hidden) return;
+    el.innerHTML = `<div class="cw-grid">${EMOJIS.map((e) => `<button type="button" onclick="A.addNameEmoji(this.textContent)">${e}</button>`).join('')}</div>`;
+  },
+  addNameEmoji(e) {
+    const inp = $('#pn'), s = inp.selectionStart ?? inp.value.length, f = inp.selectionEnd ?? s;
+    inp.value = inp.value.slice(0, s) + e + inp.value.slice(f); inp.focus();
+    const c = s + e.length; inp.setSelectionRange(c, c); A.pcount();
   },
   async pickAvatar(inp) {
     if (!inp.files[0]) return;
@@ -590,6 +612,22 @@ const A = window.A = {
     $('#avbox').innerHTML = `<img class="av xl" src="${S.avatar}" alt="">`;
   },
   rmAvatar() { S.avatar = 'remove'; $('#avbox').innerHTML = avatar({ ...S.user, photo: null }, 'xl'); },
+  async saveProfile() {
+    const name = val('pn').trim(), username = val('pu').trim().toLowerCase(), cur = val('pc'), p1 = val('pw1'), p2 = val('pw2');
+    if (!name) return toast('Escribe tu nombre');
+    if (Array.from(name).length > 30) return toast('El nombre admite máximo 30 caracteres');
+    if (p1 && p1.length < 6) return toast('La nueva contraseña debe tener al menos 6 caracteres');
+    if (p1 !== p2) return toast('Las contraseñas nuevas no coinciden');
+    if ((p1 || username !== S.user.username) && !cur) return toast('Escribe tu contraseña actual');
+    $('#psave').disabled = true;
+    try {
+      await api('/me/profile', 'PUT', { name, username, current: cur });
+      if (S.avatar === 'remove') await api('/me/photo', 'DELETE');
+      else if (S.avatar) await api('/me/photo', 'PUT', { image: S.avatar });
+      if (p1) await api('/password', 'POST', { current: cur, password: p1 });
+    } catch (e) { $('#psave').disabled = false; return toast(e.message); }
+    S.avatar = undefined; closeModal(); toast('Perfil actualizado'); boot();
+  },
   async saveAvatar() {
     if (!S.avatar) return closeModal();
     const ok = S.avatar === 'remove' ? await act(() => api('/me/photo', 'DELETE'), 'Foto quitada')
