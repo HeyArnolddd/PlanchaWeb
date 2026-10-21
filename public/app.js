@@ -4,9 +4,12 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const norm = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const photoUrl = (p) => `/api/products/${p.id}/photo?v=${p.photo}`;
 // Avatar: foto de perfil o, si no tiene, la inicial del nombre
-const avatar = (u, cls = '') => u.photo
-  ? `<img class="av ${cls}" src="/api/users/${u.id}/photo?v=${u.photo}" alt="">`
-  : `<b class="av ${cls}">${esc(Array.from((u.name || '?').trim())[0] || '?').toUpperCase()}</b>`;
+const initialOf = (name) => esc(Array.from((name || '?').trim())[0] || '?').toUpperCase();
+// zoom: al tocarlo se abre la foto en grande (ver el listener al final del archivo)
+const avatar = (u, cls = '', zoom = false) => {
+  const z = zoom && u.id ? ` data-zoom="${u.id}" data-name="${esc(u.name)}" data-v="${u.photo || ''}" title="Ver foto"` : '';
+  return u.photo ? `<img class="av ${cls}"${z} src="/api/users/${u.id}/photo?v=${u.photo}" alt="">` : `<b class="av ${cls}"${z}>${initialOf(u.name)}</b>`;
+};
 // Reduce la foto a un cuadrado de 240px (JPEG) para que pese pocos KB
 async function shrink(file) {
   const bmp = await createImageBitmap(file);
@@ -139,7 +142,7 @@ const peerName = () => (S.peer === 0 ? 'Equipo (todos)' : ((S.chatUsers && S.cha
 // cabecera de una conversación: foto y nombre de con quién hablas
 function peerHead() {
   const u = S.peer ? (S.chatUsers && S.chatUsers.users.find((x) => x.id === S.peer)) : null;
-  return (S.peer === 0 ? '<b class="av sm">👥</b>' : avatar(u || { id: S.peer, name: peerName() }, 'sm')) + esc(peerName());
+  return (S.peer === 0 ? '<b class="av sm">👥</b>' : avatar(u || { id: S.peer, name: peerName() }, 'sm', true)) + esc(peerName());
 }
 function chatShell() {
   let w = $('#cw');
@@ -174,7 +177,7 @@ function chatPaintBadge() {
 function chatPaintList() {
   const box = $('#chatlist'); if (!box) return;
   const bottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
-  box.innerHTML = S.chat.map((m) => `<div class="mrow ${m.user_id === S.user.id ? 'me' : ''}">${avatar(m.user_id === S.user.id ? S.user : { id: m.user_id, name: m.user_name, photo: m.photo }, 'sm')}<div class="msg ${m.user_id === S.user.id ? 'me' : ''}"><small>${m.user_id === S.user.id ? 'Tú' : esc(m.user_name)} · ${dt(m.created_at).split(', ').pop()}</small>${m.sticker_id ? `<img class="stk" src="/api/stickers/${m.sticker_id}/img" alt="sticker">` : `<div>${m.body ? esc(m.body) : '<i class="mute">🖼️ sticker eliminado</i>'}</div>`}${m.user_id === S.user.id && S.peer ? `<small class="seen">${m.id <= S.peerRead ? '✓✓ Visto' : '✓ Enviado'}</small>` : ''}</div></div>`).join('')
+  box.innerHTML = S.chat.map((m) => `<div class="mrow ${m.user_id === S.user.id ? 'me' : ''}">${avatar(m.user_id === S.user.id ? S.user : { id: m.user_id, name: m.user_name, photo: m.photo }, 'sm', true)}<div class="msg ${m.user_id === S.user.id ? 'me' : ''}"><small>${m.user_id === S.user.id ? 'Tú' : esc(m.user_name)} · ${dt(m.created_at).split(', ').pop()}</small>${m.sticker_id ? `<img class="stk" src="/api/stickers/${m.sticker_id}/img" alt="sticker">` : `<div>${m.body ? esc(m.body) : '<i class="mute">🖼️ sticker eliminado</i>'}</div>`}${m.user_id === S.user.id && S.peer ? `<small class="seen">${m.id <= S.peerRead ? '✓✓ Visto' : '✓ Enviado'}</small>` : ''}</div></div>`).join('')
     || '<span class="mute">Aún no hay mensajes. ¡Escribe el primero!</span>';
   if (bottom) box.scrollTop = box.scrollHeight;
 }
@@ -1197,3 +1200,16 @@ function empCharts(er) {
   Charts.hbars($('#ed3'), lossRows.length ? lossRows.slice(0, 8).map((r) => ({ label: r.name, value: r.lost_paid, color: C.gasto, text: `${r.lost_qty} uds · ${money(r.lost_paid)}` })) : [], 0);
   if (!lossRows.length) $('#ed3').innerHTML = '<span class="mute">Sin pérdidas en este periodo.</span>';
 }
+
+// Foto de perfil en grande: se abre al tocar el avatar de alguien en el chat; se cierra tocando o con Esc
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-zoom]'); if (!el) return;
+  e.preventDefault(); e.stopPropagation();
+  const d = el.dataset;
+  document.querySelectorAll('.zoom').forEach((x) => x.remove());
+  const z = document.createElement('div'); z.className = 'zoom';
+  z.innerHTML = `<div class="zbox">${d.v ? `<img src="/api/users/${d.zoom}/photo?v=${d.v}" alt="">` : `<b>${initialOf(d.name)}</b>`}<span>${esc(d.name)}</span></div>`;
+  z.addEventListener('click', () => z.remove());
+  document.body.appendChild(z);
+}, true);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.zoom').forEach((x) => x.remove()); });

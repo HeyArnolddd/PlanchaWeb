@@ -409,3 +409,13 @@ tr.tot td{border-top:2px solid var(--line);background:var(--ice-2)}
 .cwi{width:26px;height:26px;background:#fff;border-radius:50%;padding:3px;box-shadow:0 2px 6px rgba(2,0,95,.25);flex:none}
 .cw-head .cwt{display:flex;align-items:center;gap:.5rem}
 .cw-head .cwt .av{width:28px;height:28px;font-size:.75rem;box-shadow:0 0 0 2px #ffffff55}
+
+/* ---------- Foto de perfil en grande ---------- */
+.av[data-zoom]{cursor:zoom-in}
+.mrow .av[data-zoom]:hover,.cw-head .av[data-zoom]:hover{transform:scale(1.12)}
+.zoom{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:1rem;background:rgba(2,0,95,.62);backdrop-filter:blur(6px);cursor:zoom-out;animation:fade .2s both}
+.zbox{display:flex;flex-direction:column;align-items:center;gap:1rem;animation:pop .35s var(--ease) both}
+.zbox img,.zbox b{width:min(78vw,340px);aspect-ratio:1;border-radius:32px;border:5px solid #fff;box-shadow:0 30px 70px -20px rgba(0,0,50,.8)}
+.zbox img{object-fit:cover;background:var(--ice)}
+.zbox b{display:grid;place-items:center;background:linear-gradient(135deg,var(--sky),#8fb4ff);color:#fff;font-size:7rem;font-weight:800}
+.zbox span{color:#fff;font-weight:800;font-size:1.25rem;text-shadow:0 2px 12px rgba(0,0,60,.6);text-align:center;overflow-wrap:anywhere}
