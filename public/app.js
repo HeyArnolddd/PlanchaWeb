@@ -95,6 +95,13 @@ function sideHTML(tabs) {
       <button onclick="A.logout()" title="Salir">${icon('salir')}<span>Salir</span></button></div>`;
 }
 
+// Stock bajo dividido por categorías, igual que los más vendidos
+function lowStock(low) {
+  if (!low.length) return '<span class="mute">Todo bien.</span>';
+  const g = low.reduce((m, p) => ((m[p.category || 'Sin categoría'] ||= []).push(p), m), {});
+  return Object.entries(g).map(([c, ps]) => `<h4 style="margin:.6rem 0 .2rem">${esc(c)} <span class="tag ${ps.some((p) => p.stock === 0) ? 'err' : 'warn'}">${ps.length}</span></h4>
+    <table>${ps.map((p) => `<tr><td>${esc(p.name)}</td><td class="n ${p.stock === 0 ? 'err' : 'warn'}">${p.stock === 0 ? 'Agotado' : p.stock + ' uds'}</td></tr>`).join('')}</table>`).join('');
+}
 function modal(html) {
   const m = document.createElement('div'); m.className = 'modal';
   m.innerHTML = `<div>${html}</div>`;
@@ -291,7 +298,7 @@ const views = {
         <div class="grid"><div class="stat"><span>Ventas de hoy (${d.today.n})</span><b>${money(d.today.total)}</b></div></div><br>
         <div class="card"><h3>Turno actual</h3>${s ? `<b>${esc(s.user_name)}</b> abrió caja ${dt(s.opened_at)}` : '<span class="mute">No hay caja abierta.</span>'}</div>
         <div class="grid">
-          <div class="card"><h3>Stock bajo</h3>${d.low.length ? `<table>${d.low.map((p) => `<tr><td>${esc(p.name)}</td><td class="n ${p.stock === 0 ? 'err' : 'warn'}">${p.stock}</td></tr>`).join('')}</table>` : '<span class="mute">Todo bien.</span>'}</div>
+          <div class="card"><h3>Stock bajo</h3>${lowStock(d.low)}</div>
           <div class="card"><h3>Más vendidos hoy</h3>${d.top.length ? `<table>${d.top.map((p) => `<tr><td>${esc(p.name)}</td><td class="n">${p.qty}</td></tr>`).join('')}</table>` : '<span class="mute">Sin ventas aún.</span>'}</div>
         </div>`;
       return;
@@ -315,7 +322,7 @@ const views = {
       <div class="card"><h3>Turno actual</h3>${s ? `<b>${esc(s.user_name)}</b> abrió caja ${dt(s.opened_at)} · ${s.sales_count} ventas · ${money(s.sales_cash + s.sales_nequi)}`
         : '<span class="mute">No hay caja abierta.</span>'}</div>
       <div class="grid">
-        <div class="card"><h3>Stock bajo</h3>${d.low.length ? `<table>${d.low.map((p) => `<tr><td>${esc(p.name)}</td><td class="n ${p.stock === 0 ? 'err' : 'warn'}">${p.stock}</td></tr>`).join('')}</table>` : '<span class="mute">Todo bien.</span>'}</div>
+        <div class="card"><h3>Stock bajo</h3>${lowStock(d.low)}</div>
         <div class="card"><h3>Más vendidos (30 días)</h3>${d.top.length ? Object.entries(d.top.reduce((g, p) => ((g[p.category] ||= []).push(p), g), {})).map(([c, ps]) => `<h4 style="margin:.6rem 0 .2rem">${esc(c)}</h4><table>${ps.map((p) => `<tr><td>${esc(p.name)}</td><td class="n">${p.qty}</td></tr>`).join('')}</table>`).join('') : '<span class="mute">Sin ventas aún.</span>'}</div>
       </div>`;
   },

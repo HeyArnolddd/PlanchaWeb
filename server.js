@@ -1007,7 +1007,8 @@ app.get('/api/dashboard', auth, admin, wrap(async () => {
       LEFT JOIN products p ON p.id=i.product_id LEFT JOIN categories c ON c.id=p.category_id
       WHERE s.voided=0 AND s.created_at>=now() - interval '30 days' GROUP BY c.id, c.name, i.product_id, i.name) t
       WHERE rn<=5 ORDER BY category, qty DESC`),
-    D.all('SELECT name, stock, min_stock FROM products WHERE active=1 AND track_stock=1 AND stock<=min_stock ORDER BY stock'),
+    D.all(`SELECT p.name, p.stock, p.min_stock, COALESCE(c.name,'Sin categoría') AS category FROM products p LEFT JOIN categories c ON c.id=p.category_id
+      WHERE p.active=1 AND p.track_stock=1 AND p.stock<=p.min_stock ORDER BY c.name NULLS LAST, p.stock, p.name`),
     D.get(`SELECT COALESCE(SUM(stock::bigint*buy_price),0) AS cost, COALESCE(SUM(stock::bigint*sell_price),0) AS value
       FROM products WHERE active=1 AND track_stock=1`),
     openShift(),
@@ -1025,7 +1026,8 @@ app.get('/api/summary', auth, wrap(async () => {
     D.get('SELECT COALESCE(SUM(total),0) AS total, COUNT(*) AS n FROM sales WHERE voided=0 AND created_at>=$1', [start]),
     D.all(`SELECT i.name, SUM(i.qty) AS qty FROM sale_items i JOIN sales s ON s.id=i.sale_id
       WHERE s.voided=0 AND s.created_at>=$1 GROUP BY i.product_id, i.name ORDER BY qty DESC LIMIT 8`, [start]),
-    D.all('SELECT name, stock, min_stock FROM products WHERE active=1 AND track_stock=1 AND stock<=min_stock ORDER BY stock'),
+    D.all(`SELECT p.name, p.stock, p.min_stock, COALESCE(c.name,'Sin categoría') AS category FROM products p LEFT JOIN categories c ON c.id=p.category_id
+      WHERE p.active=1 AND p.track_stock=1 AND p.stock<=p.min_stock ORDER BY c.name NULLS LAST, p.stock, p.name`),
     openShift(),
   ]);
   return { today: t, top, low, open_shift: shift || null };
