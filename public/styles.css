@@ -309,3 +309,19 @@ body:has(.login-wrap) .pingu{display:none}
   .hero{width:min(190px,48vw);margin-top:.6rem}.hero-say{font-size:.8rem;padding:.4rem .7rem;top:-20px}
 }
 @media(max-height:560px) and (max-width:860px){.hero{display:none}}
+
+/* ---------- Ojito de la contraseña y reacciones de Sami ---------- */
+@keyframes nod{0%,100%{transform:translateY(0)}40%{transform:translateY(-7px) rotate(2deg)}}
+@keyframes breathe{0%,100%{transform:scale(1,1)}50%{transform:scale(1.015,.985)}}
+.hero.calm .hero-bob{animation:breathe 2.6s ease-in-out infinite}
+.hero.calm.nod .hero-bob{animation:nod .3s var(--ease),breathe 2.6s ease-in-out .3s infinite}
+.hero.calm .hero-shd{animation:none;opacity:.35}
+.hero.calm .note{animation-play-state:paused;opacity:0}
+.pw{position:relative}
+.pw input{padding-right:2.8rem}
+.eye{position:absolute;right:.35rem;top:50%;transform:translateY(-50%);width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:9px;background:none;color:var(--mute);cursor:pointer;
+  transition:background .2s,color .2s,transform .25s var(--ease)}
+.eye:hover{background:var(--ice);color:var(--brand)}
+.eye:active{transform:translateY(-50%) scale(.88)}
+.eye.on{color:var(--brand);background:var(--ice)}
+.eye .ic{width:20px;height:20px}

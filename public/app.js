@@ -67,6 +67,8 @@ const ICONS = {
   salir: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
   clave: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  ojo: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  ojoOff: '<path d="M17.9 17.9A10.5 10.5 0 0 1 12 19c-6.4 0-10-7-10-7a17.6 17.6 0 0 1 4.1-5M9.9 5.2A9.7 9.7 0 0 1 12 5c6.4 0 10 7 10 7a17.7 17.7 0 0 1-2.2 3.2M1 1l22 22M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
   colapsar: '<path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/>'
 };
 const icon = (k) => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k] || ''}</svg>`;
@@ -196,18 +198,43 @@ function chatStart() {
 }
 window.go = (v) => { S.view = v; boot(); };
 
-// Sami baila en el login: alterna sus cuadros (feliz, pasos, salto) y cambia de lado cada compás
+// Sami en el login: baila solo; mira al usuario mientras escribe su nombre, se tapa los ojos con la
+// contraseña y, si se muestra con el ojito, se tapa solo un ojo y espía
+const SAMI_DANCE = ['happy', 'w1', 'w3', 'happy', 'w5', 'w7', 'jump', 'happy', 'left', 'happy', 'right', 'happy', 'blink', 'happy'];
 function danceSami() {
   const img = $('#hero'); if (!img) return;
-  const seq = ['happy', 'w1', 'w3', 'happy', 'w5', 'w7', 'jump', 'happy', 'left', 'happy', 'right', 'happy', 'blink', 'happy'];
-  seq.forEach((n) => { new Image().src = `/sami/${n}.png`; });
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  let i = 0, side = 1;
+  const hero = $('.hero'), user = $('#lu'), pass = $('#lp');
+  ['sr', 'cf', 'pf', 'right', 'sad', 'sf', ...SAMI_DANCE].forEach((n) => { new Image().src = `/sami/${n}.png`; });
+  const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let i = 0, side = 1, pose = null, noticed = false, hold = 0;
+  const show = (n, flip = 1) => { if (img.dataset.n !== n) { img.dataset.n = n; img.src = `/sami/${n}.png`; } img.style.transform = flip === 1 ? '' : `scaleX(${flip})`; };
+  window.samiPose = (p, ms = 0) => { hold = ms ? Date.now() + ms : 0; pose = p; paint(); };
+  const state = () => {
+    if (hold > Date.now()) return pose;
+    if (document.activeElement === pass) return pass.type === 'text' ? 'peek' : 'cover';
+    if (document.activeElement === user) return 'watch';
+    return null;
+  };
+  const paint = () => {
+    const st = hold > Date.now() ? pose : state();
+    hero.classList.toggle('calm', !!st);
+    if (st === 'cover') show('cf'); else if (st === 'peek') show('pf');
+    else if (st === 'watch') show(noticed ? 'right' : 'sr');
+    else if (st === 'sad') show('sad'); else if (st === 'happy') show('happy');
+  };
+  user.addEventListener('focus', () => { noticed = false; paint(); setTimeout(() => { noticed = true; paint(); }, 700); });
+  user.addEventListener('input', () => { noticed = true; paint(); hero.classList.remove('nod'); void hero.offsetWidth; hero.classList.add('nod'); });
+  [user, pass].forEach((el) => { el.addEventListener('blur', () => setTimeout(paint, 0)); });
+  pass.addEventListener('focus', paint);
+  window.samiPaint = paint;
+  if (calm) return;
   const t = setInterval(() => {
     if (!img.isConnected) return clearInterval(t);
-    const n = seq[i++ % seq.length]; img.src = `/sami/${n}.png`;
+    if (hold > Date.now() || state()) return;
+    hero.classList.remove('calm');
+    const n = SAMI_DANCE[i++ % SAMI_DANCE.length];
     if (i % 4 === 0) side = -side;
-    img.style.transform = n === 'left' || n === 'right' ? '' : `scaleX(${side})`;
+    show(n, n === 'left' || n === 'right' ? 1 : side);
   }, 230);
 }
 function loginView() {
@@ -217,12 +244,21 @@ function loginView() {
       <div class="hero-bob"><img id="hero" src="/sami/happy.png" alt="" draggable="false"></div><div class="hero-shd"></div></div>
     <div class="login"><img src="/logo.png" alt="ACEIS"><h2>La Plancha</h2><p class="mute">Asociación de Ingeniería de Sistemas</p>
     <label>Usuario</label><input id="lu" autocomplete="username" autocapitalize="none">
-    <label>Contraseña</label><input id="lp" type="password" autocomplete="current-password">
+    <label>Contraseña</label><div class="pw"><input id="lp" type="password" autocomplete="current-password">
+      <button type="button" class="eye" id="eye" aria-label="Mostrar contraseña" title="Mostrar contraseña">${icon('ojo')}</button></div>
     <button class="btn" id="lb">Ingresar</button></div></div>`;
   danceSami();
   const go = async () => {
     const u = await act(() => api('/login', 'POST', { username: val('lu'), password: val('lp') }));
-    if (u) boot();
+    if (u) { window.samiPose('happy', 1500); boot(); } else { window.samiPose('sad', 2200); }
+  };
+  $('#eye').onmousedown = (e) => e.preventDefault(); // el campo no pierde el foco, así Sami no se distrae
+  $('#eye').onclick = () => {
+    const p = $('#lp'), show = p.type === 'password';
+    p.type = show ? 'text' : 'password'; p.focus();
+    $('#eye').innerHTML = icon(show ? 'ojoOff' : 'ojo'); $('#eye').classList.toggle('on', show);
+    $('#eye').title = $('#eye').ariaLabel = show ? 'Ocultar contraseña' : 'Mostrar contraseña';
+    window.samiPaint();
   };
   $('#lb').onclick = go;
   $('#lp').onkeydown = (e) => { if (e.key === 'Enter') go(); };
