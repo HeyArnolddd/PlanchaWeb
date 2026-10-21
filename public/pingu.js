@@ -95,7 +95,7 @@
   addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse') { mx = e.clientX; my = e.clientY; } }, { passive: true });
   document.addEventListener('click', (e) => {
     if (el.contains(e.target) || held || mode === 'air' || Math.random() > .3) return;
-    target = Math.max(0, Math.min(maxX(), e.clientX - W / 2)); run = true; talk('¡Voy! 🏃', 1200);
+    target = Math.max(0, Math.min(maxX(), e.clientX - W / 2)); run = true; emote = null; emoteT = 0; talk('¡Voy! 🏃', 1200);
   });
   addEventListener('scroll', () => {
     const n = performance.now();
@@ -142,7 +142,7 @@
     let name;
     if (mode === 'held') name = 'wow';
     else if (mode === 'air') name = 'jump';
-    else if (emote) name = emote;
+    else if (emote && target === null) name = emote; // yendo a un clic, la caminata manda sobre las emociones
     else if (mode === 'walk') { fT += dt * (run ? 16 : 9); frame = Math.floor(fT) % 8; name = 'w' + (frame + 1); }
     else {
       name = face;
