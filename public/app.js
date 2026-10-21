@@ -465,6 +465,11 @@ const views = {
     const iso = (t) => t.toISOString().slice(0, 10);
     const today = new Date(Date.now() - 5 * 36e5), rto = iso(today);
     today.setUTCDate(today.getUTCDate() - S.rp + 1);
+    if (S.rtab === 'emp') {
+      const er = await api(`/reports/emprendimientos?from=${iso(today)}&to=${rto}`).catch((e) => ({ error: e.message }));
+      $('#main').innerHTML = `<h2>Reportes</h2>${reportTabs()}${empPanel(er)}`;
+      return empCharts(er);
+    }
     const [w, tr] = await Promise.all([api('/reports/week' + (S.week ? `?start=${S.week}` : '')), api(`/reports/trend?from=${iso(today)}&to=${rto}`).catch((e) => ({ error: e.message }))]);
     S.week = w.start;
     const d0 = (s) => new Date(s + 'T12:00:00Z').toLocaleDateString('es-CO', { timeZone: 'UTC', day: 'numeric', month: 'short' });
@@ -472,7 +477,7 @@ const views = {
     const pct = (a, b) => b ? `<small class="${a >= b ? 'ok' : 'err'}">${a >= b ? '▲' : '▼'} ${Math.abs(Math.round((a - b) / b * 100))}% vs semana anterior</small>` : '<small class="mute">Sin semana anterior</small>';
     const t = w.totals, pv = w.previous, max = Math.max(1, ...w.days.map((d) => d.total));
     const net = t.profit - t.impl - t.lost;
-    $('#main').innerHTML = `<h2>Reportes</h2>${reportPanel(tr)}<h2 style="margin-top:1.6rem">Reporte semanal</h2>
+    $('#main').innerHTML = `<h2>Reportes</h2>${reportTabs()}${reportPanel(tr)}<h2 style="margin-top:1.6rem">Reporte semanal</h2>
       <div class="row" style="align-items:center;margin-bottom:1rem">
         <button class="btn sec sm" onclick="A.week(-7)">← Anterior</button>
         <b style="flex:2;text-align:center">${d0(w.start)} – ${d0(w.end)}</b>
@@ -654,6 +659,7 @@ const A = window.A = {
       ${p.photo ? `<img loading="lazy" src="${photoUrl(p)}" alt="">` : ''}<b>${esc(p.name)}</b>${money(p.sell_price)}<br><small>${p.track_stock ? p.stock + ' disp.' : 'sin control de stock'}</small>${A.badge(p.id)}</button>`).join('') || '<span class="mute">Sin resultados.</span>';
   },
   rp(n) { S.rp = n; views.reportes(); },
+  rtab(t) { S.rtab = t; views.reportes(); },
   async fav(e, id) {
     e.stopPropagation();
     const p = S.prods.find((x) => x.id === id); if (!p) return;
@@ -962,7 +968,7 @@ boot();
 // Tarjetas de datos: según el texto de la etiqueta se les da color e icono
 const STAT_TONES = [
   [/nequi/i, 'nequi', 'caja'], [/efectivo/i, 'cash', 'dinero'], [/p[eé]rdida|descart/i, 'loss', 'gastos'],
-  [/gasto|implemento|comisi/i, 'exp', 'gastos'], [/pedido/i, 'ped', 'productos'], [/ganancia/i, 'gain', 'reportes'],
+  [/gasto|implemento|comisi/i, 'exp', 'gastos'], [/pedido/i, 'ped', 'productos'], [/ganancia/i, 'gain', 'reportes'], [/rentabilidad/i, 'gain', 'reportes'], [/pagad|por pagar/i, 'ped', 'dinero'],
   [/inventario/i, 'inv', 'productos'], [/inicio|deber[ií]a/i, 'slate', 'turnos'], [/ticket|promedio/i, 'inv', 'reportes'], [/mejor/i, 'ped', 'reportes'], [/salida/i, 'loss', 'gastos'], [/saldo|entrada/i, 'gain', 'dinero'], [/venta|total/i, 'sales', 'vender'],
 ];
 function decorateStats(root = document) {
@@ -1074,4 +1080,74 @@ function reportCharts(tr) {
     { label: 'Comisiones de retiros', value: tr.fees, color: C.ganancia, text: '+' + money(tr.fees) },
     { label: 'Ganancia neta', value: Math.max(0, net), color: C.ganancia, text: `<strong>${smoney(net)}</strong>` },
   ], Math.max(t.total, 1));
+}
+
+// ---------- Reportes: emprendimientos (rentabilidad y pérdidas) ----------
+const reportTabs = () => `<div class="seg rtabs"><button class="${S.rtab === 'emp' ? '' : 'on'}" onclick="A.rtab('general')">General</button><button class="${S.rtab === 'emp' ? 'on' : ''}" onclick="A.rtab('emp')">Emprendimientos</button></div>`;
+const pctOf = (x, y) => (y ? (x / y * 100).toFixed(1).replace('.', ',') + '%' : '—');
+function empPanel(er) {
+  const sel = `<div class="seg rsel">${RANGOS.map(([n, l]) => `<button class="${S.rp === n ? 'on' : ''}" onclick="A.rp(${n})">${l}</button>`).join('')}</div>`;
+  if (er.error) return `${sel}<div class="alert bad">No se pudo cargar: ${esc(er.error)}</div>`;
+  const t = er.totals, p = er.previous, rows = [...er.products].sort((x, y) => y.net - x.net);
+  if (!rows.length) return `${sel}<div class="card"><span class="mute">Sin ventas ni descartes de emprendimientos en este periodo.</span></div>`;
+  const dl = (x, y, inv) => (y ? `<small class="${(x >= y) !== !!inv ? 'ok' : 'err'}">${x >= y ? '▲' : '▼'} ${Math.abs(Math.round((x - y) / Math.abs(y) * 100))}% vs periodo anterior</small>` : ''); // inv: subir es malo (pérdidas)
+  const units = t.sold_qty + t.lost_qty, worst = [...rows].filter((r) => r.lost_paid > 0).sort((x, y) => y.lost_paid - x.lost_paid)[0];
+  const best = rows[0], pctLoss = pctOf(t.lost_paid, t.margin), pay = Math.round(er.lost_pay * 100);
+  const lg = (...xs) => `<div class="lg">${xs.map(([c, l]) => `<span><i style="background:${c}"></i>${l}</span>`).join('')}</div>`;
+  const C = Charts.COLOR;
+  const insights = [
+    `La rentabilidad neta de los emprendimientos es <b>${pctOf(t.net, t.revenue)}</b> de lo que se vende: de cada $100 vendidos, <b>${money(Math.round(t.revenue ? t.net / t.revenue * 100 : 0))}</b> quedan para la tienda.`,
+    best && best.net > 0 ? `El que más deja es <b>${esc(best.name)}</b>: ${smoney(best.net)} netos (${pctOf(best.net, best.revenue)} de sus ventas).` : '',
+    worst ? `El que más pérdida genera es <b>${esc(worst.name)}</b>: ${money(worst.lost_paid)} que la tienda pagó por ${worst.lost_qty} unidades descartadas${worst.sold_qty ? `, frente a ${money(worst.margin)} de ganancia por lo vendido` : ''}.` : 'No hubo pérdidas por descartes en este periodo.',
+    t.lost_paid ? `Las pérdidas se comen el <b>${pctLoss}</b> de la ganancia bruta. De cada ${units} unidades que entraron al negocio, ${t.lost_qty} (${pctOf(t.lost_qty, units)}) se descartaron.` : '',
+  ].filter(Boolean);
+  return `${sel}
+    <div class="grid">
+      <div class="stat"><span>Ventas de emprendimientos</span><b>${money(t.revenue)}</b>${dl(t.revenue, p.revenue)}<small>${t.sold_qty} unidades vendidas</small></div>
+      <div class="stat"><span>Ganancia por lo vendido</span><b>${smoney(t.margin)}</b><small>Margen ${pctOf(t.margin, t.revenue)} · después de pagar el costo</small></div>
+      <div class="stat"><span>Pérdidas por no vender</span><b>${money(t.lost_paid)}</b>${dl(t.lost_paid, p.lost_paid, true)}<small>${t.lost_qty} unidades descartadas (${pay}% pagado)</small></div>
+      <div class="stat"><span>Rentabilidad neta</span><b>${smoney(t.net)}</b>${dl(t.net, p.net)}<small>${pctOf(t.net, t.revenue)} de las ventas</small></div>
+      <div class="stat"><span>Pagado a emprendedores</span><b>${money(er.paid.total)}</b><small>${er.paid.n} pagos en el periodo</small></div>
+      <div class="stat"><span>Por pagar ahora</span><b>${money(er.pending)}</b><small>Vendido y descartado sin pagar aún</small></div>
+    </div><br>
+    <div class="card"><h3>Lo que dicen los números</h3><ul class="ins">${insights.map((x) => `<li>${x}</li>`).join('')}</ul></div>
+    <div class="card"><h3>Ganancia y pérdidas por día</h3>${lg([C.ganancia, 'Ganancia por lo vendido'], [C.gasto, 'Pérdida por descartes (lo que pagó la tienda)'])}<div id="em1"></div></div>
+    <div class="grid2">
+      <div class="card"><h3>Ganancia y pérdidas por semana</h3>${lg([C.ganancia, 'Ganancia por lo vendido'], [C.gasto, 'Pérdidas'])}<div id="em2"></div></div>
+      <div class="card"><h3>Rentabilidad neta acumulada</h3><div id="em3"></div></div>
+    </div>
+    <div class="grid3">
+      <div class="card"><h3>¿Cómo se reparte lo vendido?</h3><p class="mute sub">Pago al emprendedor, pérdidas y lo que queda a la tienda.</p><div id="ed1"></div></div>
+      <div class="card"><h3>Unidades: vendidas vs perdidas</h3><p class="mute sub">Qué tanto del producto se vende y cuánto se descarta.</p><div id="ed2"></div></div>
+      <div class="card"><h3>Pérdida por producto</h3><p class="mute sub">Quién genera más pérdida por descartes.</p><div id="ed3"></div></div>
+    </div>
+    <div class="card"><h3>Rentabilidad por producto</h3>
+      <div class="tw"><table><tr><th>Producto</th><th class="n">Vendidas</th><th class="n">Ventas</th><th class="n">Ganancia</th><th class="n">Margen</th><th class="n">Descartadas</th><th class="n">Pérdida</th><th class="n">Neto</th><th class="n">Neto / venta</th></tr>
+      ${rows.map((r) => `<tr><td>${esc(r.name)}</td><td class="n">${r.sold_qty}</td><td class="n">${money(r.revenue)}</td><td class="n">${money(r.margin)}</td><td class="n">${pctOf(r.margin, r.revenue)}</td>
+        <td class="n ${r.lost_qty ? 'warn' : ''}">${r.lost_qty}</td><td class="n ${r.lost_paid ? 'err' : ''}">${r.lost_paid ? '−' + money(r.lost_paid) : '$0'}</td>
+        <td class="n"><b class="${r.net < 0 ? 'err' : 'ok'}">${smoney(r.net)}</b></td><td class="n">${pctOf(r.net, r.revenue)}</td></tr>`).join('')}
+      <tr class="tot"><td><b>Total</b></td><td class="n">${t.sold_qty}</td><td class="n">${money(t.revenue)}</td><td class="n">${money(t.margin)}</td><td class="n">${pctOf(t.margin, t.revenue)}</td><td class="n">${t.lost_qty}</td><td class="n">${t.lost_paid ? '−' + money(t.lost_paid) : '$0'}</td><td class="n"><b>${smoney(t.net)}</b></td><td class="n">${pctOf(t.net, t.revenue)}</td></tr></table></div>
+      <p class="mute" style="margin:.7rem 0 0;font-size:.82rem">Ganancia = lo que cobras menos el precio acordado con el emprendedor. Pérdida = el ${pay}% del costo de lo descartado, que es lo que la tienda le paga aunque no se haya vendido.</p></div>`;
+}
+function empCharts(er) {
+  if (er.error || !$('#em1')) return;
+  const t = er.totals, C = Charts.COLOR, days = er.days;
+  Charts.series($('#em1'), { days, bars: { key: 'margin', label: 'Ganancia por lo vendido', color: C.ganancia }, lines: [{ key: 'lost', label: 'Pérdida por descartes', color: C.gasto }], label: 'Ganancia y pérdidas de emprendimientos por día' });
+  const weeks = new Map();
+  days.forEach((d) => {
+    const dt0 = new Date(d.day + 'T12:00:00Z'); dt0.setUTCDate(dt0.getUTCDate() - ((dt0.getUTCDay() + 6) % 7));
+    const k = dt0.toISOString().slice(0, 10), w = weeks.get(k) || { k, margin: 0, lost: 0, net: 0 };
+    w.margin += d.margin; w.lost += d.lost; w.net += d.net; weeks.set(k, w);
+  });
+  const wk = [...weeks.values()], short = (k) => new Date(k + 'T12:00:00Z').toLocaleDateString('es-CO', { timeZone: 'UTC', day: 'numeric', month: 'short' });
+  Charts.columns($('#em2'), { cats: wk.map((w) => ({ l: short(w.k), t: 'Semana del ' + short(w.k) })), rows: wk,
+    series: [{ key: 'margin', label: 'Ganancia por lo vendido', color: C.ganancia }, { key: 'lost', label: 'Pérdidas', color: C.gasto }], label: 'Ganancia y pérdidas por semana',
+    extra: (w) => `<div class="tt"><span>Neto</span><b>${smoney(w.net)}</b></div>` });
+  let acc = 0;
+  Charts.series($('#em3'), { days: days.map((d) => ({ day: d.day, net: (acc += d.net) })), lines: [{ key: 'net', label: 'Neto acumulado', color: C.ganancia, area: true, last: true }], label: 'Rentabilidad neta acumulada' });
+  Charts.donut($('#ed1'), [{ label: 'Emprendedor', value: t.cost, color: C.ventas }, { label: 'Pérdidas', value: t.lost_paid, color: C.gasto }, { label: 'Tienda (neto)', value: Math.max(0, t.net), color: C.ganancia }], 'vendido');
+  Charts.donut($('#ed2'), [{ label: 'Vendidas', value: t.sold_qty, color: C.ganancia }, { label: 'Perdidas', value: t.lost_qty, color: C.gasto }], 'unidades', (v) => String(Math.round(v)));
+  const lossRows = er.products.filter((r) => r.lost_paid > 0).sort((x, y) => y.lost_paid - x.lost_paid);
+  Charts.hbars($('#ed3'), lossRows.length ? lossRows.slice(0, 8).map((r) => ({ label: r.name, value: r.lost_paid, color: C.gasto, text: `${r.lost_qty} uds · ${money(r.lost_paid)}` })) : [], 0);
+  if (!lossRows.length) $('#ed3').innerHTML = '<span class="mute">Sin pérdidas en este periodo.</span>';
 }

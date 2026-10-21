@@ -1120,6 +1120,53 @@ app.get('/api/reports/trend', auth, admin, wrap(async (req) => {
     hours: cur.hours.map((h) => ({ h: h.h, n: num(h.n), total: num(h.total) })), dows: cur.dows.map((d) => ({ d: d.d, n: num(d.n), total: num(d.total) })) };
 }));
 
+// Rentabilidad de emprendimientos: lo vendido (ingreso - costo pagado al emprendedor) menos la pérdida por descartes
+// que asume la tienda (LOST_PAY del costo de lo descartado)
+async function empTotals(a, b, ids) {
+  if (!ids.length) return { sold: [], lost: [], daySold: [], dayLost: [] };
+  const sd = `to_char((s.created_at AT TIME ZONE '${TZ}')::date,'YYYY-MM-DD')`;
+  const [sold, lost, daySold, dayLost] = await Promise.all([
+    D.all(`SELECT i.product_id, SUM(i.qty) AS qty, SUM(i.price*i.qty) AS revenue, SUM(i.cost*i.qty) AS cost FROM sale_items i JOIN sales s ON s.id=i.sale_id
+      WHERE s.voided=0 AND s.created_at>=$1 AND s.created_at<$2 AND i.product_id = ANY($3::int[]) GROUP BY 1`, [a, b, ids]),
+    D.all(`SELECT w.product_id, COALESCE(SUM(w.qty) FILTER (WHERE w.cost>0),0) AS qty, COALESCE(SUM(w.qty*w.cost),0) AS cost FROM write_offs w
+      WHERE w.created_at>=$1 AND w.created_at<$2 AND w.product_id = ANY($3::int[]) GROUP BY 1`, [a, b, ids]),
+    D.all(`SELECT ${sd} AS day, SUM(i.price*i.qty) AS revenue, SUM(i.cost*i.qty) AS cost FROM sale_items i JOIN sales s ON s.id=i.sale_id
+      WHERE s.voided=0 AND s.created_at>=$1 AND s.created_at<$2 AND i.product_id = ANY($3::int[]) GROUP BY 1`, [a, b, ids]),
+    D.all(`SELECT to_char((w.created_at AT TIME ZONE '${TZ}')::date,'YYYY-MM-DD') AS day, COALESCE(SUM(w.qty*w.cost),0) AS cost FROM write_offs w
+      WHERE w.created_at>=$1 AND w.created_at<$2 AND w.product_id = ANY($3::int[]) GROUP BY 1`, [a, b, ids]),
+  ]);
+  return { sold, lost, daySold, dayLost };
+}
+app.get('/api/reports/emprendimientos', auth, admin, wrap(async (req) => {
+  const { from, to, a, b } = range(req.query, 366);
+  const span = Math.round((new Date(to) - new Date(from)) / 864e5) + 1;
+  const prods = await D.all(`SELECT p.id, p.name FROM products p JOIN categories c ON c.id=p.category_id WHERE c.name ~* '^emprendimiento' ORDER BY p.name`);
+  const ids = prods.map((p) => p.id), num = (v) => Number(v) || 0;
+  const [cur, old, paid] = await Promise.all([
+    empTotals(a, b, ids), empTotals(startOf(addDays(from, -span)), a, ids),
+    D.get(`SELECT COALESCE(SUM(total),0) AS total, COUNT(*) AS n FROM payouts WHERE product_id IS NOT NULL AND created_at>=$1 AND created_at<$2`, [a, b]),
+  ]);
+  const sum = (w) => {
+    const f = (rows, k) => rows.reduce((t, r) => t + num(r[k]), 0);
+    const revenue = f(w.sold, 'revenue'), cost = f(w.sold, 'cost'), lostCost = f(w.lost, 'cost');
+    const lostPaid = Math.round(lostCost * LOST_PAY);
+    return { revenue, cost, margin: revenue - cost, lost_cost: lostCost, lost_paid: lostPaid, net: revenue - cost - lostPaid, sold_qty: f(w.sold, 'qty'), lost_qty: f(w.lost, 'qty') };
+  };
+  const rows = prods.map((p) => {
+    const s = cur.sold.find((x) => x.product_id === p.id) || {}, l = cur.lost.find((x) => x.product_id === p.id) || {};
+    const revenue = num(s.revenue), cost = num(s.cost), lostCost = num(l.cost), lostPaid = Math.round(lostCost * LOST_PAY);
+    return { id: p.id, name: p.name, sold_qty: num(s.qty), revenue, cost, margin: revenue - cost, lost_qty: num(l.qty), lost_cost: lostCost, lost_paid: lostPaid, net: revenue - cost - lostPaid };
+  }).filter((r) => r.sold_qty || r.lost_qty);
+  const days = Array.from({ length: span }, (_, k) => {
+    const day = addDays(from, k), s = cur.daySold.find((x) => x.day === day) || {}, l = cur.dayLost.find((x) => x.day === day) || {};
+    const lostPaid = Math.round(num(l.cost) * LOST_PAY);
+    return { day, revenue: num(s.revenue), margin: num(s.revenue) - num(s.cost), lost: lostPaid, net: num(s.revenue) - num(s.cost) - lostPaid };
+  });
+  let pending = 0;
+  for (const p of prods) { const x = await pendingPayouts(D, p.id); pending += x.sold_cost + x.lost_cost; }
+  return { from, to, lost_pay: LOST_PAY, products: rows, days, totals: sum(cur), previous: sum(old), paid: { total: num(paid.total), n: num(paid.n) }, pending };
+}));
+
 // Ventas por hora del día y por día de la semana (hora de Colombia)
 app.get('/api/reports/hours', auth, admin, wrap(async (req) => {
   const { a, b } = range(req.query, 366);

@@ -385,3 +385,7 @@ details.dt summary{cursor:pointer;color:var(--brand);font-weight:600;font-size:.
 .dl i{width:10px;height:10px;border-radius:3px}
 .dl span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .dl b{font-weight:800;color:var(--navy)}.dl em{font-style:normal;color:var(--mute);min-width:5.4rem;text-align:right}
+
+.rtabs{margin-bottom:.8rem;max-width:380px}
+ul.ins{margin:0;padding-left:1.1rem;line-height:1.6}ul.ins li{margin:.25rem 0}
+tr.tot td{border-top:2px solid var(--line);background:var(--ice-2)}

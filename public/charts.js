@@ -148,8 +148,9 @@ window.Charts = (() => {
   }
 
   // Gráfico circular (dona). slices: [{label, value, color}]; el centro muestra el total
-  function donut(el, slices, centerLabel) {
+  function donut(el, slices, centerLabel, fmt) {
     slices = slices.filter((s) => s.value > 0);
+    const f = fmt || money, fc = fmt || compact;
     const total = slices.reduce((t, s) => t + s.value, 0);
     el.classList.add('donut');
     if (!total) { el.innerHTML = '<span class="mute">Sin datos en este periodo.</span>'; return; }
@@ -163,9 +164,9 @@ window.Charts = (() => {
         : `<path data-i="${i}" d="M${p(r, a0)}A${r},${r} 0 ${big} 1 ${p(r, a1)}L${p(ri, a1)}A${ri},${ri} 0 ${big} 0 ${p(ri, a0)}Z" fill="${s.color}" stroke="var(--card)" stroke-width="2" stroke-linejoin="round"/>`;
       a0 += f * Math.PI * 2;
     });
-    const legend = slices.map((s, i) => `<li data-i="${i}"><i style="background:${s.color}"></i><span>${esc(s.label)}</span><b>${Math.round(s.value / total * 100)}%</b><em>${money(s.value)}</em></li>`).join('');
+    const legend = slices.map((s, i) => `<li data-i="${i}"><i style="background:${s.color}"></i><span>${esc(s.label)}</span><b>${Math.round(s.value / total * 100)}%</b><em>${f(s.value)}</em></li>`).join('');
     el.innerHTML = `<svg viewBox="0 0 ${size} ${size}" role="img" aria-label="${esc(centerLabel || 'Distribución')}">${paths}
-      <text x="${c}" y="${c - 2}" text-anchor="middle" class="dv">${compact(total)}</text><text x="${c}" y="${c + 14}" text-anchor="middle" class="ax">${esc(centerLabel || 'Total')}</text></svg><ul class="dl">${legend}</ul>`;
+      <text x="${c}" y="${c - 2}" text-anchor="middle" class="dv">${fc(total)}</text><text x="${c}" y="${c + 14}" text-anchor="middle" class="ax">${esc(centerLabel || 'Total')}</text></svg><ul class="dl">${legend}</ul>`;
     const on = (i) => { el.querySelectorAll('[data-i]').forEach((x) => x.classList.toggle('dim', i !== null && x.dataset.i !== String(i))); };
     el.querySelectorAll('[data-i]').forEach((x) => { x.addEventListener('pointerenter', () => on(x.dataset.i)); x.addEventListener('pointerleave', () => on(null)); });
   }
