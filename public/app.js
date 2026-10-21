@@ -465,7 +465,7 @@ const views = {
     const iso = (t) => t.toISOString().slice(0, 10);
     const today = new Date(Date.now() - 5 * 36e5), rto = iso(today);
     today.setUTCDate(today.getUTCDate() - S.rp + 1);
-    const [w, tr] = await Promise.all([api('/reports/week' + (S.week ? `?start=${S.week}` : '')), api(`/reports/trend?from=${iso(today)}&to=${rto}`)]);
+    const [w, tr] = await Promise.all([api('/reports/week' + (S.week ? `?start=${S.week}` : '')), api(`/reports/trend?from=${iso(today)}&to=${rto}`).catch((e) => ({ error: e.message }))]);
     S.week = w.start;
     const d0 = (s) => new Date(s + 'T12:00:00Z').toLocaleDateString('es-CO', { timeZone: 'UTC', day: 'numeric', month: 'short' });
     const dn = (s) => new Date(s + 'T12:00:00Z').toLocaleDateString('es-CO', { timeZone: 'UTC', weekday: 'short', day: 'numeric' });
@@ -979,6 +979,7 @@ new MutationObserver(() => decorateStats()).observe(document.body, { childList: 
 // ---------- Reportes: panel de análisis ----------
 const RANGOS = [[7, '7 días'], [30, '30 días'], [90, '90 días'], [365, '12 meses']];
 function reportPanel(tr) {
+  if (tr.error) return `<div class="alert bad">No se pudo cargar el panel de análisis: ${esc(tr.error)}</div>`;
   const t = tr.totals, p = tr.previous, span = tr.days.length;
   const sel = `<div class="seg rsel">${RANGOS.map(([n, l]) => `<button class="${S.rp === n ? 'on' : ''}" onclick="A.rp(${n})">${l}</button>`).join('')}</div>`;
   if (!t.n) return `${sel}<div class="card"><span class="mute">Sin ventas en este periodo.</span></div>`;
@@ -1013,7 +1014,7 @@ function reportPanel(tr) {
     <div class="card"><h3>Ganancia neta acumulada</h3><div id="ch4"></div></div>`;
 }
 function reportCharts(tr) {
-  if (!$('#ch1')) return;
+  if (tr.error || !$('#ch1')) return;
   const t = tr.totals, C = Charts.COLOR, net = t.profit - t.impl - t.lost;
   Charts.series($('#ch1'), { days: tr.days, bars: { key: 'total', label: 'Ventas', color: C.ventas }, line: { key: 'profit', label: 'Ganancia', color: C.ganancia }, label: 'Ventas y ganancia por día' });
   Charts.series($('#ch2'), { days: tr.days, stack: [{ key: 'cash', label: 'Efectivo', color: C.efectivo }, { key: 'nequi', label: 'Nequi', color: C.nequi }], label: 'Efectivo y Nequi por día' });
