@@ -186,6 +186,12 @@ CREATE TABLE IF NOT EXISTS payouts (
   user_id INTEGER NOT NULL REFERENCES users(id),
   created_at TIMESTAMPTZ NOT NULL
 );
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='can_emp') THEN
+    ALTER TABLE users ADD COLUMN can_emp INTEGER NOT NULL DEFAULT 0;
+    UPDATE users SET can_emp=1 WHERE lower(username)='teresa' OR lower(name) LIKE 'teresa%';
+  END IF;
+END $$;
 ALTER TABLE payouts ADD COLUMN IF NOT EXISTS payee TEXT;
 ALTER TABLE payouts ADD COLUMN IF NOT EXISTS product_id INTEGER;
 ALTER TABLE payouts ADD COLUMN IF NOT EXISTS sold_qty INTEGER NOT NULL DEFAULT 0;
@@ -317,13 +323,14 @@ app.use('/api', (req, res, next) => {
   const token = parseCookies(req).sid;
   if (!token) return next();
   req.token = token;
-  D.get(`SELECT u.id,u.username,u.name,u.role,u.must_change,
+  D.get(`SELECT u.id,u.username,u.name,u.role,u.must_change,u.can_emp,
     (SELECT extract(epoch FROM updated_at)::bigint FROM user_photos f WHERE f.user_id=u.id) AS photo FROM sessions s
     JOIN users u ON u.id=s.user_id WHERE s.token=$1 AND u.active=1`, [token])
     .then((u) => { req.user = u; next(); }, next);
 });
 const auth = (req, res, next) => (req.user ? next() : next(new HttpError(401, 'Inicia sesión')));
 const admin = (req, res, next) => (req.user?.role === 'admin' ? next() : next(new HttpError(403, 'Solo administrador')));
+const emp = (req, res, next) => (req.user?.role === 'admin' || req.user?.can_emp ? next() : next(new HttpError(403, 'Sin acceso a emprendimientos')));
 
 app.post('/api/login', wrap(async (req, res) => {
   const u = await D.get('SELECT * FROM users WHERE username=$1 AND active=1', [String(req.body.username || '').trim().toLowerCase()]);
@@ -334,7 +341,7 @@ app.post('/api/login', wrap(async (req, res) => {
   await D.run('INSERT INTO sessions (token,user_id,created_at) VALUES ($1,$2,$3)', [token, u.id, now()]);
   await audit(D, u, 'Inició sesión');
   res.setHeader('Set-Cookie', `sid=${token}; ${cookieOpts(req, 60 * 60 * 24 * 14)}`);
-  return { id: u.id, username: u.username, name: u.name, role: u.role, must_change: u.must_change };
+  return { id: u.id, username: u.username, name: u.name, role: u.role, must_change: u.must_change, can_emp: u.can_emp };
 }));
 app.post('/api/logout', wrap(async (req, res) => {
   if (req.token) await D.run('DELETE FROM sessions WHERE token=$1', [req.token]);
@@ -354,7 +361,7 @@ app.post('/api/password', auth, wrap(async (req) => {
 
 // ---------- Usuarios ----------
 app.get('/api/users', auth, admin, wrap(() =>
-  D.all('SELECT id,username,name,role,active FROM users ORDER BY active DESC, name')));
+  D.all('SELECT id,username,name,role,active,can_emp FROM users ORDER BY active DESC, name')));
 app.post('/api/users', auth, admin, wrap(async (req) => {
   const username = str(req.body.username, 'Usuario', 30).toLowerCase();
   const name = str(req.body.name, 'Nombre', 60);
@@ -375,10 +382,11 @@ app.put('/api/users/:id', auth, admin, wrap(async (req) => {
   const name = req.body.name ? str(req.body.name, 'Nombre', 60) : u.name;
   const role = req.body.role ? (req.body.role === 'admin' ? 'admin' : 'turno') : u.role;
   const active = req.body.active === undefined ? u.active : (req.body.active ? 1 : 0);
+  const canEmp = req.body.can_emp === undefined ? u.can_emp : (req.body.can_emp ? 1 : 0);
   if (id === req.user.id && (!active || role !== 'admin')) throw bad('No puedes quitarte el acceso de administrador a ti mismo');
   if (!active && await D.get('SELECT 1 FROM shifts WHERE user_id=$1 AND closed_at IS NULL', [id]))
     throw bad('Este usuario tiene la caja abierta; ciérrala antes de desactivarlo');
-  await D.run('UPDATE users SET name=$1, role=$2, active=$3 WHERE id=$4', [name, role, active, id]);
+  await D.run('UPDATE users SET name=$1, role=$2, active=$3, can_emp=$5 WHERE id=$4', [name, role, active, id, canEmp]);
   if (req.body.password) {
     const p = String(req.body.password);
     if (p.length < 6) throw bad('La contraseña debe tener al menos 6 caracteres');
@@ -388,6 +396,7 @@ app.put('/api/users/:id', auth, admin, wrap(async (req) => {
   const ch = [];
   if (name !== u.name) ch.push(`nombre → ${name}`);
   if (role !== u.role) ch.push(`rol → ${role === 'admin' ? 'Admin' : 'Turno'}`);
+  if (canEmp !== u.can_emp) ch.push(canEmp ? 'acceso a Emprendimientos' : 'sin acceso a Emprendimientos');
   if (active !== u.active) ch.push(active ? 'activado' : 'desactivado');
   if (req.body.password) ch.push('nueva contraseña');
   await audit(D, req.user, 'Editó usuario', `${u.name} (${u.username})${ch.length ? ': ' + ch.join(', ') : ''}`);
@@ -925,7 +934,7 @@ async function pendingPayouts(x, productId, lock = false) {
   const f = (rows) => rows.reduce((t, r) => t + r.qty * r.cost, 0);
   return { sold, lost, sold_cost: f(sold), lost_cost: Math.round(f(lost) * LOST_PAY), sold_qty: sold.reduce((t, r) => t + r.qty, 0), lost_qty: lost.reduce((t, r) => t + r.qty, 0) };
 }
-app.get('/api/payouts', auth, admin, wrap(async () => {
+app.get('/api/payouts', auth, emp, wrap(async () => {
   const prods = (await D.all(`SELECT p.id, p.name, c.name AS category FROM products p JOIN categories c ON c.id=p.category_id ORDER BY p.name`))
     .filter((p) => isEmp(p.category));
   const pending = [];
@@ -937,7 +946,7 @@ app.get('/api/payouts', auth, admin, wrap(async () => {
   const history = await D.all(`SELECT y.*, u.name AS "user" FROM payouts y JOIN users u ON u.id=y.user_id ORDER BY y.id DESC LIMIT 100`);
   return { pending, history, register: await reg() };
 }));
-app.post('/api/payouts', auth, admin, wrap(async (req) => {
+app.post('/api/payouts', auth, emp, wrap(async (req) => {
   const m = method(req.body.method);
   const productId = int(req.body.product_id, 'producto');
   const payee = str(req.body.payee, 'A nombre de quién se paga', 100);

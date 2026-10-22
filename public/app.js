@@ -117,7 +117,7 @@ const val = (id) => $('#' + id).value;
 async function boot() {
   S.user = await api('/me').catch(() => null);
   if (!S.user) { clearInterval(S.chatTimer); S.chatOpen = false; S.peer = null; S.chat = []; chatShell(); return loginView(); }
-  const tabs = S.user.role === 'admin' ? ADMIN_TABS : TURNO_TABS;
+  const tabs = S.user.role === 'admin' ? ADMIN_TABS : S.user.can_emp ? [...TURNO_TABS, ['emprendimientos', 'Emprendimientos']] : TURNO_TABS;
   try { const rv = sessionStorage.getItem('reloadView'); if (rv) { sessionStorage.removeItem('reloadView'); if (!S.view) S.view = rv; } } catch {} // tras una actualización automática, vuelve a la misma vista
   if (!S.view || !tabs.find((t) => t[0] === S.view)) S.view = tabs[0][0];
   const first = !$('.shell');
@@ -1019,12 +1019,12 @@ const A = window.A = {
       <label>Usuario (para ingresar)</label><input id="uu" value="${esc(u.username)}" ${id ? 'disabled' : ''} autocapitalize="none">
       <label>Rol</label><select id="ur"><option value="turno" ${u.role === 'turno' ? 'selected' : ''}>Turno (vende)</option><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrador</option></select>
       <label>${id ? 'Nueva contraseña (dejar vacío para no cambiar)' : 'Contraseña (mín. 6)'}</label><input id="up" type="password" autocomplete="new-password">
-      ${id ? `<label><input type="checkbox" id="ua" style="width:auto" ${u.active ? 'checked' : ''}> Activo</label>` : ''}
+      ${id ? `<label><input type="checkbox" id="ue" style="width:auto" ${u.can_emp ? 'checked' : ''}> Puede pagar Emprendimientos</label><label><input type="checkbox" id="ua" style="width:auto" ${u.active ? 'checked' : ''}> Activo</label>` : ''}
       <p><button class="btn" onclick="A.saveUser(${id || 0})">Guardar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);
   },
   async saveUser(id) {
     const body = { name: val('un'), role: val('ur'), password: val('up') };
-    if (id) { body.active = $('#ua').checked; if (!body.password) delete body.password; } else body.username = val('uu');
+    if (id) { body.active = $('#ua').checked; body.can_emp = $('#ue').checked; if (!body.password) delete body.password; } else body.username = val('uu');
     if (await act(() => api(id ? `/users/${id}` : '/users', id ? 'PUT' : 'POST', body), 'Guardado')) { closeModal(); boot(); }
   },
 };
