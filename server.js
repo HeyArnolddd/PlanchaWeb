@@ -1058,7 +1058,8 @@ async function weekTotals(a, b) {
     D.all(`SELECT to_char((s.created_at AT TIME ZONE '${TZ}')::date,'YYYY-MM-DD') AS day, SUM((i.price-i.cost)*i.qty) AS profit
       FROM sale_items i JOIN sales s ON s.id=i.sale_id WHERE s.voided=0 AND s.created_at>=$1 AND s.created_at<$2 GROUP BY 1`, [a, b]),
     D.all(`SELECT to_char(${DAY},'YYYY-MM-DD') AS day, COALESCE(SUM(amount) FILTER (WHERE kind='implementos'),0) AS impl,
-      COALESCE(SUM(amount) FILTER (WHERE kind='pedido'),0) AS ped FROM expenses WHERE created_at>=$1 AND created_at<$2 GROUP BY 1`, [a, b]),
+      COALESCE(SUM(amount) FILTER (WHERE kind='pedido'),0) AS ped FROM expenses WHERE created_at>=$1 AND created_at<$2
+      AND description NOT LIKE 'Pago emprendimiento%' GROUP BY 1`, [a, b]), // los pagos a emprendimientos ya se suman aparte (pay)
     D.all(`SELECT to_char(${DAY},'YYYY-MM-DD') AS day, SUM(fee) AS fees FROM withdrawals
       WHERE voided=0 AND created_at>=$1 AND created_at<$2 GROUP BY 1`, [a, b]),
     D.all(`SELECT to_char(${DAY},'YYYY-MM-DD') AS day, SUM(lost_cost) AS lost FROM payouts
