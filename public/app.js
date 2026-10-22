@@ -879,20 +879,28 @@ const A = window.A = {
       <div><label>Precio de venta</label><input id="ps" type="number" inputmode="numeric" min="0" value="${p.sell_price}"></div></div>
       <label><input type="checkbox" id="pt" style="width:auto" ${p.track_stock ? 'checked' : ''} onchange="$('#stk').style.display=this.checked?'':'none'"> Controlar stock</label>
       <p class="mute" style="margin:0">Desmárcalo para cosas como el vaso de gaseosa del combo: siempre se puede vender y solo registra el dinero.</p>
-      <div class="row" id="stk" style="${p.track_stock ? '' : 'display:none'}">${id ? `<div><label>Stock actual</label><input id="pq" type="number" inputmode="numeric" min="0" value="${p.stock}"></div>` : '<div><label>Cantidad inicial</label><input id="pq" type="number" min="0" value="0"></div>'}
+      <div class="row" id="stk" style="${p.track_stock ? '' : 'display:none'}">${id ? `<div><label>Stock actual</label><input id="pfq" type="number" inputmode="numeric" min="0" value="${p.stock}"></div>` : '<div><label>Cantidad inicial</label><input id="pfq" type="number" min="0" value="0"></div>'}
       <div><label>Avisar si stock ≤</label><input id="pm" type="number" min="0" value="${p.min_stock}"></div></div>
       ${id ? `<label><input type="checkbox" id="pa" style="width:auto" ${p.active ? 'checked' : ''}> Activo (visible para vender)</label>` : ''}
       <p><button class="btn" onclick="A.saveProduct(${id || 0})">Guardar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);
   },
   async saveProduct(id) {
     const body = { name: val('pn'), category_id: val('pc'), buy_price: val('pb'), sell_price: val('ps'), min_stock: val('pm'), track_stock: $('#pt').checked };
-    if (id) { body.active = $('#pa').checked; if ($('#pt').checked) body.stock = val('pq'); } else body.stock = val('pq');
+    if (id) { body.active = $('#pa').checked; if ($('#pt').checked) body.stock = val('pfq'); } else body.stock = val('pfq');
     const r = await act(() => api(id ? `/products/${id}` : '/products', id ? 'PUT' : 'POST', body), 'Guardado');
     if (!r) return;
-    const pid = id || r.id;
-    if (S.photo === 'remove') await act(() => api(`/products/${pid}/photo`, 'DELETE'));
-    else if (S.photo) await act(() => api(`/products/${pid}/photo`, 'PUT', { image: S.photo }));
-    S.photo = undefined; closeModal(); boot();
+    const pid = id || r.id, photo = S.photo;
+    S.photo = undefined; closeModal();
+    // refleja el cambio al instante y recarga en segundo plano
+    const cur = id && S.prods.find((x) => x.id === id);
+    if (cur) {
+      Object.assign(cur, { name: body.name, buy_price: +body.buy_price, sell_price: +body.sell_price, min_stock: +body.min_stock, track_stock: body.track_stock ? 1 : 0, active: body.active ? 1 : 0 });
+      if (body.stock !== undefined) cur.stock = +body.stock;
+      A.pgrid();
+    }
+    if (photo === 'remove') await act(() => api(`/products/${pid}/photo`, 'DELETE'));
+    else if (photo) await act(() => api(`/products/${pid}/photo`, 'PUT', { image: photo }));
+    boot();
   },
   stockForm(id) {
     const p = S.prods.find((x) => x.id === id);
