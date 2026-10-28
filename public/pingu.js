@@ -30,7 +30,7 @@
   const showFrame = (n) => { if (sp.dataset.n === n) return; if (frames[sp.dataset.n]) frames[sp.dataset.n].classList.remove('on'); sp.dataset.n = n; frames[n].classList.add('on'); };
 
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const LINES = ['¡Hola! 🐧', 'Maldito sea la republica independiente de florida', 'hptas de florida', '¡Cuadra la caja!', 'Soto Hp','67?'];
+  const LINES = ['¡Hola!', 'Maldito sea la republica independiente de florida', 'hptas de florida', '¡Cuadra la caja!', 'Soto Hp','67?'];
   const rnd = (a, b) => a + Math.random() * (b - a);
   const pick = (a) => a[Math.floor(Math.random() * a.length)];
   const maxX = () => Math.max(0, innerWidth - W);
@@ -61,7 +61,7 @@
     if (!held) return;
     if (!held.moved && Math.hypot(e.clientX - held.sx, e.clientY - held.sy) > 6) {
       held.moved = true; mode = 'held'; target = null; spin = 0; rot = 0; vx = vy = 0;
-      el.classList.add('held'); talk('¡Eeeh! 😮', 1200);
+      el.classList.add('held'); talk('¡Eeeh!', 1200);
     }
     if (!held.moved) return;
     const now = performance.now(), dt = Math.max(.008, (now - held.pt) / 1000);
@@ -84,8 +84,8 @@
     const now = performance.now(); clicks = clicks.filter((t) => now - t < 2200); clicks.push(now);
     target = null;
     if (clicks.length >= 5) { // demasiadas cosquillas: voltereta y mareo
-      clicks = []; jump(860, true); setEmote('wow', 1.2); talk('¡Wiiiii! 🌀', 1400);
-      setTimeout(() => { setEmote('sad', 2); talk('Ay… me mareé 😵‍💫', 2000); }, 1300);
+      clicks = []; jump(860, true); setEmote('wow', 1.2); talk('¡Wiiiii!', 1400);
+      setTimeout(() => { setEmote('sad', 2); talk('Ay… me mareé', 2000); }, 1300);
     } else {
       jump(rnd(560, 700)); setEmote('happy', 1); talk(pick(LINES));
     }
@@ -95,7 +95,7 @@
   addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse') { mx = e.clientX; my = e.clientY; } }, { passive: true });
   document.addEventListener('click', (e) => {
     if (el.contains(e.target) || held || mode === 'air' || Math.random() > .3) return;
-    target = Math.max(0, Math.min(maxX(), e.clientX - W / 2)); run = true; emote = null; emoteT = 0; talk('¡Voy! 🏃', 1200);
+    target = Math.max(0, Math.min(maxX(), e.clientX - W / 2)); run = true; emote = null; emoteT = 0; talk('¡Voy!', 1200);
   });
   addEventListener('scroll', () => {
     const n = performance.now();

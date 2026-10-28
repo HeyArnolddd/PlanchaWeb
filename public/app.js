@@ -77,6 +77,14 @@ const ICONS = {
   ojoOff: '<path d="M17.9 17.9A10.5 10.5 0 0 1 12 19c-6.4 0-10-7-10-7a17.6 17.6 0 0 1 4.1-5M9.9 5.2A9.7 9.7 0 0 1 12 5c6.4 0 10 7 10 7a17.7 17.7 0 0 1-2.2 3.2M1 1l22 22M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
   estrella: '<path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z"/>',
   sonrisa: '<circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2.5 4 2.5S16 14 16 14M9 9.5h.01M15 9.5h.01"/>',
+  check: '<path d="M4 12.5l5 5L20 6.5"/>',
+  reloj: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  regalo: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8M7.5 8C5 8 5 4 8 4c2 0 4 4 4 4s2-4 4-4c3 0 3 4.5.5 4"/>',
+  mezcla: '<path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>',
+  imagen: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-9 9"/>',
+  camion: '<path d="M2 6h11v11H2zM13 10h4l4 4v3h-8"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/>',
+  descarga: '<path d="M12 3v12m0 0-4.5-4.5M12 15l4.5-4.5M4 20h16"/>',
+  lupa: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   colapsar: '<path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/>'
 };
 const icon = (k) => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k] || ''}</svg>`;
@@ -152,7 +160,7 @@ const peerName = () => (S.peer === 0 ? 'Equipo (todos)' : ((S.chatUsers && S.cha
 // cabecera de una conversación: foto y nombre de con quién hablas
 function peerHead() {
   const u = S.peer ? (S.chatUsers && S.chatUsers.users.find((x) => x.id === S.peer)) : null;
-  return (S.peer === 0 ? '<b class="av sm">👥</b>' : avatar(u || { id: S.peer, name: peerName() }, 'sm', true)) + esc(peerName());
+  return (S.peer === 0 ? `<b class="av sm">${icon('usuarios')}</b>` : avatar(u || { id: S.peer, name: peerName() }, 'sm', true)) + esc(peerName());
 }
 function chatShell() {
   let w = $('#cw');
@@ -170,13 +178,13 @@ function chatDraw() {
   w.innerHTML = `<div class="cw-panel"><div class="cw-head">${S.peer === null ? '' : '<button onclick="A.chatBack()" aria-label="Volver">←</button>'}
     <b class="cwt">${S.peer === null ? '<img class="cwi" src="/chaticon.png" alt="">Chat' : peerHead()}</b><button onclick="A.chatToggle()" aria-label="Cerrar">✕</button></div>
     ${S.peer === null ? '<div id="chatside" class="cw-list"></div>'
-      : `<div id="chatlist" class="chatlist"></div><div id="cwpick" class="cw-pick" hidden></div><div class="cw-send"><button class="btn sec sm" onclick="A.pick()" aria-label="Emojis y stickers">😊</button><input id="cm" maxlength="500" placeholder="Escribe un mensaje…" onkeydown="if(event.key==='Enter')A.say()"><button class="btn sm" onclick="A.say()">Enviar</button></div>`}</div>`;
+      : `<div id="chatlist" class="chatlist"></div><div id="cwpick" class="cw-pick" hidden></div><div class="cw-send"><button class="btn sec sm" onclick="A.pick()" aria-label="Emojis y stickers">${icon('sonrisa')}</button><input id="cm" maxlength="500" placeholder="Escribe un mensaje…" onkeydown="if(event.key==='Enter')A.say()"><button class="btn sm" onclick="A.say()">Enviar</button></div>`}</div>`;
   chatPaintSide(); chatPaintList();
   const f = $('#cm'); if (f) f.focus();
 }
 function chatPaintSide() {
   const side = $('#chatside'); if (!side || !S.chatUsers) return;
-  const row = (id, name, n, photo) => `<button onclick="A.openChat(${id})"><span class="crow">${id ? avatar({ id, name, photo }, 'sm') : '<b class="av sm">👥</b>'}${esc(name)}</span>${n ? `<b class="badge">${n}</b>` : ''}</button>`;
+  const row = (id, name, n, photo) => `<button onclick="A.openChat(${id})"><span class="crow">${id ? avatar({ id, name, photo }, 'sm') : `<b class="av sm">${icon('usuarios')}</b>`}${esc(name)}</span>${n ? `<b class="badge">${n}</b>` : ''}</button>`;
   side.innerHTML = row(0, 'Equipo (todos)', S.chatUsers.general) + S.chatUsers.users.map((u) => row(u.id, u.name, u.unread, u.photo)).join('');
 }
 function chatPaintBadge() {
@@ -187,7 +195,7 @@ function chatPaintBadge() {
 function chatPaintList() {
   const box = $('#chatlist'); if (!box) return;
   const bottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
-  box.innerHTML = S.chat.map((m) => `<div class="mrow ${m.user_id === S.user.id ? 'me' : ''}">${avatar(m.user_id === S.user.id ? S.user : { id: m.user_id, name: m.user_name, photo: m.photo }, 'sm', true)}<div class="msg ${m.user_id === S.user.id ? 'me' : ''}"><small>${m.user_id === S.user.id ? 'Tú' : esc(m.user_name)} · ${dt(m.created_at).split(', ').pop()}</small>${m.sticker_id ? `<img class="stk" src="/api/stickers/${m.sticker_id}/img" alt="sticker">` : `<div>${m.body ? esc(m.body) : '<i class="mute">🖼️ sticker eliminado</i>'}</div>`}${m.user_id === S.user.id && S.peer ? `<small class="seen">${m.id <= S.peerRead ? '✓✓ Visto' : '✓ Enviado'}</small>` : ''}</div></div>`).join('')
+  box.innerHTML = S.chat.map((m) => `<div class="mrow ${m.user_id === S.user.id ? 'me' : ''}">${avatar(m.user_id === S.user.id ? S.user : { id: m.user_id, name: m.user_name, photo: m.photo }, 'sm', true)}<div class="msg ${m.user_id === S.user.id ? 'me' : ''}"><small>${m.user_id === S.user.id ? 'Tú' : esc(m.user_name)} · ${dt(m.created_at).split(', ').pop()}</small>${m.sticker_id ? `<img class="stk" src="/api/stickers/${m.sticker_id}/img" alt="sticker">` : `<div>${m.body ? esc(m.body) : '<i class="mute">sticker eliminado</i>'}</div>`}${m.user_id === S.user.id && S.peer ? `<small class="seen">${m.id <= S.peerRead ? '✓✓ Visto' : '✓ Enviado'}</small>` : ''}</div></div>`).join('')
     || '<span class="mute">Aún no hay mensajes. ¡Escribe el primero!</span>';
   if (bottom) box.scrollTop = box.scrollHeight;
 }
@@ -266,7 +274,7 @@ function danceSami() {
 }
 function loginView() {
   $('#app').innerHTML = `<div class="login-wrap"><i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i>
-    <div class="hero" aria-hidden="true"><div class="hero-say">¡Bienvenido! 🎉</div>
+    <div class="hero" aria-hidden="true"><div class="hero-say">¡Bienvenido!</div>
       <i class="note n1">♪</i><i class="note n2">♫</i><i class="note n3">♪</i><i class="note n4">♫</i>
       <div class="hero-bob"><img id="hero" src="/sami/hd/happy.png" alt="" draggable="false"></div><div class="hero-shd"></div></div>
     <div class="login"><img src="/logo.png" alt="ACEIS"><h2>La Plancha</h2><p class="mute">Asociación de Ingeniería de Sistemas</p>
@@ -436,19 +444,19 @@ const views = {
             </div>
           </div>
           <button class="btn mt-4 w-full !rounded-2xl !py-3 text-base" onclick="A.loan()">Registrar préstamo</button>`
-          : '<div class="rounded-2xl border border-dashed border-line p-6 text-center text-slate-500"><div class="text-3xl">🎾</div>No hay implementos disponibles para prestar.</div>'}
+          : '<div class="rounded-2xl border border-dashed border-line p-6 text-center text-slate-500"><div class="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-ice text-brand">' + icon('productos') + '</div>No hay implementos disponibles para prestar.</div>'}
         </section>
         <section class="min-w-0 flex-1">
           <h3 class="!mb-3 flex items-center gap-2 text-lg font-extrabold text-navy"><span class="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-sm text-white">2</span> Pendientes de devolución</h3>
           ${pending.length ? `<div class="flex flex-col gap-3">${pending.map((l) => `<article class="overflow-hidden rounded-3xl border ${l.late ? 'border-rose-300' : 'border-amber-200'} bg-white shadow-sm">
             <div class="flex items-center gap-3 p-3">${loanThumb(item(l), 'h-16 w-16')}
-              <div class="min-w-0 flex-1"><b class="block truncate text-navy">${esc(l.item)}</b><div class="truncate text-sm text-slate-700">👤 ${esc(l.borrower)}</div>
+              <div class="min-w-0 flex-1"><b class="block truncate text-navy">${esc(l.item)}</b><div class="truncate text-sm text-slate-700">${icon('usuarios')} ${esc(l.borrower)}</div>
                 <div class="text-xs text-slate-500">Prestado ${dt(l.created_at)} · atendió ${esc(l.who)}</div></div>
               <div class="text-right"><div class="text-lg font-extrabold text-navy">${money(l.fee)}</div>${l.method ? `<small class="text-xs text-slate-500">${payTag(l.method)}</small>` : ''}</div></div>
             <div class="flex flex-wrap items-center gap-2 ${l.late ? 'bg-rose-50' : 'bg-amber-50'} px-3 py-2">
-              <span class="text-xs font-semibold ${l.late ? 'text-rose-700' : 'text-amber-800'}">⏰ Devolver antes de ${dt(l.due_at)}</span>${l.late ? chip('VENCIDO', 'bg-rose-500 text-white') : ''}
-              <span class="ml-auto flex gap-2"><button class="btn sm !rounded-xl" onclick="A.loanReturn(${l.id})">✔ Devuelto</button>${admin ? `<button class="btn sec sm !rounded-xl" onclick="A.loanVoid(${l.id})">Anular</button>` : ''}</span></div></article>`).join('')}</div>`
-          : '<div class="rounded-3xl border border-dashed border-line bg-white/70 p-8 text-center text-slate-500"><div class="text-3xl">✅</div>Nada pendiente: todo fue devuelto.</div>'}
+              <span class="text-xs font-semibold ${l.late ? 'text-rose-700' : 'text-amber-800'}">${icon('reloj')} Devolver antes de ${dt(l.due_at)}</span>${l.late ? chip('VENCIDO', 'bg-rose-500 text-white') : ''}
+              <span class="ml-auto flex gap-2"><button class="btn sm !rounded-xl" onclick="A.loanReturn(${l.id})">${icon('check')} Devuelto</button>${admin ? `<button class="btn sec sm !rounded-xl" onclick="A.loanVoid(${l.id})">Anular</button>` : ''}</span></div></article>`).join('')}</div>`
+          : '<div class="rounded-3xl border border-dashed border-line bg-white/70 p-8 text-center text-slate-500"><div class="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">' + icon('check') + '</div>Nada pendiente: todo fue devuelto.</div>'}
         </section>
       </div>
       <section class="mt-6"><h3 class="!mb-3 text-lg font-extrabold text-navy">Historial reciente</h3>
@@ -487,7 +495,8 @@ const views = {
         <section class="min-w-0 flex-1 rounded-3xl border border-line bg-white p-5 shadow-sm lg:max-w-xl">
           <h3 class="!mb-3 flex items-center gap-2 text-lg font-extrabold text-navy"><span class="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-sm text-white">1</span> Nuevo pedido</h3>
           <div class="relative">
-            <input id="os" autocomplete="off" placeholder="🔎 Escribe el producto (ej. coca zero)…" class="!rounded-2xl !py-3" oninput="A.ordFind()" onfocus="A.ordFind()" onkeydown="if(event.key==='Escape'){$('#ores').hidden=true;A.ordUnpick()}">
+            <span class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">${icon('lupa')}</span>
+            <input id="os" autocomplete="off" placeholder="Escribe el producto (ej. coca zero)…" class="!rounded-2xl !py-3 !pl-11" oninput="A.ordFind()" onfocus="A.ordFind()" onkeydown="if(event.key==='Escape'){$('#ores').hidden=true;A.ordUnpick()}">
             <div id="ores" hidden class="absolute inset-x-0 top-full z-20 mt-1.5 max-h-80 overflow-y-auto rounded-2xl border border-line bg-white p-1.5 shadow-xl"></div>
           </div>
           <div id="osel"></div>
@@ -508,9 +517,9 @@ const views = {
               <div class="text-right text-xl font-extrabold text-navy">${money(o.total)}</div></header>
             <ul class="divide-y divide-slate-100 px-4 py-1.5">${o.items.map(line).join('')}</ul>
             ${o.note ? `<p class="px-4 pb-1 text-xs italic text-slate-500">${esc(o.note)}</p>` : ''}
-            <footer class="flex gap-2 px-4 pb-3 pt-2"><button class="btn flex-1 !rounded-xl" onclick="A.ordReceive(${o.id})">✔ Recibir y pagar</button>
+            <footer class="flex gap-2 px-4 pb-3 pt-2"><button class="btn flex-1 !rounded-xl" onclick="A.ordReceive(${o.id})">${icon('check')} Recibir y pagar</button>
               ${S.user.role === 'admin' || o.user_id === S.user.id ? `<button class="btn sec !rounded-xl" onclick="A.ordCancel(${o.id})">Cancelar</button>` : ''}</footer></article>`).join('')}</div>`
-          : '<div class="rounded-3xl border border-dashed border-line bg-white/70 p-8 text-center text-slate-500"><div class="text-3xl">📦</div>No hay pedidos pendientes.</div>'}
+          : '<div class="rounded-3xl border border-dashed border-line bg-white/70 p-8 text-center text-slate-500"><div class="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-ice text-brand">' + icon('productos') + '</div>No hay pedidos pendientes.</div>'}
         </section>
       </div>
       <section class="mt-6"><h3 class="!mb-3 text-lg font-extrabold text-navy">Historial reciente</h3>
@@ -576,8 +585,8 @@ const views = {
     const sum = (k) => rows.filter((e) => e.kind === k).reduce((t, e) => t + e.amount, 0);
     $('#main').innerHTML = `<h2>Gastos</h2>
       <div class="card"><div class="seg" style="margin-bottom:.5rem">
-        <button id="k1" class="on" onclick="A.kind('pedido')">🚚 Pago de pedido</button>
-        <button id="k2" onclick="A.kind('implementos')">🥄 Implementos</button></div>
+        <button id="k1" class="on" onclick="A.kind('pedido')">${icon('camion')} Pago de pedido</button>
+        <button id="k2" onclick="A.kind('implementos')">${icon('gastos')} Implementos</button></div>
         <p class="mute" id="kh"></p>
         <div class="row"><div id="gcw"><label>Proveedor / categoría</label><select id="gc"><option value="">Otro</option>${cats.map((c) => `<option>${esc(c.name)}</option>`).join('')}</select></div>
         <div style="flex:2"><label id="gdl">Nota (opcional)</label><input id="gd" maxlength="150"></div>
@@ -642,7 +651,7 @@ const views = {
         <p class="mute">Descarga todos los movimientos del rango: ventas, retiros, gastos, ajustes, aperturas y cierres de caja. Se abre directo en Excel.</p>
         <div class="row"><div><label>Desde</label><input id="xf" type="date" value="${w.start}"></div>
         <div><label>Hasta</label><input id="xt" type="date" value="${w.end}"></div></div>
-        <p><button class="btn" onclick="A.exportCsv()">⬇ Descargar CSV</button></p></div>`;
+        <p><button class="btn" onclick="A.exportCsv()">${icon('descarga')} Descargar CSV</button></p></div>`;
     A.hours('week'); reportCharts(tr);
   },
 
@@ -757,7 +766,7 @@ const A = window.A = {
       <div class="pf-top"><div id="avbox">${avatar(S.user, 'xl')}</div>
         <div class="pf-btns"><label class="btn sec sm" for="avf">Cambiar foto</label><input id="avf" type="file" accept="image/*" onchange="A.pickAvatar(this)" hidden>
         ${S.user.photo ? '<a href="#" onclick="A.rmAvatar();return false" class="mute">Quitar foto</a>' : ''}</div></div>
-      <label>Nombre (puedes usar emojis 😎)</label>
+      <label>Nombre (puedes usar emojis)</label>
       <div class="pw"><input id="pn" value="${esc(S.user.name)}" autocomplete="off" oninput="A.pcount()"><button type="button" class="eye" id="pemo" onmousedown="event.preventDefault()" onclick="A.profileEmoji()" title="Emojis" aria-label="Emojis">${icon('sonrisa')}</button></div>
       <div id="pnpick" class="cw-pick" hidden></div><small id="pcnt" class="mute"></small>
       <label>Usuario</label><input id="pu" value="${esc(S.user.username)}" autocomplete="off" autocapitalize="none" spellcheck="false">
@@ -834,7 +843,7 @@ const A = window.A = {
     const used = hrs.filter((x, h) => x.n || (h >= 6 && h <= 22));
     const days = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map((l, i) => ({ l, ...(r.dows.find((x) => x.d === i + 1) || { n: 0, total: 0 }) }));
     const best = hrs.reduce((a, b) => (b.total > a.total ? b : a), hrs[0]);
-    $('#hours').innerHTML = `${best.total ? `<p>🔥 Hora más fuerte: <b>${best.l}</b> (${best.n} ventas · ${money(best.total)})</p>` : '<span class="mute">Sin ventas en este periodo.</span>'}
+    $('#hours').innerHTML = `${best.total ? `<p>Hora más fuerte: <b>${best.l}</b> (${best.n} ventas · ${money(best.total)})</p>` : '<span class="mute">Sin ventas en este periodo.</span>'}
       ${bars(used, Math.max(1, ...used.map((x) => x.total)))}<h3 style="margin-top:1rem">Por día de la semana</h3>${bars(days, Math.max(1, ...days.map((x) => x.total)))}`;
   },
   exportCsv() {
@@ -914,20 +923,20 @@ const A = window.A = {
         <td><div class="qty"><button onclick="A.chg(${c.id},-1)">−</button>${c.qty}<button onclick="A.chg(${c.id},1)">+</button></div></td>
         <td class="n">${money(c.qty * p.sell_price)}</td></tr>` +
         (p.benefit_price !== undefined ? `<tr><td colspan="3">${S.benefit && S.benefit.product_id === c.id
-          ? `<small>🎁 Beneficio: <b>${esc(S.benefit.name)}</b> · 1 a ${money(p.benefit_price)}</small> <button class="btn sec sm" onclick="S.benefit=null;A.cart()">Quitar</button>`
-          : (S.benefit ? '' : `<button class="btn sec sm" onclick="A.benefit(${c.id})">🎁 Beneficio (precio de compra)</button>`)}</td></tr>` : '');
+          ? `<small>${icon('regalo')} Beneficio: <b>${esc(S.benefit.name)}</b> · 1 a ${money(p.benefit_price)}</small> <button class="btn sec sm" onclick="S.benefit=null;A.cart()">Quitar</button>`
+          : (S.benefit ? '' : `<button class="btn sec sm" onclick="A.benefit(${c.id})">${icon('regalo')} Beneficio (precio de compra)</button>`)}</td></tr>` : '');
     }).join('')}</table>` : '<span class="mute">Toca un producto para agregarlo.</span>') +
       `<p class="total">${money(total)}</p>
       <div class="seg"><button class="${S.method === 'efectivo' ? 'on' : ''}" onclick="S.method='efectivo';A.cart()"><img class="pay" src="/efectivo.png" alt=""> Efectivo</button>
       <button class="${S.method === 'nequi' ? 'on' : ''}" onclick="S.method='nequi';A.cart()"><img class="pay" src="/nequi.jpg" alt=""> Nequi</button>
-      <button class="${S.method === 'mixto' ? 'on' : ''}" onclick="S.method='mixto';A.cart()">🔀 Mixto</button></div>
+      <button class="${S.method === 'mixto' ? 'on' : ''}" onclick="S.method='mixto';A.cart()">${icon('mezcla')} Mixto</button></div>
       ${S.method === 'mixto' ? `<label>Pagó por Nequi</label><input id="nq" type="number" inputmode="numeric" min="1" value="${S.nq || ''}" oninput="S.nq=this.value;A.mix(${total})">
       <p id="mix" class="mute"></p>` : ''}
       <p><button class="btn" style="width:100%" ${S.cart.length ? '' : 'disabled'} onclick="A.sell()">Registrar venta</button></p>
       ${S.cart.length ? '<button class="btn sec sm" onclick="S.cart=[];S.benefit=null;A.cart()">Vaciar</button>' : ''}`;
   },
   benefit(pid) {
-    modal(`<h3>🎁 Beneficio de empanada</h3><p class="mute">La primera empanada del día de cada persona se vende al precio de compra. Solo una vez al día por persona.</p>
+    modal(`<h3>${icon('regalo')} Beneficio de empanada</h3><p class="mute">La primera empanada del día de cada persona se vende al precio de compra. Solo una vez al día por persona.</p>
       <label>Nombre de la persona</label><input id="bu" maxlength="60" onkeydown="if(event.key==='Enter')A.setBenefit(${pid})">
       <p><button class="btn" onclick="A.setBenefit(${pid})">Aplicar</button></p>`);
   },
@@ -945,7 +954,7 @@ const A = window.A = {
     const el = $('#cwpick'); if (!el) return;
     if (!tab && !el.hidden) { el.hidden = true; return; }
     tab ||= S.pickTab || 'emoji'; S.pickTab = tab; el.hidden = false;
-    const tabs = `<div class="cw-tabs"><button class="${tab === 'emoji' ? 'on' : ''}" onclick="A.pick('emoji')">😊 Emojis</button><button class="${tab === 'stk' ? 'on' : ''}" onclick="A.pick('stk')">🖼️ Stickers</button></div>`;
+    const tabs = `<div class="cw-tabs"><button class="${tab === 'emoji' ? 'on' : ''}" onclick="A.pick('emoji')">${icon('sonrisa')} Emojis</button><button class="${tab === 'stk' ? 'on' : ''}" onclick="A.pick('stk')">${icon('imagen')} Stickers</button></div>`;
     if (tab === 'emoji') { el.innerHTML = tabs + `<div class="cw-grid">${EMOJIS.map((e) => `<button onclick="A.addEmoji(this.textContent)">${e}</button>`).join('')}</div>`; return; }
     S.stickers = await api('/stickers').catch(() => S.stickers || []);
     if ($('#cwpick') !== el || el.hidden) return;
