@@ -268,6 +268,29 @@ CREATE TABLE IF NOT EXISTS loans (
   created_at TIMESTAMPTZ NOT NULL
 );
 CREATE INDEX IF NOT EXISTS loans_item ON loans (item_id);
+CREATE TABLE IF NOT EXISTS purchase_orders (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  total BIGINT NOT NULL,
+  note TEXT,
+  status TEXT NOT NULL DEFAULT 'pendiente' CHECK (status IN ('pendiente','recibido','cancelado')),
+  created_at TIMESTAMPTZ NOT NULL,
+  received_at TIMESTAMPTZ,
+  received_by INTEGER REFERENCES users(id),
+  paid BIGINT,
+  method TEXT CHECK (method IN ('efectivo','nequi'))
+);
+CREATE TABLE IF NOT EXISTS purchase_order_items (
+  id SERIAL PRIMARY KEY,
+  order_id INTEGER NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  product_id INTEGER REFERENCES products(id),
+  new_name TEXT,
+  new_category_id INTEGER REFERENCES categories(id),
+  new_sell_price BIGINT NOT NULL DEFAULT 0,
+  qty INTEGER NOT NULL,
+  received_qty INTEGER
+);
+CREATE INDEX IF NOT EXISTS purchase_order_items_order ON purchase_order_items (order_id);
 INSERT INTO register (id, cash, nequi) VALUES (1, 0, 0) ON CONFLICT DO NOTHING;
 `;
 
@@ -888,6 +911,110 @@ app.post('/api/withdrawals/:id/void', auth, wrap(async (req) => {
     await t.run('UPDATE withdrawals SET voided=1 WHERE id=$1', [id]);
     await t.run('UPDATE register SET cash=cash-$1, nequi=nequi-$2 WHERE id=1', [d.cash, d.nequi]);
     await audit(t, req.user, 'Anuló retiro Nequi', `#${id} · ${w.amount} · comisión ${w.fee}`);
+    return { ok: true };
+  });
+}));
+
+// ---------- Pedidos a proveedores: quien encarga registra el pedido pendiente; quien lo recibe lo verifica y paga ----------
+// Al recibir: se suma el stock recibido, se descuenta lo pagado de la caja y queda como gasto de tipo pedido.
+const ORDER_SQL = `SELECT o.*, u.name AS who, r.name AS received_name FROM purchase_orders o
+  JOIN users u ON u.id=o.user_id LEFT JOIN users r ON r.id=o.received_by`;
+const ORDER_ITEMS_SQL = `SELECT i.*, COALESCE(p.name, i.new_name) AS name, COALESCE(pc.name, nc.name) AS category
+  FROM purchase_order_items i LEFT JOIN products p ON p.id=i.product_id LEFT JOIN categories pc ON pc.id=p.category_id
+  LEFT JOIN categories nc ON nc.id=i.new_category_id WHERE i.order_id = ANY($1::int[]) ORDER BY i.id`;
+async function withItems(orders) {
+  const items = orders.length ? await D.all(ORDER_ITEMS_SQL, [orders.map((o) => o.id)]) : [];
+  orders.forEach((o) => { o.items = items.filter((i) => i.order_id === o.id); });
+  return orders;
+}
+app.get('/api/orders', auth, wrap(async () => ({
+  pending: await withItems(await D.all(`${ORDER_SQL} WHERE o.status='pendiente' ORDER BY o.id`)),
+  history: await withItems(await D.all(`${ORDER_SQL} WHERE o.status<>'pendiente' ORDER BY o.id DESC LIMIT 30`)),
+})));
+app.post('/api/orders', auth, wrap(async (req) => {
+  const lines = req.body.items;
+  if (!Array.isArray(lines) || !lines.length || lines.length > 100) throw bad('Agrega al menos un producto al pedido');
+  const total = int(req.body.total, 'valor total del pedido', { min: 1 });
+  const note = String(req.body.note || '').trim().slice(0, 200) || null;
+  return tx(async (t) => {
+    const items = [];
+    for (const l of lines) {
+      const qty = int(l.qty, 'cantidad', { min: 1, max: 100000 });
+      if (l.product_id) {
+        const pid = int(l.product_id, 'producto');
+        if (!await t.get('SELECT 1 FROM products WHERE id=$1', [pid])) throw bad('Producto inválido');
+        items.push({ pid, qty });
+      } else {
+        const name = str(l.new_name, 'Nombre del producto nuevo', 80);
+        const cid = l.new_category_id ? int(l.new_category_id, 'categoría') : null;
+        if (cid && !await t.get('SELECT 1 FROM categories WHERE id=$1', [cid])) throw bad('Categoría inválida');
+        items.push({ name, cid, price: int(l.new_sell_price ?? 0, 'precio de venta'), qty });
+      }
+    }
+    const { id } = await t.get('INSERT INTO purchase_orders (user_id,total,note,created_at) VALUES ($1,$2,$3,$4) RETURNING id', [req.user.id, total, note, now()]);
+    for (const i of items)
+      await t.run('INSERT INTO purchase_order_items (order_id,product_id,new_name,new_category_id,new_sell_price,qty) VALUES ($1,$2,$3,$4,$5,$6)',
+        [id, i.pid || null, i.name || null, i.cid || null, i.price || 0, i.qty]);
+    await audit(t, req.user, 'Registró pedido', `#${id} · ${items.length} productos · total ${total}`);
+    return { id };
+  });
+}));
+app.post('/api/orders/:id/cancel', auth, wrap(async (req) => {
+  const id = int(req.params.id, 'id');
+  return tx(async (t) => {
+    const o = await t.get('SELECT * FROM purchase_orders WHERE id=$1 FOR UPDATE', [id]);
+    if (!o) throw new HttpError(404, 'No existe');
+    if (o.status !== 'pendiente') throw bad('El pedido ya no está pendiente');
+    if (req.user.role !== 'admin' && o.user_id !== req.user.id) throw new HttpError(403, 'Solo quien lo registró o el admin puede cancelarlo');
+    await t.run(`UPDATE purchase_orders SET status='cancelado' WHERE id=$1`, [id]);
+    await audit(t, req.user, 'Canceló pedido', `#${id} · total ${o.total}`);
+    return { ok: true };
+  });
+}));
+// body: { paid, method, items: [{ id, qty }] } con la cantidad realmente recibida de cada línea
+app.post('/api/orders/:id/receive', auth, wrap(async (req) => {
+  const id = int(req.params.id, 'id');
+  const paid = int(req.body.paid, 'valor pagado', { min: 1 });
+  const m = method(req.body.method);
+  const got = new Map((Array.isArray(req.body.items) ? req.body.items : []).map((i) => [int(i.id, 'línea'), int(i.qty, 'cantidad recibida', { max: 100000 })]));
+  return tx(async (t) => {
+    const s = await openShift(t);
+    if (!s) throw bad('Primero debes abrir caja');
+    if (s.user_id !== req.user.id) throw bad(`La caja la abrió ${s.user_name}`);
+    const o = await t.get('SELECT * FROM purchase_orders WHERE id=$1 FOR UPDATE', [id]);
+    if (!o) throw new HttpError(404, 'No existe');
+    if (o.status !== 'pendiente') throw bad('El pedido ya no está pendiente');
+    const items = await t.all(ORDER_ITEMS_SQL.replace('i.order_id = ANY($1::int[])', 'i.order_id=$1'), [id]);
+    if (items.some((i) => !got.has(i.id))) throw bad('Indica la cantidad recibida de cada producto');
+    if (!items.some((i) => got.get(i.id) > 0)) throw bad('No se recibió ningún producto; cancela el pedido si no llegó');
+    const r = await t.get('SELECT cash, nequi FROM register WHERE id=1 FOR UPDATE');
+    if (r[col(m)] < paid) throw bad(`No hay suficiente ${m} en caja para este pago`);
+    const names = [];
+    for (const i of items) {
+      const qty = got.get(i.id);
+      await t.run('UPDATE purchase_order_items SET received_qty=$1 WHERE id=$2', [qty, i.id]);
+      if (qty <= 0) continue;
+      let pid = i.product_id, buy = null;
+      if (pid) {
+        const p = await t.get('SELECT * FROM products WHERE id=$1 FOR UPDATE', [pid]);
+        buy = p.buy_price;
+        await t.run('UPDATE products SET stock=stock+$1 WHERE id=$2', [qty, pid]);
+      } else {
+        buy = 0; // el costo unitario lo fija el admin en Productos; el pedido solo registra el total
+        pid = (await t.get(`INSERT INTO products (name,category_id,buy_price,sell_price,stock,min_stock) VALUES ($1,$2,0,$3,$4,0) RETURNING id`,
+          [i.new_name, i.new_category_id, i.new_sell_price, qty])).id;
+        await audit(t, req.user, 'Creó producto (desde pedido)', `${i.new_name} · venta ${i.new_sell_price}`);
+      }
+      await t.run('INSERT INTO stock_entries (product_id,qty,buy_price,user_id,note,created_at) VALUES ($1,$2,$3,$4,$5,$6)',
+        [pid, qty, buy, req.user.id, `Pedido #${id}`, now()]);
+      names.push(`${qty}× ${i.name}`);
+    }
+    await t.run(`UPDATE purchase_orders SET status='recibido', received_at=$1, received_by=$2, paid=$3, method=$4 WHERE id=$5`, [now(), req.user.id, paid, m, id]);
+    await t.run(`UPDATE register SET ${col(m)}=${col(m)}-$1 WHERE id=1`, [paid]);
+    const cats = [...new Set(items.map((i) => i.category).filter(Boolean))].join(', ') || 'proveedor';
+    await t.run('INSERT INTO expenses (user_id,description,amount,method,kind,created_at) VALUES ($1,$2,$3,$4,$5,$6)',
+      [req.user.id, `Pedido ${cats} #${id}`, paid, m, 'pedido', now()]);
+    await audit(t, req.user, 'Recibió y pagó pedido', `#${id} · ${names.join(', ')} · pagado ${paid} (${m})${paid !== Number(o.total) ? ` · pedido era ${o.total}` : ''}`);
     return { ok: true };
   });
 }));

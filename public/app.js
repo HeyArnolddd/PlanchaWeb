@@ -49,10 +49,10 @@ async function act(fn, ok) {
 }
 
 const S = { user: null, view: null, chat: [], peerRead: 0, peer: null, chatOpen: false, cart: [], benefit: null, method: 'efectivo', cat: 'all', q: '' };
-const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['prestamos', 'Préstamo de implementos'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['emprendimientos', 'Emprendimientos'], ['gastos', 'Gastos'], ['reportes', 'Reportes'], ['rentabilidad', 'Rentabilidad emprend.'], ['turnos', 'Turnos'], ['horario', 'Horario'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
-const TURNO_TABS = [['resumen', 'Resumen'], ['caja', 'Caja'], ['vender', 'Vender'], ['prestamos', 'Préstamo de implementos'], ['inventario', 'Productos'], ['turnos', 'Mis turnos'], ['horario', 'Horario']];
+const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['prestamos', 'Préstamo de implementos'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['emprendimientos', 'Emprendimientos'], ['gastos', 'Gastos'], ['pedidos', 'Pedidos'], ['reportes', 'Reportes'], ['rentabilidad', 'Rentabilidad emprend.'], ['turnos', 'Turnos'], ['horario', 'Horario'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
+const TURNO_TABS = [['resumen', 'Resumen'], ['caja', 'Caja'], ['vender', 'Vender'], ['prestamos', 'Préstamo de implementos'], ['inventario', 'Productos'], ['pedidos', 'Pedidos'], ['turnos', 'Mis turnos'], ['horario', 'Horario']];
 // Menú lateral: grupos de vistas (las que el rol no tenga se omiten)
-const NAV_GROUPS = [['Principal', ['resumen']], ['Ventas', ['vender', 'caja', 'prestamos']], ['Inventario', ['productos', 'inventario', 'emprendimientos']], ['Finanzas', ['dinero', 'gastos', 'reportes', 'rentabilidad']], ['Equipo', ['turnos', 'horario', 'actividad', 'usuarios']]];
+const NAV_GROUPS = [['Principal', ['resumen']], ['Ventas', ['vender', 'caja', 'prestamos']], ['Inventario', ['productos', 'inventario', 'emprendimientos']], ['Finanzas', ['dinero', 'gastos', 'pedidos', 'reportes', 'rentabilidad']], ['Equipo', ['turnos', 'horario', 'actividad', 'usuarios']]];
 const ICONS = {
   resumen: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
   vender: '<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.7 11.4a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.5L21 7H6"/>',
@@ -62,6 +62,7 @@ const ICONS = {
   inventario: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
   emprendimientos: '<path d="M3 9 4.5 4h15L21 9"/><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0M5 12v8h14v-8"/>',
   dinero: '<circle cx="12" cy="12" r="9"/><path d="M14.8 9a2.8 2.8 0 0 0-2.8-1.5c-1.7 0-2.8.9-2.8 2.1s1.1 1.8 2.8 2.4 2.8 1.2 2.8 2.4-1.1 2.1-2.8 2.1A2.8 2.8 0 0 1 9.2 15M12 6v1.5M12 16.5V18"/>',
+  pedidos: '<path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7M12 11v10"/>',
   gastos: '<path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
   rentabilidad: '<path d="M3 17l5-5 4 4 8-9"/><path d="M14 7h6v6"/>',
   reportes: '<path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/>',
@@ -432,6 +433,35 @@ const views = {
         ${items.map((i) => `<tr style="${i.active ? '' : 'opacity:.5'}"><td>${esc(i.name)}${i.active ? '' : ' (inactivo)'}</td><td class="n">${i.qty}</td><td class="n">${i.available}</td>
           <td class="n"><button class="btn sec sm" onclick="A.loanItemForm(${i.id})">Editar</button></td></tr>`).join('')}</table>`
         : '<span class="mute">Aún no hay implementos. Agrega raquetas, juegos de mesa, etc.</span>'}</div>` : ''}`;
+  },
+  async pedidos() {
+    const [{ pending, history }, prods, cats] = await Promise.all([api('/orders'), api('/products'), api('/categories')]);
+    S.prods = prods; S.cats = cats; S.ordPending = pending;
+    const d = S.orderDraft ||= { items: [], total: '', note: '' };
+    const opts = prods.filter((p) => p.active && p.track_stock).map((p) => `<option value="${p.id}">${esc(p.category || 'Sin categoría')} · ${esc(p.name)} (stock ${p.stock})</option>`).join('');
+    const lines = (o) => o.items.map((i) => `${i.received_qty != null && i.received_qty !== i.qty ? `${i.received_qty} de ${i.qty}` : i.qty}× ${esc(i.name)}${i.product_id ? '' : ' <span class="tag">nuevo</span>'}`).join(', ');
+    $('#main').innerHTML = `<h2>Pedidos</h2>
+      <div class="card"><h3>Registrar pedido</h3>
+        <p class="mute">Anota lo que pediste al proveedor. Queda pendiente hasta que alguien en turno lo reciba, verifique y pague; ahí se suma al stock y se descuenta de la caja.</p>
+        <div class="row"><div style="flex:3"><label>Producto</label><select id="oi"><option value="">Elige un producto…</option>${opts}</select></div>
+          <div><label>Cantidad</label><input id="oq" type="number" inputmode="numeric" min="1"></div></div>
+        <p><button class="btn sec sm" onclick="A.ordAdd()">+ Agregar al pedido</button> <button class="btn sec sm" onclick="A.ordNewProduct()">+ Producto nuevo</button></p>
+        <div id="odraft"></div>
+        <div class="row"><div><label>Valor total del pedido</label><input id="ot" type="number" inputmode="numeric" min="1" value="${d.total}" oninput="S.orderDraft.total=this.value"></div>
+          <div style="flex:2"><label>Nota (opcional)</label><input id="on" maxlength="200" value="${esc(d.note)}" oninput="S.orderDraft.note=this.value"></div></div>
+        <p><button class="btn" onclick="A.ordSave()">Registrar pedido</button></p></div>
+      <div class="card tw"><h3>Pendientes por recibir <span class="tag ${pending.length ? 'warn' : 'ok'}">${pending.length}</span></h3>
+        ${pending.length ? `<table><tr><th>Pedido</th><th>Productos</th><th class="n">Valor</th><th></th></tr>
+        ${pending.map((o) => `<tr><td>#${o.id}<br><small class="mute">${dt(o.created_at)}<br>${esc(o.who)}</small></td><td>${lines(o)}${o.note ? `<br><small class="mute">${esc(o.note)}</small>` : ''}</td><td class="n">${money(o.total)}</td>
+          <td class="n"><button class="btn sm" onclick="A.ordReceive(${o.id})">Recibir y pagar</button>${S.user.role === 'admin' || o.user_id === S.user.id ? ` <button class="btn sec sm" onclick="A.ordCancel(${o.id})">Cancelar</button>` : ''}</td></tr>`).join('')}</table>`
+        : '<span class="mute">No hay pedidos pendientes.</span>'}</div>
+      <div class="card tw"><h3>Historial reciente</h3>
+        ${history.length ? `<table><tr><th>Pedido</th><th>Productos</th><th>Estado</th><th class="n">Valor</th></tr>
+        ${history.map((o) => `<tr><td>#${o.id}<br><small class="mute">${dt(o.created_at)}<br>${esc(o.who)}</small></td><td>${lines(o)}</td>
+          <td>${o.status === 'recibido' ? `<span class="tag ok">Recibido</span><br><small class="mute">${dt(o.received_at)}<br>${esc(o.received_name)} · ${o.method}</small>` : '<span class="tag err">Cancelado</span>'}</td>
+          <td class="n">${money(o.status === 'recibido' ? o.paid : o.total)}</td></tr>`).join('')}</table>`
+        : '<span class="mute">Sin pedidos.</span>'}</div>`;
+    A.ordDraft();
   },
   async dinero() {
     const [{ register, adjustments }, prods] = await Promise.all([api('/register'), api('/products')]);
@@ -1041,6 +1071,64 @@ const A = window.A = {
       ${s.notes ? `<p><i>${esc(s.notes)}</i></p>` : ''}
       <div class="tw">${salesTable(s.sales, S.user.role === 'admin')}</div>
       <p><button class="btn" onclick="closeModal()">Cerrar</button></p>`);
+  },
+
+  // Pedidos
+  ordDraft() {
+    const d = S.orderDraft;
+    $('#odraft').innerHTML = d.items.length ? `<table>${d.items.map((i, k) => `<tr><td>${esc(i.name)}${i.product_id ? '' : ' <span class="tag">nuevo</span>'}</td><td class="n">${i.qty}</td>
+      <td class="n"><button class="btn sec sm" onclick="S.orderDraft.items.splice(${k},1);A.ordDraft()">Quitar</button></td></tr>`).join('')}</table>` : '';
+  },
+  ordAdd() {
+    const id = +val('oi'), qty = +val('oq');
+    if (!id) return toast('Elige un producto');
+    if (!(qty > 0)) return toast('Escribe la cantidad');
+    const p = S.prods.find((x) => x.id === id), it = S.orderDraft.items.find((x) => x.product_id === id);
+    if (it) it.qty += qty; else S.orderDraft.items.push({ product_id: id, name: p.name, qty });
+    $('#oi').value = ''; $('#oq').value = ''; A.ordDraft();
+  },
+  ordNewProduct() {
+    modal(`<h3>Producto nuevo</h3><p class="mute">Se crea en Productos cuando recibas el pedido. El admin puede ajustar su precio de compra después.</p>
+      <label>Nombre</label><input id="nn" maxlength="80">
+      <label>Categoría</label><select id="nc"><option value="">Sin categoría</option>${S.cats.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
+      <div class="row"><div><label>Precio de venta</label><input id="np" type="number" inputmode="numeric" min="0" value="0"></div>
+      <div><label>Cantidad pedida</label><input id="nq" type="number" inputmode="numeric" min="1"></div></div>
+      <p><button class="btn" onclick="A.ordAddNew()">Agregar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);
+  },
+  ordAddNew() {
+    const name = val('nn').trim(), qty = +val('nq');
+    if (!name) return toast('Escribe el nombre');
+    if (!(qty > 0)) return toast('Escribe la cantidad');
+    S.orderDraft.items.push({ new_name: name, new_category_id: val('nc'), new_sell_price: val('np') || 0, name, qty });
+    closeModal(); A.ordDraft();
+  },
+  async ordSave() {
+    const d = S.orderDraft;
+    if (!d.items.length) return toast('Agrega al menos un producto');
+    if (!(Number(d.total) > 0)) return toast('Escribe el valor total del pedido');
+    const items = d.items.map(({ product_id, new_name, new_category_id, new_sell_price, qty }) => ({ product_id, new_name, new_category_id, new_sell_price, qty }));
+    if (await act(() => api('/orders', 'POST', { items, total: d.total, note: d.note }), 'Pedido registrado')) { S.orderDraft = null; views.pedidos(); }
+  },
+  ordReceive(id) {
+    const o = S.ordPending.find((x) => x.id === id);
+    modal(`<h3>Recibir pedido #${o.id}</h3><p class="mute">Pedido por ${esc(o.who)}. Verifica que llegó cada producto y corrige la cantidad si faltó algo.</p>
+      <table><tr><th>Producto</th><th class="n">Pedido</th><th class="n">Llegó</th></tr>${o.items.map((i) => `<tr><td>${esc(i.name)}</td><td class="n">${i.qty}</td>
+        <td class="n"><input class="rq" data-id="${i.id}" type="number" inputmode="numeric" min="0" value="${i.qty}" style="width:5rem"></td></tr>`).join('')}</table>
+      <div class="row"><div><label>Valor pagado (pedido: ${money(o.total)})</label><input id="rp" type="number" inputmode="numeric" min="1" value="${o.total}"></div>
+      <div><label>Pagado con</label><select id="rm"><option value="efectivo">Efectivo</option><option value="nequi">Nequi</option></select></div></div>
+      <p><button class="btn" onclick="A.ordDone(${o.id})">Recibir y pagar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);
+  },
+  async ordDone(id) {
+    const o = S.ordPending.find((x) => x.id === id), paid = Number(val('rp')), m = val('rm');
+    const items = [...document.querySelectorAll('.rq')].map((i) => ({ id: +i.dataset.id, qty: i.value === '' ? -1 : +i.value }));
+    if (items.some((i) => i.qty < 0)) return toast('Indica cuánto llegó de cada producto');
+    if (!(paid > 0)) return toast('Escribe el valor pagado');
+    const short = items.some((i) => i.qty !== o.items.find((x) => x.id === i.id).qty);
+    if (!confirm(`Se suma al stock lo que llegó${short ? ' (hay diferencias con lo pedido)' : ''} y se descuentan ${money(paid)} de la caja (${m})${paid !== Number(o.total) ? `.\nOJO: el pedido se registró por ${money(o.total)}` : ''}.\n¿Confirmar?`)) return;
+    if (await act(() => api(`/orders/${id}/receive`, 'POST', { paid, method: m, items }), 'Pedido recibido y pagado')) { closeModal(); views.pedidos(); }
+  },
+  async ordCancel(id) {
+    if (confirm('¿Cancelar este pedido pendiente?') && await act(() => api(`/orders/${id}/cancel`, 'POST'), 'Pedido cancelado')) views.pedidos();
   },
 
   // Préstamo de implementos
