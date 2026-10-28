@@ -27,6 +27,7 @@ async function shrinkSticker(file) {
   const out = cv.toDataURL('image/webp', 0.85);
   return out.startsWith('data:image/webp') ? out : cv.toDataURL('image/png');
 }
+const weekLabel = (w) => { const a = new Date(w + 'T00:00:00Z'), f = (d) => d.toLocaleDateString('es-CO', { timeZone: 'UTC', day: '2-digit', month: 'short' }); return `${f(a)} – ${f(new Date(a.getTime() + 6 * 864e5))}`; };
 const money = (n) => '$' + Number(n || 0).toLocaleString('es-CO');
 const dt = (s) => s ? new Date(s).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
 const diffTag = (d) => d === 0 ? '<span class="tag ok">Cuadra</span>'
@@ -643,15 +644,27 @@ const views = {
       ${H.map((row, i) => `<tr><td><b>${lbl(i)}</b></td>${row.map((n, j) => `<td style="${j === d ? 'background:var(--ice);' : ''}${i === r && j === d ? 'background:var(--brand);color:#fff;font-weight:700' : ''}">${esc(n)}</td>`).join('')}</tr>`).join('')}
       <tr><td><b>ASEO</b></td>${ASEO.map((n, j) => `<td style="font-weight:600;${j === d ? 'background:var(--ice)' : ''}">${esc(n)}</td>`).join('')}</tr></table></div></div>`;
   },
+  pickWeek(w) {
+    S.wkSel = w;
+    const rows = S.weekly.filter((x) => x.week === w);
+    const acc = (id) => S.weekly.filter((x) => x.user_id === id).reduce((t, x) => t + x.diff_cash + x.diff_nequi, 0);
+    const sum = (k) => rows.reduce((t, x) => t + x[k], 0);
+    $('#wkt').innerHTML = rows.length ? `<table><tr><th>${S.wkAdmin ? 'Persona' : ''}</th><th class="n">Cierres</th><th>Efectivo</th><th>Nequi</th><th>Total semana</th><th>Acumulado</th></tr>
+      ${rows.map((x) => `<tr><td>${esc(x.user_name)}</td><td class="n">${x.shifts}</td><td>${diffTag(x.diff_cash)}</td><td>${diffTag(x.diff_nequi)}</td><td>${diffTag(x.diff_cash + x.diff_nequi)}</td><td>${diffTag(acc(x.user_id))}</td></tr>`).join('')}
+      ${S.wkAdmin && rows.length > 1 ? `<tr><td><b>Todos</b></td><td class="n">${sum('shifts')}</td><td>${diffTag(sum('diff_cash'))}</td><td>${diffTag(sum('diff_nequi'))}</td><td>${diffTag(sum('diff_cash') + sum('diff_nequi'))}</td><td></td></tr>` : ''}</table>`
+      : '<span class="mute">Nadie cerró caja esta semana.</span>';
+  },
   async turnos() {
     const [rows, weekly] = await Promise.all([api('/shifts'), api('/shifts/weekly')]);
     const admin = S.user.role === 'admin';
-    const wk = (w) => { const a = new Date(w + 'T00:00:00Z'), b = new Date(a.getTime() + 6 * 864e5), f = (d) => d.toLocaleDateString('es-CO', { timeZone: 'UTC', day: '2-digit', month: 'short' }); return `${f(a)} – ${f(b)}`; };
+    S.weekly = weekly; S.wkAdmin = admin;
+    const cur = new Date(Date.now() - 5 * 36e5); cur.setUTCDate(cur.getUTCDate() - ((cur.getUTCDay() + 6) % 7));
+    const weeks = [...new Set([cur.toISOString().slice(0, 10), ...weekly.map((w) => w.week)])].sort().reverse();
+    if (!weeks.includes(S.wkSel)) S.wkSel = weeks[0];
     $('#main').innerHTML = `<h2>${admin ? 'Turnos' : 'Mis turnos'}</h2>
-      <div class="card tw"><h3>Descuadre semanal</h3><p class="mute">Suma de las diferencias de los cierres de caja de cada semana (lunes a domingo), últimas 13 semanas.</p>
-      ${weekly.length ? `<table><tr><th>Semana</th>${admin ? '<th>Quién</th>' : ''}<th class="n">Cierres</th><th>Efectivo</th><th>Nequi</th><th>Total</th></tr>
-      ${weekly.map((w) => `<tr><td>${wk(w.week)}</td>${admin ? `<td>${esc(w.user_name)}</td>` : ''}<td class="n">${w.shifts}</td><td>${diffTag(w.diff_cash)}</td><td>${diffTag(w.diff_nequi)}</td><td>${diffTag(w.diff_cash + w.diff_nequi)}</td></tr>`).join('')}</table>`
-      : '<span class="mute">Aún no hay cierres de caja.</span>'}</div>
+      <div class="card tw"><h3>Descuadre semanal por persona</h3><p class="mute">Suma de las diferencias de los cierres de caja de la semana elegida (lunes a domingo). El acumulado suma todas las semanas.</p>
+      <label>Semana</label><select id="wks" onchange="A.pickWeek(this.value)" style="max-width:20rem">${weeks.map((w) => `<option value="${w}" ${w === S.wkSel ? 'selected' : ''}>${weekLabel(w)}</option>`).join('')}</select>
+      <div id="wkt" style="margin-top:.8rem"></div></div>
       <div class="card tw"><table>
       <tr><th>Fecha</th>${admin ? '<th>Quién</th>' : ''}<th class="n">Ventas</th><th>Efectivo</th><th>Nequi</th><th></th></tr>
       ${rows.map((s) => {
@@ -662,6 +675,7 @@ const views = {
         <td>${closed ? diffTag(dc) : '—'}</td><td>${closed ? diffTag(dn) : '—'}</td>
         <td class="n"><button class="btn sec sm" onclick="A.shiftDetail(${s.id})">Ver</button></td></tr>`;
       }).join('') || '<tr><td colspan="6" class="mute">Sin turnos.</td></tr>'}</table></div>`;
+    A.pickWeek(S.wkSel);
   },
 
   async usuarios() {
