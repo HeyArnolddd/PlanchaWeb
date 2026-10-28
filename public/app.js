@@ -430,7 +430,7 @@ const views = {
           <div class="mt-4"><label class="text-xs font-bold uppercase tracking-wide text-slate-500">Nombre de la persona</label><input id="lb" maxlength="80" placeholder="¿A quién se le presta?" class="!rounded-2xl !py-3"></div>
           <div class="mt-3 rounded-2xl bg-ice/60 p-3">
             <div class="flex flex-wrap items-end gap-3">
-              <div class="min-w-[8rem] flex-1"><label class="text-xs font-bold uppercase tracking-wide text-slate-500">Valor del préstamo</label><input id="lf" type="number" inputmode="numeric" min="0" value="0" class="!text-lg !font-extrabold"></div>
+              <div class="min-w-[8rem] flex-1"><label class="text-xs font-bold uppercase tracking-wide text-slate-500">Valor del préstamo</label><input id="lf" type="number" inputmode="numeric" min="0" value="2000" class="!text-lg !font-extrabold"></div>
               <div><div class="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Entra a</div>${loanSeg('lm', [['efectivo', payLogo('efectivo') + ' Efectivo'], ['nequi', payLogo('nequi') + ' Nequi']], 'efectivo')}</div>
               <div><div class="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Plazo</div>${loanSeg('ld', [['1', '1 día'], ['2', '2 días']], '2')}</div>
             </div>
@@ -1307,6 +1307,7 @@ const A = window.A = {
   },
   loanSeg(id, v) {
     $('#' + id).value = v;
+    if (id === 'ld') $('#lf').value = Number(v) * 1000; // 1 día = $1.000, 2 días = $2.000 (se puede cambiar a mano)
     document.querySelectorAll(`[data-seg="${id}"] button`).forEach((b) => {
       const on = b.dataset.v === v;
       b.classList.toggle('bg-brand', on); b.classList.toggle('text-white', on); b.classList.toggle('text-slate-600', !on);
