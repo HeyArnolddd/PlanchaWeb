@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#081426">
+  <title>Login · Penguin</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="login-shell">
+    <section class="mascot-panel" aria-label="Mascota animada">
+      <div class="stars" aria-hidden="true"><i>✦</i><i>·</i><i>✧</i><i>·</i><i>✦</i></div>
+      <div class="mascot-wrap" id="mascotWrap" data-state="idle">
+        <div class="shadow"></div>
+        <div class="penguin" id="penguin" aria-hidden="true">
+          <div class="hat">
+            <div class="hat-top"></div><div class="hat-fur"></div>
+            <div class="ear ear-left"></div><div class="ear ear-right"></div>
+          </div>
+          <div class="body">
+            <div class="belly"></div>
+            <div class="wing wing-left"></div><div class="wing wing-right"></div>
+            <div class="face">
+              <div class="eye eye-left"><span></span></div>
+              <div class="eye eye-right"><span></span></div>
+              <div class="blush blush-left"></div><div class="blush blush-right"></div>
+              <div class="beak"></div>
+              <div class="mouth"></div>
+            </div>
+            <div class="bow"><i></i><b></b><i></i></div>
+          </div>
+          <div class="feet"><div></div><div></div></div>
+          <div class="cover-wing cover-left"></div><div class="cover-wing cover-right"></div>
+          <div class="peek-wing"></div>
+          <div class="surprise-lines"><i></i><i></i><i></i></div>
+        </div>
+        <p class="mascot-caption" id="mascotCaption">¡Hola! Vamos a entrar</p>
+      </div>
+      <div class="panel-footer"><span class="pulse-dot"></span> Tu compañero de acceso</div>
+    </section>
+
+    <section class="form-panel">
+      <div class="brand-mark" aria-hidden="true">P<span>•</span></div>
+      <p class="eyebrow">QUÉ BUENO VERTE</p>
+      <h1>Iniciar sesión</h1>
+      <p class="subtitle">Ingresa tus datos para continuar.</p>
+
+      <form id="loginForm" novalidate>
+        <label for="email">Correo electrónico</label>
+        <div class="input-wrap">
+          <span class="field-icon" aria-hidden="true">✉</span>
+          <input id="email" name="email" type="email" placeholder="tu@correo.com" autocomplete="username" required>
+        </div>
+        <p class="error" id="emailError"></p>
+
+        <div class="password-label">
+          <label for="password">Contraseña</label>
+          <button class="forgot" type="button" id="forgotBtn">¿La olvidaste?</button>
+        </div>
+        <div class="input-wrap">
+          <span class="field-icon lock" aria-hidden="true">▣</span>
+          <input id="password" name="password" type="password" placeholder="Mínimo 6 caracteres" autocomplete="current-password" required minlength="6">
+          <button class="toggle-password" type="button" id="togglePassword" aria-label="Mostrar contraseña" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+        <p class="error" id="passwordError"></p>
+
+        <label class="remember"><input type="checkbox" id="remember"> <span>Recordarme en este dispositivo</span></label>
+        <button class="submit-btn" type="submit" id="submitBtn"><span>Entrar</span><b aria-hidden="true">→</b></button>
+        <p class="form-message" id="formMessage" role="status" aria-live="polite"></p>
+      </form>
+      <p class="signup">¿No tienes una cuenta? <a href="#" id="signupLink">Crear cuenta</a></p>
+      <p class="demo-note">Demo visual · Conecta el formulario a tu backend para autenticar usuarios.</p>
+    </section>
+  </main>
+  <script src="script.js"></script>
+</body>
+</html>
