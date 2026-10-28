@@ -431,7 +431,7 @@ const views = {
           <div class="mt-3 rounded-2xl bg-ice/60 p-3">
             <div class="flex flex-wrap items-end gap-3">
               <div class="min-w-[8rem] flex-1"><label class="text-xs font-bold uppercase tracking-wide text-slate-500">Valor del préstamo</label><input id="lf" type="number" inputmode="numeric" min="0" value="0" class="!text-lg !font-extrabold"></div>
-              <div><div class="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Entra a</div>${loanSeg('lm', [['efectivo', '💵 Efectivo'], ['nequi', '📱 Nequi']], 'efectivo')}</div>
+              <div><div class="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Entra a</div>${loanSeg('lm', [['efectivo', payLogo('efectivo') + ' Efectivo'], ['nequi', payLogo('nequi') + ' Nequi']], 'efectivo')}</div>
               <div><div class="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Plazo</div>${loanSeg('ld', [['1', '1 día'], ['2', '2 días']], '2')}</div>
             </div>
           </div>
@@ -444,7 +444,7 @@ const views = {
             <div class="flex items-center gap-3 p-3">${loanThumb(item(l), 'h-16 w-16')}
               <div class="min-w-0 flex-1"><b class="block truncate text-navy">${esc(l.item)}</b><div class="truncate text-sm text-slate-700">👤 ${esc(l.borrower)}</div>
                 <div class="text-xs text-slate-500">Prestado ${dt(l.created_at)} · atendió ${esc(l.who)}</div></div>
-              <div class="text-right"><div class="text-lg font-extrabold text-navy">${money(l.fee)}</div>${l.method ? `<small class="text-xs text-slate-500">${l.method}</small>` : ''}</div></div>
+              <div class="text-right"><div class="text-lg font-extrabold text-navy">${money(l.fee)}</div>${l.method ? `<small class="text-xs text-slate-500">${payTag(l.method)}</small>` : ''}</div></div>
             <div class="flex flex-wrap items-center gap-2 ${l.late ? 'bg-rose-50' : 'bg-amber-50'} px-3 py-2">
               <span class="text-xs font-semibold ${l.late ? 'text-rose-700' : 'text-amber-800'}">⏰ Devolver antes de ${dt(l.due_at)}</span>${l.late ? chip('VENCIDO', 'bg-rose-500 text-white') : ''}
               <span class="ml-auto flex gap-2"><button class="btn sm !rounded-xl" onclick="A.loanReturn(${l.id})">✔ Devuelto</button>${admin ? `<button class="btn sec sm !rounded-xl" onclick="A.loanVoid(${l.id})">Anular</button>` : ''}</span></div></article>`).join('')}</div>`
@@ -671,8 +671,12 @@ document.addEventListener('mousedown', (e) => {
 const loanThumb = (it, size = 'h-12 w-12') => (it && it.photo
   ? `<img class="${size} shrink-0 rounded-xl object-cover ring-1 ring-line" src="/api/loan-items/${it.id}/photo?v=${it.photo}" alt="">`
   : `<span class="${size} flex shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-ice to-blue-200 text-brand">${icon('productos')}</span>`);
+// Logos de medio de pago (efectivo / nequi)
+const PAYLOGO = { efectivo: '/efectivo.png', nequi: '/nequi.jpg' };
+const payLogo = (m, size = 'h-5 w-5') => (PAYLOGO[m] ? `<img class="${size} inline-block shrink-0 rounded object-contain align-middle" src="${PAYLOGO[m]}" alt="">` : '');
+const payTag = (m) => (m ? `<span class="inline-flex items-center gap-1">${payLogo(m)}<span class="capitalize">${m}</span></span>` : '');
 // Préstamos: botones tipo selector que escriben su valor en un input oculto
-const loanSeg = (id, opts, cur) => `<div class="flex overflow-hidden rounded-xl border border-line bg-white" data-seg="${id}">${opts.map(([v, t]) => `<button type="button" data-v="${v}" onclick="A.loanSeg('${id}','${v}')" class="px-3 py-2 text-sm font-bold ${v === cur ? 'bg-brand text-white' : 'text-slate-600 hover:bg-ice'}">${t}</button>`).join('')}</div>`;
+const loanSeg = (id, opts, cur) => `<div class="flex overflow-hidden rounded-xl border border-line bg-white" data-seg="${id}">${opts.map(([v, t]) => `<button type="button" data-v="${v}" onclick="A.loanSeg('${id}','${v}')" class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-bold ${v === cur ? 'bg-brand text-white' : 'text-slate-600 hover:bg-ice'}">${t}</button>`).join('')}</div>`;
 const ordStep = (dec, inc, n) => `<div class="flex items-center overflow-hidden rounded-xl border border-line bg-ice/50">
   <button class="h-8 w-8 text-lg font-bold text-brand hover:bg-ice" onclick="${dec}">−</button><b class="w-9 text-center text-sm">${n}</b><button class="h-8 w-8 text-lg font-bold text-brand hover:bg-ice" onclick="${inc}">+</button></div>`;
 
@@ -1183,7 +1187,7 @@ const A = window.A = {
       <table><tr><th>Producto</th><th class="n">Pedido</th><th class="n">Llegó</th></tr>${o.items.map((i) => `<tr><td>${esc(i.name)}</td><td class="n">${i.qty}</td>
         <td class="n"><input class="rq" data-id="${i.id}" type="number" inputmode="numeric" min="0" value="${i.qty}" style="width:5rem"></td></tr>`).join('')}</table>
       <div class="row"><div><label>Valor pagado (pedido: ${money(o.total)})</label><input id="rp" type="number" inputmode="numeric" min="1" value="${o.total}"></div>
-      <div><label>Pagado con</label><select id="rm"><option value="efectivo">Efectivo</option><option value="nequi">Nequi</option></select></div></div>
+      <div><label>Pagado con</label><input type="hidden" id="rm" value="efectivo">${loanSeg('rm', [['efectivo', payLogo('efectivo') + ' Efectivo'], ['nequi', payLogo('nequi') + ' Nequi']], 'efectivo')}</div></div>
       <p><button class="btn" onclick="A.ordDone(${o.id})">Recibir y pagar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);
   },
   async ordDone(id) {
