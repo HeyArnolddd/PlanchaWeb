@@ -598,21 +598,39 @@ const views = {
     const [rows, cats] = await Promise.all([api('/expenses'), api('/categories')]);
     S.cats = cats;
     const sum = (k) => rows.filter((e) => e.kind === k).reduce((t, e) => t + e.amount, 0);
-    $('#main').innerHTML = `<h2>Gastos</h2>
-      <div class="card"><div class="seg" style="margin-bottom:.5rem">
-        <button id="k1" class="on" onclick="A.kind('pedido')">${icon('camion')} Pago de pedido</button>
-        <button id="k2" onclick="A.kind('implementos')">${icon('gastos')} Implementos</button></div>
-        <p class="mute" id="kh"></p>
-        <div class="row"><div id="gcw"><label>Proveedor / categoría</label><select id="gc"><option value="">Otro</option>${cats.map((c) => `<option>${esc(c.name)}</option>`).join('')}</select></div>
-        <div style="flex:2"><label id="gdl">Nota (opcional)</label><input id="gd" maxlength="150"></div>
-        <div><label>Monto</label><input id="ga" type="number" inputmode="numeric" min="1"></div>
-        <div><label>¿De dónde salió?</label><select id="gm"><option value="">Fuera de la caja</option><option value="efectivo">Efectivo de la caja</option><option value="nequi">Nequi de la caja</option></select></div></div>
-        <p><button class="btn" onclick="A.addExpense()">Registrar gasto</button></p></div>
-      <div class="grid"><div class="stat"><span>Total pedidos pagados</span><b>${money(sum('pedido'))}</b></div>
-        <div class="stat"><span>Total implementos</span><b>${money(sum('implementos'))}</b></div></div><br>
-      <div class="card tw"><h3>Historial</h3><table><tr><th>Fecha</th><th>Tipo</th><th>Descripción</th><th>Salió de</th><th class="n">Monto</th><th></th></tr>
-      ${rows.map((e) => `<tr><td>${dt(e.created_at)}</td><td><span class="tag">${e.kind === 'pedido' ? 'Pedido' : 'Implementos'}</span></td><td>${esc(e.description)}</td><td>${e.method || 'Fuera de caja'}</td><td class="n">${money(e.amount)}</td>
-        <td class="n"><button class="btn sec sm" onclick="A.delExpense(${e.id})">Borrar</button></td></tr>`).join('') || '<tr><td colspan="6" class="mute">Sin gastos.</td></tr>'}</table></div>`;
+    const lbl = 'text-xs font-bold uppercase tracking-wide text-slate-500';
+    $('#main').innerHTML = `<div class="ord">
+      <div class="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-r from-navy to-brand p-5 text-white shadow-lg">
+        <div><h2 class="!mb-0 text-2xl font-extrabold !text-white">Gastos</h2><p class="mt-1 text-sm text-blue-100">Pagos de pedidos a proveedores y compras de implementos.</p></div>
+        <div class="flex gap-3">
+          <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${money(sum('pedido'))}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Pedidos pagados</div></div>
+          <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${money(sum('implementos'))}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Implementos</div></div>
+        </div></div>
+      <div class="flex flex-col gap-5 lg:flex-row lg:items-start">
+        <section class="min-w-0 flex-1 rounded-3xl border border-line bg-white p-5 shadow-sm lg:max-w-xl">
+          <h3 class="!mb-3 text-lg font-extrabold text-navy">Registrar gasto</h3>
+          <div class="flex overflow-hidden rounded-2xl border border-line">
+            <button id="k1" onclick="A.kind('pedido')" class="inline-flex flex-1 items-center justify-center gap-2 px-3 py-2.5 text-sm font-bold">${icon('camion')} Pago de pedido</button>
+            <button id="k2" onclick="A.kind('implementos')" class="inline-flex flex-1 items-center justify-center gap-2 px-3 py-2.5 text-sm font-bold">${icon('gastos')} Implementos</button></div>
+          <p class="mt-2 rounded-xl bg-ice/60 px-3 py-2 text-sm text-slate-600" id="kh"></p>
+          <div class="mt-3 flex flex-col gap-3">
+            <div id="gcw"><label class="${lbl}">Proveedor / categoría</label><select id="gc" class="!rounded-xl"><option value="">Otro</option>${cats.map((c) => `<option>${esc(c.name)}</option>`).join('')}</select></div>
+            <div><label class="${lbl}" id="gdl">Nota (opcional)</label><input id="gd" maxlength="150" class="!rounded-xl"></div>
+            <div><label class="${lbl}">Monto</label><input id="ga" type="number" inputmode="numeric" min="1" placeholder="$ 0" class="!rounded-xl !py-3 !text-xl !font-extrabold"></div>
+            <div><div class="mb-1 ${lbl}">¿De dónde salió?</div><input type="hidden" id="gm" value="">
+              <div class="flex flex-wrap">${loanSeg('gm', [['', 'Fuera de la caja'], ['efectivo', payLogo('efectivo') + ' Efectivo'], ['nequi', payLogo('nequi') + ' Nequi']], '')}</div></div>
+          </div>
+          <button class="btn mt-4 w-full !rounded-2xl !py-3 text-base" onclick="A.addExpense()">Registrar gasto</button>
+        </section>
+        <section class="min-w-0 flex-1"><h3 class="!mb-3 text-lg font-extrabold text-navy">Historial</h3>
+          ${rows.length ? `<div class="flex flex-col gap-2">${rows.map((e) => `<div class="flex items-center gap-3 rounded-2xl border border-line bg-white px-3 py-2.5 shadow-sm">
+            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${e.kind === 'pedido' ? 'bg-ice text-brand' : 'bg-amber-100 text-amber-700'}">${icon(e.kind === 'pedido' ? 'camion' : 'gastos')}</span>
+            <div class="min-w-0 flex-1"><b class="block truncate text-sm text-slate-800">${esc(e.description)}</b>
+              <div class="flex flex-wrap items-center gap-x-2 text-xs text-slate-500"><span>${dt(e.created_at)}</span><span class="font-semibold">${e.kind === 'pedido' ? 'Pedido' : 'Implementos'}</span>${e.method ? payTag(e.method) : '<span>Fuera de caja</span>'}</div></div>
+            <b class="text-navy">${money(e.amount)}</b>
+            <button class="btn sec sm !rounded-xl" onclick="A.delExpense(${e.id})">Borrar</button></div>`).join('')}</div>`
+          : '<div class="rounded-3xl border border-dashed border-line bg-white/70 p-8 text-center text-slate-500">Sin gastos registrados.</div>'}
+        </section></div></div>`;
     S.kind = 'pedido'; A.kind('pedido');
   },
 
@@ -1162,7 +1180,10 @@ const A = window.A = {
 
   kind(k) {
     S.kind = k;
-    $('#k1').classList.toggle('on', k === 'pedido'); $('#k2').classList.toggle('on', k === 'implementos');
+    [['k1', 'pedido'], ['k2', 'implementos']].forEach(([id, v]) => {
+      const on = k === v, b = $('#' + id);
+      b.classList.toggle('bg-brand', on); b.classList.toggle('text-white', on); b.classList.toggle('text-slate-600', !on); b.classList.toggle('hover:bg-ice', !on);
+    });
     $('#gcw').style.display = k === 'pedido' ? '' : 'none';
     $('#gdl').textContent = k === 'pedido' ? 'Nota (opcional)' : 'Descripción (ej. paquete de vasos)';
     $('#kh').textContent = k === 'pedido' ? 'Pago a un proveedor por un pedido. No hace falta detallar cantidades: eso va en Productos → + Stock.'
