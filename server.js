@@ -246,6 +246,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
   created_at TIMESTAMPTZ NOT NULL
 );
 CREATE INDEX IF NOT EXISTS audit_log_created ON audit_log (created_at DESC);
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS orig_close_cash BIGINT;
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS orig_close_nequi BIGINT;
 CREATE TABLE IF NOT EXISTS loan_items (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
@@ -688,6 +690,20 @@ app.get('/api/shifts', auth, wrap((req) =>
   req.user.role === 'admin'
     ? D.all(`${SHIFT_SQL} ORDER BY s.id DESC LIMIT 100`)
     : D.all(`${SHIFT_SQL} WHERE s.user_id=$1 ORDER BY s.id DESC LIMIT 100`, [req.user.id])));
+// Corrige el conteo de un cierre (error de digitación). Guarda el valor original y no toca el dinero de la caja actual.
+app.post('/api/shifts/:id/fix-count', auth, admin, wrap(async (req) => {
+  const id = int(req.params.id, 'id');
+  const cash = int(req.body.cash, 'efectivo contado'), nequi = int(req.body.nequi, 'nequi contado');
+  return tx(async (t) => {
+    const h = await t.get('SELECT h.*, u.name AS who FROM shifts h JOIN users u ON u.id=h.user_id WHERE h.id=$1 FOR UPDATE OF h', [id]);
+    if (!h) throw new HttpError(404, 'No existe');
+    if (!h.closed_at) throw bad('El turno sigue abierto');
+    await t.run(`UPDATE shifts SET close_cash=$1, close_nequi=$2,
+      orig_close_cash=COALESCE(orig_close_cash,$3), orig_close_nequi=COALESCE(orig_close_nequi,$4) WHERE id=$5`, [cash, nequi, h.close_cash, h.close_nequi, id]);
+    await audit(t, req.user, 'Corrigió conteo de cierre', `Turno #${id} de ${h.who} · efectivo ${h.close_cash} → ${cash} · Nequi ${h.close_nequi} → ${nequi}`);
+    return { ok: true };
+  });
+}));
 // Descuadre semanal (lunes a domingo, hora Colombia) por usuario: suma de las diferencias de sus cierres de caja
 app.get('/api/shifts/weekly', auth, wrap((req) =>
   D.all(`SELECT to_char(date_trunc('week', h.closed_at AT TIME ZONE '${TZ}'),'YYYY-MM-DD') AS week, h.user_id, u.name AS user_name, COUNT(*) AS shifts,

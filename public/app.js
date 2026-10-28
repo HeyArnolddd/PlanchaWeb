@@ -1122,6 +1122,10 @@ const A = window.A = {
       ${s.wd_count ? `<p>Retiros por Nequi: <b>${s.wd_count}</b> · entregado ${money(s.wd_amount)} · comisiones ${money(s.wd_fees)}</p>` : ''}
       ${S.user.role === 'admin' ? `<p>Ganancia del turno: <b>${money(s.profit)}</b></p>` : ''}
       ${s.notes ? `<p><i>${esc(s.notes)}</i></p>` : ''}
+      ${S.user.role === 'admin' && closed ? `${s.orig_close_cash != null ? `<p class="mute">Conteo corregido. Original: efectivo ${money(s.orig_close_cash)} · Nequi ${money(s.orig_close_nequi)}</p>` : ''}
+      <div class="card"><h3>Corregir conteo (error de digitación)</h3><div class="row"><div><label>Efectivo contado real</label><input id="fcc" type="number" inputmode="numeric" min="0" value="${s.close_cash}"></div>
+      <div><label>Nequi contado real</label><input id="fcn" type="number" inputmode="numeric" min="0" value="${s.close_nequi}"></div></div>
+      <button class="btn sec sm" onclick="A.fixCount(${s.id})">Guardar corrección</button></div>` : ''}
       <div class="tw">${salesTable(s.sales, S.user.role === 'admin')}</div>
       <p><button class="btn" onclick="closeModal()">Cerrar</button></p>`);
   },
@@ -1240,6 +1244,11 @@ const A = window.A = {
     const body = { name: val('ln'), qty: val('lq') };
     if (id) body.active = $('#la').checked;
     if (await act(() => api(id ? `/loan-items/${id}` : '/loan-items', id ? 'PUT' : 'POST', body), 'Guardado')) { closeModal(); views.prestamos(); }
+  },
+
+  async fixCount(id) {
+    if (!confirm('¿Corregir el conteo de este cierre? Se recalcula el descuadre y queda registrado el valor original.')) return;
+    if (await act(() => api(`/shifts/${id}/fix-count`, 'POST', { cash: val('fcc'), nequi: val('fcn') }), 'Conteo corregido')) { closeModal(); views.turnos(); }
   },
 
   // Usuarios
