@@ -340,28 +340,43 @@ const views = {
   async caja() {
     const { shift: s, register } = await api('/shift/current');
     const mine = s && s.user_id === S.user.id;
-    let html = '<h2>Caja</h2>';
+    S.cajaExp = { cash: register.cash, nequi: register.nequi };
+    const lbl = 'text-xs font-bold uppercase tracking-wide text-slate-500';
+    const field = (m, id, label, val0, extra = '') => `<div class="rounded-2xl border border-line bg-white p-3.5 shadow-sm">
+      <div class="mb-2 flex items-center gap-2">${payLogo(m, 'h-7 w-7')}<span class="${lbl}">${label}</span></div>
+      <input id="${id}" type="number" inputmode="numeric" min="0" value="${val0}" placeholder="$ 0" class="!rounded-xl !py-3 !text-xl !font-extrabold" ${extra}></div>`;
+    const money2 = (m, name, exp, start, sales) => `<div class="rounded-3xl border border-line bg-white p-4 shadow-sm">
+      <div class="flex items-center gap-3">${payLogo(m, 'h-11 w-11')}<div><div class="${lbl}">${name}</div><div class="text-xs text-slate-500">Debería haber en caja</div></div></div>
+      <div class="mt-2 text-3xl font-extrabold tracking-tight text-navy">${money(exp)}</div>
+      <div class="mt-3 flex gap-2 text-sm"><div class="flex-1 rounded-xl bg-ice/70 px-3 py-2"><div class="text-[11px] font-bold uppercase text-slate-500">Inicio</div><b class="text-slate-800">${money(start)}</b></div>
+        <div class="flex-1 rounded-xl bg-emerald-50 px-3 py-2"><div class="text-[11px] font-bold uppercase text-emerald-700">Ventas</div><b class="text-emerald-800">+${money(sales)}</b></div></div></div>`;
+    let html;
     if (!s) {
-      html += `<div class="card"><h3>Abrir caja</h3><p class="mute">Cuenta el dinero con el que empiezas tu turno.</p>
-        <div class="row"><div><label>Efectivo en caja</label><input id="oc" type="number" inputmode="numeric" min="0" value="${register.cash}"></div>
-        <div><label>Saldo Nequi</label><input id="on" type="number" inputmode="numeric" min="0" value="${register.nequi}"></div></div>
-        <p class="mute">El sistema esperaba: ${money(register.cash)} efectivo · ${money(register.nequi)} Nequi.</p>
-        <button class="btn" onclick="A.openShift()">Abrir caja</button></div>`;
+      html = `<div class="ord"><div class="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-r from-navy to-brand p-5 text-white shadow-lg">
+          <div><h2 class="!mb-0 text-2xl font-extrabold !text-white">Caja cerrada</h2><p class="mt-1 text-sm text-blue-100">Cuenta el dinero con el que empiezas tu turno para abrirla.</p></div>
+          <span class="rounded-full bg-white/15 px-4 py-1.5 text-sm font-bold backdrop-blur">Sin turno abierto</span></div>
+        <section class="max-w-2xl rounded-3xl border border-line bg-white p-5 shadow-sm">
+          <h3 class="!mb-3 text-lg font-extrabold text-navy">Abrir caja</h3>
+          <div class="flex flex-col gap-3 sm:flex-row"><div class="flex-1">${field('efectivo', 'oc', 'Efectivo en caja', register.cash)}</div><div class="flex-1">${field('nequi', 'on', 'Saldo Nequi', register.nequi)}</div></div>
+          <p class="mt-3 rounded-xl bg-ice/60 px-3 py-2 text-sm text-slate-600">El sistema esperaba <b>${money(register.cash)}</b> en efectivo y <b>${money(register.nequi)}</b> en Nequi. Si lo que cuentas es distinto, queda registrado en el turno.</p>
+          <button class="btn mt-4 w-full !rounded-2xl !py-3 text-base" onclick="A.openShift()">Abrir caja</button></section></div>`;
     } else {
-      const expC = register.cash, expN = register.nequi;
-      html += `<div class="card"><h3>Turno abierto${mine ? '' : ' por ' + esc(s.user_name)}</h3>
-        <p class="mute">Desde ${dt(s.opened_at)}</p>
-        <div class="grid">
-          <div class="stat"><span>Inicio</span><b style="font-size:1.1rem">${money(s.open_cash)} ef · ${money(s.open_nequi)} nq</b></div>
-          <div class="stat"><span>Ventas (${s.sales_count})</span><b style="font-size:1.1rem">${money(s.sales_cash)} ef · ${money(s.sales_nequi)} nq</b></div>
-          <div class="stat"><span>Debería haber</span><b style="font-size:1.1rem">${money(expC)} ef · ${money(expN)} nq</b></div>
+      html = `<div class="ord"><div class="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-r from-navy to-brand p-5 text-white shadow-lg">
+          <div class="flex items-center gap-3">${avatar({ id: s.user_id, name: s.user_name, photo: s.user_id === S.user.id ? S.user.photo : undefined }, 'sm')}
+            <div><h2 class="!mb-0 text-2xl font-extrabold !text-white">${mine ? 'Tu turno está abierto' : 'Turno de ' + esc(s.user_name)}</h2><p class="mt-1 text-sm text-blue-100">Desde ${dt(s.opened_at)}</p></div></div>
+          <div class="flex gap-3"><div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${s.sales_count}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Ventas</div></div>
+            <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${money(s.sales_cash + s.sales_nequi)}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Vendido</div></div></div></div>
+        <div class="flex flex-col gap-5 lg:flex-row lg:items-start">
+          <section class="min-w-0 flex-1"><h3 class="!mb-3 text-lg font-extrabold text-navy">Lo que debería haber</h3>
+            <div class="flex flex-col gap-3 sm:flex-row"><div class="flex-1">${money2('efectivo', 'Efectivo', register.cash, s.open_cash, s.sales_cash)}</div><div class="flex-1">${money2('nequi', 'Nequi', register.nequi, s.open_nequi, s.sales_nequi)}</div></div></section>
+          ${mine || S.user.role === 'admin' ? `<section class="min-w-0 flex-1 rounded-3xl border border-line bg-white p-5 shadow-sm">
+            <h3 class="!mb-1 text-lg font-extrabold text-navy">Cerrar caja</h3>
+            <p class="mb-3 text-sm text-slate-500">Cuenta el dinero real y escríbelo. El sistema lo compara con lo que debería haber.</p>
+            <div class="flex flex-col gap-3 sm:flex-row"><div class="flex-1">${field('efectivo', 'cc', 'Efectivo contado', '', 'oninput="A.cajaDiff()"')}<div id="dcc" class="mt-1.5 min-h-[1.5rem]"></div></div>
+              <div class="flex-1">${field('nequi', 'cn', 'Saldo Nequi', '', 'oninput="A.cajaDiff()"')}<div id="dcn" class="mt-1.5 min-h-[1.5rem]"></div></div></div>
+            <div class="mt-3"><label class="${lbl}">Observaciones (opcional)</label><input id="cnote" maxlength="300" placeholder="Algo que debamos saber del turno" class="!rounded-xl"></div>
+            <button class="btn danger mt-4 w-full !rounded-2xl !py-3 text-base" onclick="A.closeShift()">Cerrar caja</button></section>` : ''}
         </div></div>`;
-      if (mine || S.user.role === 'admin') html += `<div class="card"><h3>Cerrar caja</h3>
-        <p class="mute">Cuenta el dinero real y escríbelo. El sistema comparará con lo que debería haber.</p>
-        <div class="row"><div><label>Efectivo contado</label><input id="cc" type="number" inputmode="numeric" min="0"></div>
-        <div><label>Saldo Nequi</label><input id="cn" type="number" inputmode="numeric" min="0"></div></div>
-        <label>Observaciones (opcional)</label><input id="cnote" maxlength="300">
-        <p><button class="btn danger" onclick="A.closeShift()">Cerrar caja</button></p></div>`;
     }
     $('#main').innerHTML = html;
   },
@@ -855,6 +870,12 @@ const A = window.A = {
   auditSearch() { S.aq = val('aq'); views.actividad(); },
 
   // Caja
+  // Muestra al instante cuánto sobra o falta mientras se escribe lo contado
+  cajaDiff() {
+    [['cc', 'dcc', S.cajaExp.cash], ['cn', 'dcn', S.cajaExp.nequi]].forEach(([i, o, exp]) => {
+      const v = val(i); $('#' + o).innerHTML = v === '' ? '' : diffTag(Number(v) - exp);
+    });
+  },
   async openShift() {
     const r = await act(() => api('/shift/open', 'POST', { cash: val('oc'), nequi: val('on') }));
     if (!r) return;
