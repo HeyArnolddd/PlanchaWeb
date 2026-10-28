@@ -733,21 +733,30 @@ const views = {
       p.total += d; if (w.week === week) p.week += d;
       people.set(w.user_id, p);
     });
-    $('#main').innerHTML = `<h2>${admin ? 'Turnos' : 'Mis turnos'}</h2>
-      <div class="card tw"><h3>Descuadre de caja</h3>
-      ${people.size ? `<table><tr><th>Usuario</th><th>Esta semana</th><th>Total</th></tr>
-      ${[...people.values()].sort((x, y) => x.name.localeCompare(y.name)).map((p) => `<tr><td>${esc(p.name)}</td><td>${diffTag(p.week)}</td><td>${diffTag(p.total)}</td></tr>`).join('')}</table>`
-      : '<span class="mute">Aún no hay cierres de caja.</span>'}</div>
-      <div class="card tw"><table>
-      <tr><th>Fecha</th>${admin ? '<th>Quién</th>' : ''}<th class="n">Ventas</th><th>Efectivo</th><th>Nequi</th><th></th></tr>
-      ${rows.map((s) => {
-        const closed = !!s.closed_at;
-        const dc = closed ? s.close_cash - s.sys_close_cash : 0, dn = closed ? s.close_nequi - s.sys_close_nequi : 0;
-        return `<tr><td>${dt(s.opened_at)}<br><small class="mute">${closed ? 'hasta ' + dt(s.closed_at) : '<span class="tag warn">Abierto</span>'}</small></td>
-        ${admin ? `<td>${esc(s.user_name)}</td>` : ''}<td class="n">${s.sales_count}<br>${money(s.sales_cash + s.sales_nequi)}</td>
-        <td>${closed ? diffTag(dc) : '—'}</td><td>${closed ? diffTag(dn) : '—'}</td>
-        <td class="n"><button class="btn sec sm" onclick="A.shiftDetail(${s.id})">Ver</button></td></tr>`;
-      }).join('') || '<tr><td colspan="6" class="mute">Sin turnos.</td></tr>'}</table></div>`;
+    const open = rows.filter((r) => !r.closed_at).length;
+    const lbl = 'text-[11px] font-bold uppercase tracking-wide';
+    const list = [...people.values()].sort((x, y) => x.name.localeCompare(y.name));
+    $('#main').innerHTML = `<div class="ord">
+      <div class="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-r from-navy to-brand p-5 text-white shadow-lg">
+        <div><h2 class="!mb-0 text-2xl font-extrabold !text-white">${admin ? 'Turnos' : 'Mis turnos'}</h2><p class="mt-1 text-sm text-blue-100">Historial de cierres y descuadre de caja.</p></div>
+        <div class="flex gap-3"><div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${rows.length}</div><div class="${lbl} text-blue-100">Turnos</div></div>
+          <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${open}</div><div class="${lbl} text-blue-100">Abiertos</div></div></div></div>
+      <section class="mb-5 rounded-3xl border border-line bg-white p-5 shadow-sm"><h3 class="!mb-3 text-lg font-extrabold text-navy">Descuadre de caja</h3>
+        ${list.length ? `<div class="flex flex-col gap-2"><div class="flex items-center gap-3 px-3 ${lbl} text-slate-400"><span class="flex-1">Usuario</span><span class="w-36">Esta semana</span><span class="w-36">Total</span></div>
+        ${list.map((p) => `<div class="flex flex-wrap items-center gap-3 rounded-2xl bg-ice/50 px-3 py-2.5">
+          <span class="flex min-w-0 flex-1 items-center gap-2.5"><b class="av sm">${initialOf(p.name)}</b><b class="truncate text-navy">${esc(p.name)}</b></span>
+          <span class="w-36">${diffTag(p.week)}</span><span class="w-36">${diffTag(p.total)}</span></div>`).join('')}</div>`
+        : '<span class="text-slate-500">Aún no hay cierres de caja.</span>'}</section>
+      <section><h3 class="!mb-3 text-lg font-extrabold text-navy">Historial</h3>
+        ${rows.length ? `<div class="flex flex-col gap-2">${rows.map((s) => {
+          const closed = !!s.closed_at, dc = closed ? s.close_cash - s.sys_close_cash : 0, dn = closed ? s.close_nequi - s.sys_close_nequi : 0;
+          return `<div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border ${closed ? 'border-line' : 'border-amber-300'} bg-white px-4 py-3 shadow-sm">
+            <div class="min-w-[9rem] flex-1"><b class="text-navy">${dt(s.opened_at)}</b><div class="text-xs text-slate-500">${closed ? 'hasta ' + dt(s.closed_at) : '<span class="rounded-full bg-amber-100 px-2 py-0.5 font-bold text-amber-700">Abierto</span>'}${admin ? ` · ${esc(s.user_name)}` : ''}</div></div>
+            <div class="text-sm"><div class="${lbl} text-slate-400">Ventas (${s.sales_count})</div><b class="text-navy">${money(s.sales_cash + s.sales_nequi)}</b></div>
+            ${closed ? `<div class="text-sm"><div class="${lbl} text-slate-400">${payLogo('efectivo', 'h-4 w-4')} Efectivo</div>${diffTag(dc)}</div>
+            <div class="text-sm"><div class="${lbl} text-slate-400">${payLogo('nequi', 'h-4 w-4')} Nequi</div>${diffTag(dn)}</div>` : ''}
+            <button class="btn sec sm !rounded-xl ml-auto" onclick="A.shiftDetail(${s.id})">Ver</button></div>`;
+        }).join('')}</div>` : '<div class="rounded-3xl border border-dashed border-line bg-white/70 p-8 text-center text-slate-500">Sin turnos.</div>'}</section></div>`;
   },
 
   async usuarios() {
