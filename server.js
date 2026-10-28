@@ -688,6 +688,13 @@ app.get('/api/shifts', auth, wrap((req) =>
   req.user.role === 'admin'
     ? D.all(`${SHIFT_SQL} ORDER BY s.id DESC LIMIT 100`)
     : D.all(`${SHIFT_SQL} WHERE s.user_id=$1 ORDER BY s.id DESC LIMIT 100`, [req.user.id])));
+// Descuadre semanal (lunes a domingo, hora Colombia) por usuario: suma de las diferencias de sus cierres de caja
+app.get('/api/shifts/weekly', auth, wrap((req) =>
+  D.all(`SELECT to_char(date_trunc('week', h.closed_at AT TIME ZONE '${TZ}'),'YYYY-MM-DD') AS week, h.user_id, u.name AS user_name, COUNT(*) AS shifts,
+    SUM(h.close_cash - h.sys_close_cash) AS diff_cash, SUM(h.close_nequi - h.sys_close_nequi) AS diff_nequi
+    FROM shifts h JOIN users u ON u.id=h.user_id
+    WHERE h.closed_at IS NOT NULL AND h.closed_at >= now() - interval '91 days' ${req.user.role === 'admin' ? '' : 'AND h.user_id=$1'}
+    GROUP BY 1,2,3 ORDER BY 1 DESC, 3`, req.user.role === 'admin' ? [] : [req.user.id])));
 app.get('/api/shifts/:id', auth, wrap(async (req) => {
   const s = await D.get(`${SHIFT_SQL} WHERE s.id=$1`, [int(req.params.id, 'id')]);
   if (!s) throw new HttpError(404, 'No existe');

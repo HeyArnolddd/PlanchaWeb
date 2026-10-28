@@ -644,9 +644,15 @@ const views = {
       <tr><td><b>ASEO</b></td>${ASEO.map((n, j) => `<td style="font-weight:600;${j === d ? 'background:var(--ice)' : ''}">${esc(n)}</td>`).join('')}</tr></table></div></div>`;
   },
   async turnos() {
-    const rows = await api('/shifts');
+    const [rows, weekly] = await Promise.all([api('/shifts'), api('/shifts/weekly')]);
     const admin = S.user.role === 'admin';
-    $('#main').innerHTML = `<h2>${admin ? 'Turnos' : 'Mis turnos'}</h2><div class="card tw"><table>
+    const wk = (w) => { const a = new Date(w + 'T00:00:00Z'), b = new Date(a.getTime() + 6 * 864e5), f = (d) => d.toLocaleDateString('es-CO', { timeZone: 'UTC', day: '2-digit', month: 'short' }); return `${f(a)} – ${f(b)}`; };
+    $('#main').innerHTML = `<h2>${admin ? 'Turnos' : 'Mis turnos'}</h2>
+      <div class="card tw"><h3>Descuadre semanal</h3><p class="mute">Suma de las diferencias de los cierres de caja de cada semana (lunes a domingo), últimas 13 semanas.</p>
+      ${weekly.length ? `<table><tr><th>Semana</th>${admin ? '<th>Quién</th>' : ''}<th class="n">Cierres</th><th>Efectivo</th><th>Nequi</th><th>Total</th></tr>
+      ${weekly.map((w) => `<tr><td>${wk(w.week)}</td>${admin ? `<td>${esc(w.user_name)}</td>` : ''}<td class="n">${w.shifts}</td><td>${diffTag(w.diff_cash)}</td><td>${diffTag(w.diff_nequi)}</td><td>${diffTag(w.diff_cash + w.diff_nequi)}</td></tr>`).join('')}</table>`
+      : '<span class="mute">Aún no hay cierres de caja.</span>'}</div>
+      <div class="card tw"><table>
       <tr><th>Fecha</th>${admin ? '<th>Quién</th>' : ''}<th class="n">Ventas</th><th>Efectivo</th><th>Nequi</th><th></th></tr>
       ${rows.map((s) => {
         const closed = !!s.closed_at;
