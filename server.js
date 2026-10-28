@@ -246,6 +246,28 @@ CREATE TABLE IF NOT EXISTS audit_log (
   created_at TIMESTAMPTZ NOT NULL
 );
 CREATE INDEX IF NOT EXISTS audit_log_created ON audit_log (created_at DESC);
+CREATE TABLE IF NOT EXISTS loan_items (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  qty INTEGER NOT NULL DEFAULT 1,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL
+);
+CREATE TABLE IF NOT EXISTS loans (
+  id SERIAL PRIMARY KEY,
+  item_id INTEGER NOT NULL REFERENCES loan_items(id),
+  shift_id INTEGER REFERENCES shifts(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  borrower TEXT NOT NULL,
+  fee BIGINT NOT NULL DEFAULT 0,
+  method TEXT CHECK (method IN ('efectivo','nequi')),
+  due_at TIMESTAMPTZ NOT NULL,
+  returned_at TIMESTAMPTZ,
+  returned_by INTEGER REFERENCES users(id),
+  voided INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS loans_item ON loans (item_id);
 INSERT INTO register (id, cash, nequi) VALUES (1, 0, 0) ON CONFLICT DO NOTHING;
 `;
 
@@ -597,7 +619,8 @@ const SHIFT_SQL = `SELECT s.*, u.name AS user_name,
   (SELECT COUNT(*) FROM sales x WHERE x.shift_id=s.id AND x.voided=0) AS sales_count,
   COALESCE((SELECT SUM((i.price-i.cost)*i.qty) FROM sale_items i JOIN sales x ON x.id=i.sale_id
     WHERE x.shift_id=s.id AND x.voided=0),0)
-    + COALESCE((SELECT SUM(fee) FROM withdrawals w WHERE w.shift_id=s.id AND w.voided=0),0) AS profit,
+    + COALESCE((SELECT SUM(fee) FROM withdrawals w WHERE w.shift_id=s.id AND w.voided=0),0)
+    + COALESCE((SELECT SUM(fee) FROM loans l WHERE l.shift_id=s.id AND l.voided=0),0) AS profit,
   (SELECT COUNT(*) FROM withdrawals w WHERE w.shift_id=s.id AND w.voided=0) AS wd_count,
   COALESCE((SELECT SUM(amount) FROM withdrawals w WHERE w.shift_id=s.id AND w.voided=0),0) AS wd_amount,
   COALESCE((SELECT SUM(fee) FROM withdrawals w WHERE w.shift_id=s.id AND w.voided=0),0) AS wd_fees
@@ -865,6 +888,87 @@ app.post('/api/withdrawals/:id/void', auth, wrap(async (req) => {
     await t.run('UPDATE withdrawals SET voided=1 WHERE id=$1', [id]);
     await t.run('UPDATE register SET cash=cash-$1, nequi=nequi-$2 WHERE id=1', [d.cash, d.nequi]);
     await audit(t, req.user, 'Anuló retiro Nequi', `#${id} · ${w.amount} · comisión ${w.fee}`);
+    return { ok: true };
+  });
+}));
+
+// ---------- Préstamo de implementos (raquetas, juegos de mesa…): inventario aparte del de ventas ----------
+// El valor del préstamo entra a la caja al registrarlo; el implemento queda pendiente hasta que alguien lo marque devuelto.
+const LOAN_SQL = `SELECT l.*, i.name AS item, u.name AS who, r.name AS received_by,
+  (l.returned_at IS NULL AND l.voided=0 AND l.due_at < now()) AS late
+  FROM loans l JOIN loan_items i ON i.id=l.item_id JOIN users u ON u.id=l.user_id LEFT JOIN users r ON r.id=l.returned_by`;
+app.get('/api/loan-items', auth, wrap(() =>
+  D.all(`SELECT i.*, i.qty - COALESCE((SELECT COUNT(*) FROM loans l WHERE l.item_id=i.id AND l.returned_at IS NULL AND l.voided=0),0) AS available
+    FROM loan_items i ORDER BY i.active DESC, i.name`)));
+app.post('/api/loan-items', auth, admin, wrap(async (req) => {
+  const name = str(req.body.name, 'Nombre', 80);
+  const qty = int(req.body.qty ?? 1, 'cantidad', { min: 1, max: 10000 });
+  const { id } = await D.get('INSERT INTO loan_items (name,qty,created_at) VALUES ($1,$2,$3) RETURNING id', [name, qty, now()]);
+  await audit(D, req.user, 'Agregó implemento de préstamo', `${name} · ${qty} uds`);
+  return { id };
+}));
+app.put('/api/loan-items/:id', auth, admin, wrap(async (req) => {
+  const id = int(req.params.id, 'id');
+  const name = str(req.body.name, 'Nombre', 80);
+  const qty = int(req.body.qty, 'cantidad', { min: 1, max: 10000 });
+  await tx(async (t) => {
+    const it = await t.get('SELECT * FROM loan_items WHERE id=$1 FOR UPDATE', [id]);
+    if (!it) throw new HttpError(404, 'No existe');
+    const out = (await t.get('SELECT COUNT(*) c FROM loans WHERE item_id=$1 AND returned_at IS NULL AND voided=0', [id])).c;
+    if (qty < out) throw bad(`Hay ${out} prestados; la cantidad no puede ser menor`);
+    await t.run('UPDATE loan_items SET name=$1, qty=$2, active=$3 WHERE id=$4', [name, qty, req.body.active === false ? 0 : 1, id]);
+    await audit(t, req.user, 'Editó implemento de préstamo', `${name} · ${qty} uds`);
+  });
+  return { ok: true };
+}));
+app.get('/api/loans', auth, wrap(async () => ({
+  pending: await D.all(`${LOAN_SQL} WHERE l.returned_at IS NULL AND l.voided=0 ORDER BY l.due_at`),
+  history: await D.all(`${LOAN_SQL} WHERE l.returned_at IS NOT NULL OR l.voided=1 ORDER BY l.id DESC LIMIT 50`),
+})));
+app.post('/api/loans', auth, wrap(async (req) => {
+  const itemId = int(req.body.item_id, 'implemento');
+  const borrower = str(req.body.borrower, 'Nombre de la persona', 80);
+  const fee = int(req.body.fee ?? 0, 'valor del préstamo');
+  const m = fee > 0 ? method(req.body.method) : null;
+  const days = int(req.body.days ?? 2, 'días', { min: 1, max: 2 });
+  return tx(async (t) => {
+    const s = await openShift(t);
+    if (!s) throw bad('Primero debes abrir caja');
+    if (s.user_id !== req.user.id) throw bad(`La caja la abrió ${s.user_name}`);
+    const it = await t.get('SELECT * FROM loan_items WHERE id=$1 FOR UPDATE', [itemId]);
+    if (!it || !it.active) throw bad('Ese implemento no está disponible');
+    const out = (await t.get('SELECT COUNT(*) c FROM loans WHERE item_id=$1 AND returned_at IS NULL AND voided=0', [itemId])).c;
+    if (out >= it.qty) throw bad('Ya están prestadas todas las unidades de este implemento');
+    if (fee > 0) await t.run(`UPDATE register SET ${col(m)}=${col(m)}+$1 WHERE id=1`, [fee]);
+    const at = now();
+    const { id } = await t.get(`INSERT INTO loans (item_id,shift_id,user_id,borrower,fee,method,due_at,created_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`, [itemId, s.id, req.user.id, borrower, fee, m, new Date(at.getTime() + days * 864e5), at]);
+    await audit(t, req.user, 'Registró préstamo', `#${id} · ${it.name} a ${borrower} · ${fee}${m ? ' (' + m + ')' : ''}`);
+    return { id };
+  });
+}));
+app.post('/api/loans/:id/return', auth, wrap(async (req) => {
+  const id = int(req.params.id, 'id');
+  return tx(async (t) => {
+    const l = await t.get(`${LOAN_SQL} WHERE l.id=$1 FOR UPDATE OF l`, [id]);
+    if (!l) throw new HttpError(404, 'No existe');
+    if (l.voided) throw bad('Este préstamo fue anulado');
+    if (l.returned_at) throw bad('Ya estaba devuelto');
+    await t.run('UPDATE loans SET returned_at=$1, returned_by=$2 WHERE id=$3', [now(), req.user.id, id]);
+    await audit(t, req.user, 'Recibió implemento prestado', `#${id} · ${l.item} de ${l.borrower}`);
+    return { ok: true };
+  });
+}));
+// Solo el admin anula (error de digitación): devuelve el dinero de la caja y libera el implemento
+app.post('/api/loans/:id/void', auth, admin, wrap(async (req) => {
+  const id = int(req.params.id, 'id');
+  return tx(async (t) => {
+    const l = await t.get(`${LOAN_SQL} WHERE l.id=$1 FOR UPDATE OF l`, [id]);
+    if (!l) throw new HttpError(404, 'No existe');
+    if (l.voided) throw bad('Ya estaba anulado');
+    if (l.fee > 0) await t.run(`UPDATE register SET ${col(l.method)}=${col(l.method)}-$1 WHERE id=1`, [l.fee]);
+    await t.run('UPDATE loans SET voided=1 WHERE id=$1', [id]);
+    await audit(t, req.user, 'Anuló préstamo', `#${id} · ${l.item} de ${l.borrower} · ${l.fee}`);
     return { ok: true };
   });
 }));
@@ -1213,7 +1317,7 @@ app.get('/api/reports/hours', auth, admin, wrap(async (req) => {
 app.get('/api/export.csv', auth, admin, wrap(async (req, res) => {
   const { from, to, a, b } = range(req.query, 366);
   const p = [a, b];
-  const [sales, items, wds, exps, adjs, shifts, stocks] = await Promise.all([
+  const [sales, items, wds, exps, adjs, shifts, stocks, loans] = await Promise.all([
     D.all(`SELECT s.*, u.name AS who FROM sales s JOIN users u ON u.id=s.user_id WHERE s.created_at>=$1 AND s.created_at<$2`, p),
     D.all(`SELECT i.* FROM sale_items i JOIN sales s ON s.id=i.sale_id WHERE s.created_at>=$1 AND s.created_at<$2`, p),
     D.all(`SELECT w.*, u.name AS who FROM withdrawals w JOIN users u ON u.id=w.user_id WHERE w.created_at>=$1 AND w.created_at<$2`, p),
@@ -1222,6 +1326,8 @@ app.get('/api/export.csv', auth, admin, wrap(async (req, res) => {
     D.all(`SELECT h.*, u.name AS who FROM shifts h JOIN users u ON u.id=h.user_id WHERE (h.opened_at>=$1 AND h.opened_at<$2) OR (h.closed_at>=$1 AND h.closed_at<$2)`, p),
     D.all(`SELECT e.*, pr.name AS product, u.name AS who FROM stock_entries e JOIN products pr ON pr.id=e.product_id JOIN users u ON u.id=e.user_id
       WHERE e.created_at>=$1 AND e.created_at<$2`, p),
+    D.all(`SELECT l.*, i.name AS item, u.name AS who FROM loans l JOIN loan_items i ON i.id=l.item_id JOIN users u ON u.id=l.user_id
+      WHERE l.created_at>=$1 AND l.created_at<$2`, p),
   ]);
   const rows = []; // { at, tipo, detalle, who, turno, monto, cash, nequi }
   const eff = (m, v) => ({ cash: m === 'efectivo' ? v : 0, nequi: m === 'nequi' ? v : 0 });
@@ -1239,6 +1345,10 @@ app.get('/api/export.csv', auth, admin, wrap(async (req, res) => {
   for (const e of exps) {
     rows.push({ at: e.created_at, tipo: e.kind === 'pedido' ? 'Pago de pedido' : 'Gasto de implementos',
       detalle: `${e.description} (${e.method ? 'de ' + e.method : 'fuera de caja'})`, who: e.who, turno: '', monto: e.amount, ...(e.method ? eff(e.method, -e.amount) : { cash: 0, nequi: 0 }) });
+  }
+  for (const l of loans) {
+    rows.push({ at: l.created_at, tipo: l.voided ? 'Préstamo anulado' : 'Préstamo de implemento', detalle: `#${l.id} ${l.item} a ${l.borrower}${l.returned_at ? ' (devuelto)' : ''}`,
+      who: l.who, turno: l.shift_id, monto: l.fee, ...(l.voided || !l.method ? { cash: 0, nequi: 0 } : eff(l.method, Number(l.fee))) });
   }
   for (const x of adjs) rows.push({ at: x.created_at, tipo: 'Ajuste de dinero', detalle: `${x.note} (${x.method})`, who: x.who, turno: '', monto: x.amount, ...eff(x.method, x.amount) });
   for (const h of shifts) {

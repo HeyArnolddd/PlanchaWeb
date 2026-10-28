@@ -49,13 +49,14 @@ async function act(fn, ok) {
 }
 
 const S = { user: null, view: null, chat: [], peerRead: 0, peer: null, chatOpen: false, cart: [], benefit: null, method: 'efectivo', cat: 'all', q: '' };
-const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['emprendimientos', 'Emprendimientos'], ['gastos', 'Gastos'], ['reportes', 'Reportes'], ['rentabilidad', 'Rentabilidad emprend.'], ['turnos', 'Turnos'], ['horario', 'Horario'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
-const TURNO_TABS = [['resumen', 'Resumen'], ['caja', 'Caja'], ['vender', 'Vender'], ['inventario', 'Productos'], ['turnos', 'Mis turnos'], ['horario', 'Horario']];
+const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['prestamos', 'Préstamo de implementos'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['emprendimientos', 'Emprendimientos'], ['gastos', 'Gastos'], ['reportes', 'Reportes'], ['rentabilidad', 'Rentabilidad emprend.'], ['turnos', 'Turnos'], ['horario', 'Horario'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
+const TURNO_TABS = [['resumen', 'Resumen'], ['caja', 'Caja'], ['vender', 'Vender'], ['prestamos', 'Préstamo de implementos'], ['inventario', 'Productos'], ['turnos', 'Mis turnos'], ['horario', 'Horario']];
 // Menú lateral: grupos de vistas (las que el rol no tenga se omiten)
-const NAV_GROUPS = [['Principal', ['resumen']], ['Ventas', ['vender', 'caja']], ['Inventario', ['productos', 'inventario', 'emprendimientos']], ['Finanzas', ['dinero', 'gastos', 'reportes', 'rentabilidad']], ['Equipo', ['turnos', 'horario', 'actividad', 'usuarios']]];
+const NAV_GROUPS = [['Principal', ['resumen']], ['Ventas', ['vender', 'caja', 'prestamos']], ['Inventario', ['productos', 'inventario', 'emprendimientos']], ['Finanzas', ['dinero', 'gastos', 'reportes', 'rentabilidad']], ['Equipo', ['turnos', 'horario', 'actividad', 'usuarios']]];
 const ICONS = {
   resumen: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
   vender: '<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.7 11.4a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.5L21 7H6"/>',
+  prestamos: '<path d="M7 7h13l-3-3M17 17H4l3 3"/><path d="M20 7v3M4 17v-3"/>',
   caja: '<rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M6 15h3"/>',
   productos: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
   inventario: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
@@ -400,6 +401,37 @@ const views = {
         <div class="stat"><span>Agotados</span><b>${tr.filter((p) => p.stock <= 0).length}</b><small>Sin unidades</small></div>
       </div>${prodToolbar(true)}<div class="pgrid" id="pgrid"></div>`;
     A.pgrid();
+  },
+  async prestamos() {
+    const [items, { pending, history }] = await Promise.all([api('/loan-items'), api('/loans')]);
+    S.loanItems = items;
+    const admin = S.user.role === 'admin';
+    const avail = items.filter((i) => i.active && i.available > 0);
+    $('#main').innerHTML = `<h2>Préstamo de implementos</h2>
+      <div class="card"><h3>Nuevo préstamo</h3>
+        ${avail.length ? `<label>Implemento</label><select id="li">${avail.map((i) => `<option value="${i.id}">${esc(i.name)} (${i.available} disp.)</option>`).join('')}</select>
+        <label>Nombre de la persona</label><input id="lb" maxlength="80">
+        <div class="row"><div><label>Valor del préstamo</label><input id="lf" type="number" inputmode="numeric" min="0" value="0"></div>
+        <div><label>Entra a</label><select id="lm"><option value="efectivo">Caja efectivo</option><option value="nequi">Caja Nequi</option></select></div>
+        <div><label>Plazo</label><select id="ld"><option value="1">1 día</option><option value="2" selected>2 días</option></select></div></div>
+        <p><button class="btn" onclick="A.loan()">Registrar préstamo</button></p>`
+        : '<span class="mute">No hay implementos disponibles para prestar.</span>'}</div>
+      <div class="card tw"><h3>Pendientes de devolución <span class="tag ${pending.length ? 'warn' : 'ok'}">${pending.length}</span></h3>
+        ${pending.length ? `<table><tr><th>Implemento</th><th>Persona</th><th>Prestado</th><th>Devolver antes de</th><th class="n">Valor</th><th></th></tr>
+        ${pending.map((l) => `<tr><td>${esc(l.item)}</td><td>${esc(l.borrower)}<br><small class="mute">Atendió ${esc(l.who)}</small></td><td>${dt(l.created_at)}</td>
+          <td>${dt(l.due_at)}${l.late ? ' <span class="tag err">Vencido</span>' : ''}</td><td class="n">${money(l.fee)}${l.method ? `<br><small class="mute">${l.method}</small>` : ''}</td>
+          <td class="n"><button class="btn sm" onclick="A.loanReturn(${l.id})">Devuelto</button>${admin ? ` <button class="btn sec sm" onclick="A.loanVoid(${l.id})">Anular</button>` : ''}</td></tr>`).join('')}</table>`
+        : '<span class="mute">Nada pendiente.</span>'}</div>
+      <div class="card tw"><h3>Historial reciente</h3>
+        ${history.length ? `<table><tr><th>Implemento</th><th>Persona</th><th>Prestado</th><th>Devuelto</th><th class="n">Valor</th></tr>
+        ${history.map((l) => `<tr style="${l.voided ? 'opacity:.5;text-decoration:line-through' : ''}"><td>${esc(l.item)}</td><td>${esc(l.borrower)}</td><td>${dt(l.created_at)}<br><small class="mute">${esc(l.who)}</small></td>
+          <td>${l.voided ? '<span class="tag err">Anulado</span>' : `${dt(l.returned_at)}<br><small class="mute">Recibió ${esc(l.received_by)}</small>`}</td><td class="n">${money(l.fee)}</td></tr>`).join('')}</table>`
+        : '<span class="mute">Sin movimientos.</span>'}</div>
+      ${admin ? `<div class="card tw"><div class="row" style="align-items:center"><h3 style="flex:3">Inventario de implementos</h3><button class="btn sm" onclick="A.loanItemForm()">+ Implemento</button></div>
+        ${items.length ? `<table><tr><th>Implemento</th><th class="n">Total</th><th class="n">Disponibles</th><th></th></tr>
+        ${items.map((i) => `<tr style="${i.active ? '' : 'opacity:.5'}"><td>${esc(i.name)}${i.active ? '' : ' (inactivo)'}</td><td class="n">${i.qty}</td><td class="n">${i.available}</td>
+          <td class="n"><button class="btn sec sm" onclick="A.loanItemForm(${i.id})">Editar</button></td></tr>`).join('')}</table>`
+        : '<span class="mute">Aún no hay implementos. Agrega raquetas, juegos de mesa, etc.</span>'}</div>` : ''}`;
   },
   async dinero() {
     const [{ register, adjustments }, prods] = await Promise.all([api('/register'), api('/products')]);
@@ -1009,6 +1041,34 @@ const A = window.A = {
       ${s.notes ? `<p><i>${esc(s.notes)}</i></p>` : ''}
       <div class="tw">${salesTable(s.sales, S.user.role === 'admin')}</div>
       <p><button class="btn" onclick="closeModal()">Cerrar</button></p>`);
+  },
+
+  // Préstamo de implementos
+  async loan() {
+    const fee = Number(val('lf')) || 0, m = val('lm');
+    const body = { item_id: val('li'), borrower: val('lb'), fee, method: m, days: val('ld') };
+    if (!body.borrower.trim()) return toast('Escribe el nombre de la persona');
+    if (fee > 0 && !confirm(`Debes haber recibido ${money(fee)} en ${m}. ¿Registrar el préstamo?`)) return;
+    if (await act(() => api('/loans', 'POST', body), 'Préstamo registrado')) views.prestamos();
+  },
+  async loanReturn(id) {
+    if (confirm('¿Confirmas que el implemento fue devuelto?') && await act(() => api(`/loans/${id}/return`, 'POST'), 'Devolución registrada')) views.prestamos();
+  },
+  async loanVoid(id) {
+    if (confirm('¿Anular este préstamo? El dinero se revierte de la caja y el implemento queda libre.') && await act(() => api(`/loans/${id}/void`, 'POST'), 'Préstamo anulado')) views.prestamos();
+  },
+  loanItemForm(id) {
+    const i = id ? S.loanItems.find((x) => x.id === id) : { name: '', qty: 1, active: 1 };
+    modal(`<h3>${id ? 'Editar' : 'Nuevo'} implemento</h3>
+      <label>Nombre</label><input id="ln" maxlength="80" value="${esc(i.name)}">
+      <label>Cantidad total</label><input id="lq" type="number" inputmode="numeric" min="1" value="${i.qty}">
+      ${id ? `<label><input type="checkbox" id="la" style="width:auto" ${i.active ? 'checked' : ''}> Activo (se puede prestar)</label>` : ''}
+      <p><button class="btn" onclick="A.saveLoanItem(${id || 0})">Guardar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);
+  },
+  async saveLoanItem(id) {
+    const body = { name: val('ln'), qty: val('lq') };
+    if (id) body.active = $('#la').checked;
+    if (await act(() => api(id ? `/loan-items/${id}` : '/loan-items', id ? 'PUT' : 'POST', body), 'Guardado')) { closeModal(); views.prestamos(); }
   },
 
   // Usuarios
