@@ -466,6 +466,63 @@ const views = {
         : '<div class="rounded-3xl border border-dashed border-line bg-white/70 p-6 text-center text-slate-500">Aún no hay implementos. Agrega raquetas, juegos de mesa, etc.</div>'}</section>` : ''}</div>`;
     if (avail.length) A.loanPick(avail[0].id);
   },
+  async pedidos() {
+    const [{ pending, history }, prods, cats] = await Promise.all([api('/orders'), api('/products'), api('/categories')]);
+    S.prods = prods; S.cats = cats; S.ordPending = pending; S.ordSel = null;
+    const d = S.orderDraft ||= { items: [], total: '', note: '' };
+    const pendTotal = pending.reduce((t, o) => t + Number(o.total), 0);
+    const byId = (id) => prods.find((p) => p.id === id);
+    const line = (i) => `<li class="flex items-center gap-2.5 py-1">${ordThumb(byId(i.product_id), 'h-9 w-9')}<span class="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">${esc(i.name)}${i.product_id ? '' : ' <span class="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">NUEVO</span>'}</span>
+      <span class="rounded-lg bg-ice px-2 py-0.5 text-sm font-extrabold text-brand">${i.received_qty != null && i.received_qty !== i.qty ? `${i.received_qty} de ${i.qty}` : '×' + i.qty}</span></li>`;
+    $('#main').innerHTML = `<div class="ord">
+      <div class="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-r from-navy to-brand p-5 text-white shadow-lg">
+        <div><h2 class="!mb-0 text-2xl font-extrabold !text-white">Pedidos a proveedores</h2>
+          <p class="mt-1 text-sm text-blue-100">Registra lo que pediste; quien lo reciba verifica, paga y suma el stock.</p></div>
+        <div class="flex gap-3">
+          <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${pending.length}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Pendientes</div></div>
+          <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${money(pendTotal)}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Por pagar</div></div>
+        </div>
+      </div>
+      <div class="flex flex-col gap-5 lg:flex-row lg:items-start">
+        <section class="min-w-0 flex-1 rounded-3xl border border-line bg-white p-5 shadow-sm lg:max-w-xl">
+          <h3 class="!mb-3 flex items-center gap-2 text-lg font-extrabold text-navy"><span class="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-sm text-white">1</span> Nuevo pedido</h3>
+          <div class="relative">
+            <input id="os" autocomplete="off" placeholder="🔎 Escribe el producto (ej. coca zero)…" class="!rounded-2xl !py-3" oninput="A.ordFind()" onfocus="A.ordFind()" onkeydown="if(event.key==='Escape'){$('#ores').hidden=true;A.ordUnpick()}">
+            <div id="ores" hidden class="absolute inset-x-0 top-full z-20 mt-1.5 max-h-80 overflow-y-auto rounded-2xl border border-line bg-white p-1.5 shadow-xl"></div>
+          </div>
+          <div id="osel"></div>
+          <div id="odraft" class="mt-4"></div>
+          <div class="mt-4 rounded-2xl bg-ice/60 p-3">
+            <div class="flex flex-wrap gap-3">
+              <div class="min-w-[9rem] flex-1"><label class="text-xs font-bold uppercase tracking-wide text-slate-500">Valor total del pedido</label><input id="ot" type="number" inputmode="numeric" min="1" placeholder="$ 0" value="${d.total}" oninput="S.orderDraft.total=this.value" class="!text-lg !font-extrabold"></div>
+              <div class="min-w-[9rem] flex-[2]"><label class="text-xs font-bold uppercase tracking-wide text-slate-500">Nota (opcional)</label><input id="on" maxlength="200" placeholder="Proveedor, observaciones…" value="${esc(d.note)}" oninput="S.orderDraft.note=this.value"></div>
+            </div>
+          </div>
+          <button class="btn mt-4 w-full !rounded-2xl !py-3 text-base" onclick="A.ordSave()">Registrar pedido</button>
+        </section>
+        <section class="min-w-0 flex-1">
+          <h3 class="!mb-3 flex items-center gap-2 text-lg font-extrabold text-navy"><span class="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-sm text-white">2</span> Pendientes por recibir</h3>
+          ${pending.length ? `<div class="flex flex-col gap-3">${pending.map((o) => `<article class="overflow-hidden rounded-3xl border border-amber-200 bg-white shadow-sm">
+            <header class="flex items-center justify-between gap-2 bg-amber-50 px-4 py-2.5">
+              <div><b class="text-navy">Pedido #${o.id}</b><div class="text-xs text-slate-500">${dt(o.created_at)} · pidió ${esc(o.who)}</div></div>
+              <div class="text-right text-xl font-extrabold text-navy">${money(o.total)}</div></header>
+            <ul class="divide-y divide-slate-100 px-4 py-1.5">${o.items.map(line).join('')}</ul>
+            ${o.note ? `<p class="px-4 pb-1 text-xs italic text-slate-500">${esc(o.note)}</p>` : ''}
+            <footer class="flex gap-2 px-4 pb-3 pt-2"><button class="btn flex-1 !rounded-xl" onclick="A.ordReceive(${o.id})">✔ Recibir y pagar</button>
+              ${S.user.role === 'admin' || o.user_id === S.user.id ? `<button class="btn sec !rounded-xl" onclick="A.ordCancel(${o.id})">Cancelar</button>` : ''}</footer></article>`).join('')}</div>`
+          : '<div class="rounded-3xl border border-dashed border-line bg-white/70 p-8 text-center text-slate-500"><div class="text-3xl">📦</div>No hay pedidos pendientes.</div>'}
+        </section>
+      </div>
+      <section class="mt-6"><h3 class="!mb-3 text-lg font-extrabold text-navy">Historial reciente</h3>
+        ${history.length ? `<div class="flex flex-col gap-2">${history.map((o) => `<details class="rounded-2xl border border-line bg-white px-4 py-2.5 shadow-sm">
+          <summary class="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1"><b class="text-navy">#${o.id}</b>
+            ${o.status === 'recibido' ? '<span class="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-700">Recibido</span>' : '<span class="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-700">Cancelado</span>'}
+            <span class="text-xs text-slate-500">${dt(o.created_at)} · ${esc(o.who)}${o.status === 'recibido' ? ` → ${esc(o.received_name)} · ${payTag(o.method)}` : ''}</span>
+            <b class="ml-auto text-navy">${money(o.status === 'recibido' ? o.paid : o.total)}</b></summary>
+          <ul class="mt-1 divide-y divide-slate-100">${o.items.map(line).join('')}</ul></details>`).join('')}</div>`
+        : '<span class="text-slate-500">Sin pedidos.</span>'}</section></div>`;
+    A.ordDraft();
+  },
   async dinero() {
     const [{ register, adjustments }, prods] = await Promise.all([api('/register'), api('/products')]);
     S.prods = prods;
