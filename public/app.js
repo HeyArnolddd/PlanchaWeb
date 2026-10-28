@@ -436,31 +436,59 @@ const views = {
   },
   async pedidos() {
     const [{ pending, history }, prods, cats] = await Promise.all([api('/orders'), api('/products'), api('/categories')]);
-    S.prods = prods; S.cats = cats; S.ordPending = pending;
+    S.prods = prods; S.cats = cats; S.ordPending = pending; S.ordSel = null;
     const d = S.orderDraft ||= { items: [], total: '', note: '' };
-    const opts = prods.filter((p) => p.active && p.track_stock).map((p) => `<option value="${p.id}">${esc(p.category || 'Sin categoría')} · ${esc(p.name)} (stock ${p.stock})</option>`).join('');
-    const lines = (o) => o.items.map((i) => `${i.received_qty != null && i.received_qty !== i.qty ? `${i.received_qty} de ${i.qty}` : i.qty}× ${esc(i.name)}${i.product_id ? '' : ' <span class="tag">nuevo</span>'}`).join(', ');
-    $('#main').innerHTML = `<h2>Pedidos</h2>
-      <div class="card"><h3>Registrar pedido</h3>
-        <p class="mute">Anota lo que pediste al proveedor. Queda pendiente hasta que alguien en turno lo reciba, verifique y pague; ahí se suma al stock y se descuenta de la caja.</p>
-        <div class="row"><div style="flex:3"><label>Producto</label><select id="oi"><option value="">Elige un producto…</option>${opts}</select></div>
-          <div><label>Cantidad</label><input id="oq" type="number" inputmode="numeric" min="1"></div></div>
-        <p><button class="btn sec sm" onclick="A.ordAdd()">+ Agregar al pedido</button> <button class="btn sec sm" onclick="A.ordNewProduct()">+ Producto nuevo</button></p>
-        <div id="odraft"></div>
-        <div class="row"><div><label>Valor total del pedido</label><input id="ot" type="number" inputmode="numeric" min="1" value="${d.total}" oninput="S.orderDraft.total=this.value"></div>
-          <div style="flex:2"><label>Nota (opcional)</label><input id="on" maxlength="200" value="${esc(d.note)}" oninput="S.orderDraft.note=this.value"></div></div>
-        <p><button class="btn" onclick="A.ordSave()">Registrar pedido</button></p></div>
-      <div class="card tw"><h3>Pendientes por recibir <span class="tag ${pending.length ? 'warn' : 'ok'}">${pending.length}</span></h3>
-        ${pending.length ? `<table><tr><th>Pedido</th><th>Productos</th><th class="n">Valor</th><th></th></tr>
-        ${pending.map((o) => `<tr><td>#${o.id}<br><small class="mute">${dt(o.created_at)}<br>${esc(o.who)}</small></td><td>${lines(o)}${o.note ? `<br><small class="mute">${esc(o.note)}</small>` : ''}</td><td class="n">${money(o.total)}</td>
-          <td class="n"><button class="btn sm" onclick="A.ordReceive(${o.id})">Recibir y pagar</button>${S.user.role === 'admin' || o.user_id === S.user.id ? ` <button class="btn sec sm" onclick="A.ordCancel(${o.id})">Cancelar</button>` : ''}</td></tr>`).join('')}</table>`
-        : '<span class="mute">No hay pedidos pendientes.</span>'}</div>
-      <div class="card tw"><h3>Historial reciente</h3>
-        ${history.length ? `<table><tr><th>Pedido</th><th>Productos</th><th>Estado</th><th class="n">Valor</th></tr>
-        ${history.map((o) => `<tr><td>#${o.id}<br><small class="mute">${dt(o.created_at)}<br>${esc(o.who)}</small></td><td>${lines(o)}</td>
-          <td>${o.status === 'recibido' ? `<span class="tag ok">Recibido</span><br><small class="mute">${dt(o.received_at)}<br>${esc(o.received_name)} · ${o.method}</small>` : '<span class="tag err">Cancelado</span>'}</td>
-          <td class="n">${money(o.status === 'recibido' ? o.paid : o.total)}</td></tr>`).join('')}</table>`
-        : '<span class="mute">Sin pedidos.</span>'}</div>`;
+    const pendTotal = pending.reduce((t, o) => t + Number(o.total), 0);
+    const byId = (id) => prods.find((p) => p.id === id);
+    const line = (i) => `<li class="flex items-center gap-2.5 py-1">${ordThumb(byId(i.product_id), 'h-9 w-9')}<span class="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">${esc(i.name)}${i.product_id ? '' : ' <span class="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">NUEVO</span>'}</span>
+      <span class="rounded-lg bg-ice px-2 py-0.5 text-sm font-extrabold text-brand">${i.received_qty != null && i.received_qty !== i.qty ? `${i.received_qty} de ${i.qty}` : '×' + i.qty}</span></li>`;
+    $('#main').innerHTML = `<div class="ord">
+      <div class="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-r from-navy to-brand p-5 text-white shadow-lg">
+        <div><h2 class="!mb-0 text-2xl font-extrabold !text-white">Pedidos a proveedores</h2>
+          <p class="mt-1 text-sm text-blue-100">Registra lo que pediste; quien lo reciba verifica, paga y suma el stock.</p></div>
+        <div class="flex gap-3">
+          <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${pending.length}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Pendientes</div></div>
+          <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${money(pendTotal)}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Por pagar</div></div>
+        </div>
+      </div>
+      <div class="flex flex-col gap-5 lg:flex-row lg:items-start">
+        <section class="min-w-0 flex-1 rounded-3xl border border-line bg-white p-5 shadow-sm lg:max-w-xl">
+          <h3 class="!mb-3 flex items-center gap-2 text-lg font-extrabold text-navy"><span class="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-sm text-white">1</span> Nuevo pedido</h3>
+          <div class="relative">
+            <input id="os" autocomplete="off" placeholder="🔎 Escribe el producto (ej. coca zero)…" class="!rounded-2xl !py-3" oninput="A.ordFind()" onfocus="A.ordFind()" onkeydown="if(event.key==='Escape')$('#ores').hidden=true">
+            <div id="ores" hidden class="absolute inset-x-0 top-full z-20 mt-1.5 max-h-80 overflow-y-auto rounded-2xl border border-line bg-white p-1.5 shadow-xl"></div>
+          </div>
+          <div id="osel"></div>
+          <div id="odraft" class="mt-4"></div>
+          <div class="mt-4 rounded-2xl bg-ice/60 p-3">
+            <div class="flex flex-wrap gap-3">
+              <div class="min-w-[9rem] flex-1"><label class="text-xs font-bold uppercase tracking-wide text-slate-500">Valor total del pedido</label><input id="ot" type="number" inputmode="numeric" min="1" placeholder="$ 0" value="${d.total}" oninput="S.orderDraft.total=this.value" class="!text-lg !font-extrabold"></div>
+              <div class="min-w-[9rem] flex-[2]"><label class="text-xs font-bold uppercase tracking-wide text-slate-500">Nota (opcional)</label><input id="on" maxlength="200" placeholder="Proveedor, observaciones…" value="${esc(d.note)}" oninput="S.orderDraft.note=this.value"></div>
+            </div>
+          </div>
+          <button class="btn mt-4 w-full !rounded-2xl !py-3 text-base" onclick="A.ordSave()">Registrar pedido</button>
+        </section>
+        <section class="min-w-0 flex-1">
+          <h3 class="!mb-3 flex items-center gap-2 text-lg font-extrabold text-navy"><span class="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-sm text-white">2</span> Pendientes por recibir</h3>
+          ${pending.length ? `<div class="flex flex-col gap-3">${pending.map((o) => `<article class="overflow-hidden rounded-3xl border border-amber-200 bg-white shadow-sm">
+            <header class="flex items-center justify-between gap-2 bg-amber-50 px-4 py-2.5">
+              <div><b class="text-navy">Pedido #${o.id}</b><div class="text-xs text-slate-500">${dt(o.created_at)} · pidió ${esc(o.who)}</div></div>
+              <div class="text-right text-xl font-extrabold text-navy">${money(o.total)}</div></header>
+            <ul class="divide-y divide-slate-100 px-4 py-1.5">${o.items.map(line).join('')}</ul>
+            ${o.note ? `<p class="px-4 pb-1 text-xs italic text-slate-500">${esc(o.note)}</p>` : ''}
+            <footer class="flex gap-2 px-4 pb-3 pt-2"><button class="btn flex-1 !rounded-xl" onclick="A.ordReceive(${o.id})">✔ Recibir y pagar</button>
+              ${S.user.role === 'admin' || o.user_id === S.user.id ? `<button class="btn sec !rounded-xl" onclick="A.ordCancel(${o.id})">Cancelar</button>` : ''}</footer></article>`).join('')}</div>`
+          : '<div class="rounded-3xl border border-dashed border-line bg-white/70 p-8 text-center text-slate-500"><div class="text-3xl">📦</div>No hay pedidos pendientes.</div>'}
+        </section>
+      </div>
+      <section class="mt-6"><h3 class="!mb-3 text-lg font-extrabold text-navy">Historial reciente</h3>
+        ${history.length ? `<div class="flex flex-col gap-2">${history.map((o) => `<details class="rounded-2xl border border-line bg-white px-4 py-2.5 shadow-sm">
+          <summary class="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1"><b class="text-navy">#${o.id}</b>
+            ${o.status === 'recibido' ? '<span class="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-700">Recibido</span>' : '<span class="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-700">Cancelado</span>'}
+            <span class="text-xs text-slate-500">${dt(o.created_at)} · ${esc(o.who)}${o.status === 'recibido' ? ` → ${esc(o.received_name)} (${o.method})` : ''}</span>
+            <b class="ml-auto text-navy">${money(o.status === 'recibido' ? o.paid : o.total)}</b></summary>
+          <ul class="mt-1 divide-y divide-slate-100">${o.items.map(line).join('')}</ul></details>`).join('')}</div>`
+        : '<span class="text-slate-500">Sin pedidos.</span>'}</section></div>`;
     A.ordDraft();
   },
   async dinero() {
@@ -641,6 +669,13 @@ const views = {
   },
 };
 window.views = views; window.S = S;
+
+// Pedidos: miniatura del producto (foto o ícono) y selector de cantidad con − / +
+const ordThumb = (p, size) => (p && p.photo
+  ? `<img class="${size} shrink-0 rounded-xl object-cover ring-1 ring-line" src="${photoUrl(p)}" alt="">`
+  : `<span class="${size} flex shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-ice to-blue-200 text-brand">${icon('productos')}</span>`);
+const ordStep = (dec, inc, n) => `<div class="flex items-center overflow-hidden rounded-xl border border-line bg-ice/50">
+  <button class="h-8 w-8 text-lg font-bold text-brand hover:bg-ice" onclick="${dec}">−</button><b class="w-9 text-center text-sm">${n}</b><button class="h-8 w-8 text-lg font-bold text-brand hover:bg-ice" onclick="${inc}">+</button></div>`;
 
 function salesTable(sales, canVoid) {
   if (!sales.length) return '<span class="mute">Sin ventas.</span>';
@@ -1076,20 +1111,46 @@ const A = window.A = {
   // Pedidos
   ordDraft() {
     const d = S.orderDraft;
-    $('#odraft').innerHTML = d.items.length ? `<table>${d.items.map((i, k) => `<tr><td>${esc(i.name)}${i.product_id ? '' : ' <span class="tag">nuevo</span>'}</td><td class="n">${i.qty}</td>
-      <td class="n"><button class="btn sec sm" onclick="S.orderDraft.items.splice(${k},1);A.ordDraft()">Quitar</button></td></tr>`).join('')}</table>` : '';
+    $('#odraft').innerHTML = d.items.length ? `<div class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">En este pedido (${d.items.length})</div><div class="flex flex-col gap-2">${d.items.map((i, k) => `<div class="flex items-center gap-3 rounded-2xl border border-line bg-white p-2 pr-3 shadow-sm">
+      ${ordThumb(i.product_id ? S.prods.find((p) => p.id === i.product_id) : null, 'h-12 w-12')}
+      <div class="min-w-0 flex-1"><div class="truncate text-sm font-bold text-slate-800">${esc(i.name)}</div>${i.product_id ? '' : '<span class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">PRODUCTO NUEVO</span>'}</div>
+      ${ordStep(`A.ordQty(${k},-1)`, `A.ordQty(${k},1)`, i.qty)}
+      <button class="flex h-8 w-8 items-center justify-center rounded-full text-rose-500 hover:bg-rose-50" aria-label="Quitar" onclick="S.orderDraft.items.splice(${k},1);A.ordDraft()">✕</button></div>`).join('')}</div>` : '';
+  },
+  ordQty(k, dlt) {
+    const it = S.orderDraft.items[k]; it.qty = Math.max(1, it.qty + dlt); A.ordDraft();
+  },
+  ordFind() {
+    const q = norm(val('os')).trim(), box = $('#ores');
+    const list = S.prods.filter((p) => p.active && p.track_stock && (!q || norm(p.name + ' ' + (p.category || '')).includes(q))).slice(0, 30);
+    box.innerHTML = list.map((p) => `<button type="button" class="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-ice" onclick="A.ordPick(${p.id})">
+        ${ordThumb(p, 'h-11 w-11')}<span class="min-w-0 flex-1"><b class="block truncate text-sm text-slate-800">${esc(p.name)}</b><small class="text-slate-500">${esc(p.category || 'Sin categoría')}</small></span>
+        <span class="rounded-full px-2 py-0.5 text-xs font-bold ${p.stock <= 0 ? 'bg-rose-100 text-rose-700' : p.stock <= p.min_stock ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}">stock ${p.stock}</span></button>`).join('')
+      + `<button type="button" class="mt-1 flex w-full items-center gap-2 rounded-xl border border-dashed border-brand/40 p-2.5 text-left text-sm font-bold text-brand hover:bg-ice" onclick="A.ordNewProduct(this.dataset.n)" data-n="${esc(val('os').trim())}">＋ ${list.length ? '¿No está? Crear' : 'No existe: crear'} producto nuevo${val('os').trim() ? ` «${esc(val('os').trim())}»` : ''}</button>`;
+    box.hidden = false;
+  },
+  ordPick(id) {
+    const p = S.prods.find((x) => x.id === id); S.ordSel = id;
+    $('#ores').hidden = true; $('#os').value = '';
+    $('#osel').innerHTML = `<div class="mt-3 flex items-center gap-3 rounded-2xl border-2 border-brand/30 bg-ice/60 p-3">
+      ${ordThumb(p, 'h-16 w-16')}
+      <div class="min-w-0 flex-1"><b class="block truncate text-slate-800">${esc(p.name)}</b><small class="text-slate-500">${esc(p.category || 'Sin categoría')} · stock actual ${p.stock}</small></div>
+      <input id="oq" type="number" inputmode="numeric" min="1" placeholder="Cant." class="!w-20 !text-center !text-lg !font-extrabold" onkeydown="if(event.key==='Enter')A.ordAdd()">
+      <button class="btn !rounded-xl" onclick="A.ordAdd()">Agregar</button></div>`;
+    $('#oq').focus();
   },
   ordAdd() {
-    const id = +val('oi'), qty = +val('oq');
+    const id = S.ordSel, qty = +val('oq');
     if (!id) return toast('Elige un producto');
     if (!(qty > 0)) return toast('Escribe la cantidad');
     const p = S.prods.find((x) => x.id === id), it = S.orderDraft.items.find((x) => x.product_id === id);
     if (it) it.qty += qty; else S.orderDraft.items.push({ product_id: id, name: p.name, qty });
-    $('#oi').value = ''; $('#oq').value = ''; A.ordDraft();
+    S.ordSel = null; $('#osel').innerHTML = ''; A.ordDraft(); $('#os').focus();
   },
-  ordNewProduct() {
+  ordNewProduct(name = '') {
+    $('#ores').hidden = true;
     modal(`<h3>Producto nuevo</h3><p class="mute">Se crea en Productos cuando recibas el pedido. El admin puede ajustar su precio de compra después.</p>
-      <label>Nombre</label><input id="nn" maxlength="80">
+      <label>Nombre</label><input id="nn" maxlength="80" value="${esc(name)}">
       <label>Categoría</label><select id="nc"><option value="">Sin categoría</option>${S.cats.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
       <div class="row"><div><label>Precio de venta</label><input id="np" type="number" inputmode="numeric" min="0" value="0"></div>
       <div><label>Cantidad pedida</label><input id="nq" type="number" inputmode="numeric" min="1"></div></div>
