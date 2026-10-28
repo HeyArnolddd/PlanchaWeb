@@ -459,3 +459,8 @@ tr.tot td{border-top:2px solid var(--line);background:var(--ice-2)}
 
 .btn .ic,h3 .ic,small .ic,.seg button .ic,.cw-tabs .ic,.cw-send .ic{vertical-align:-.28em}
 .btn .ic{width:1.1em;height:1.1em}
+
+/* Vender: pulido del punto de venta */
+.prod{transition:transform .25s var(--ease),box-shadow .25s var(--ease),border-color .2s}
+.prod:hover:not(:disabled){transform:translateY(-3px);box-shadow:var(--shadow-lg);border-color:#bcd0f7}
+.total{font-size:2rem;font-weight:800;letter-spacing:-.02em;color:var(--navy)}

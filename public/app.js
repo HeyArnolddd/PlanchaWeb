@@ -394,25 +394,38 @@ const views = {
     S.cart = S.cart.filter((c) => S.prods.find((p) => p.id === c.id));
     if (S.benefit && !S.cart.find((c) => c.id === S.benefit.product_id)) S.benefit = null;
     const cats = [...new Set(S.prods.map((p) => p.category || 'Sin categoría'))];
-    $('#main').innerHTML = `<div class="pos">
-      <div><input id="q" placeholder="Buscar producto…" value="${esc(S.q)}" oninput="S.q=this.value;A.grid()">
+    const lbl = 'text-xs font-bold uppercase tracking-wide text-slate-500';
+    const sold = sales.filter((x) => !x.voided).reduce((t, x) => t + Number(x.total), 0), nSold = sales.filter((x) => !x.voided).length;
+    $('#main').innerHTML = `<div class="ord"><div class="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-r from-navy to-brand p-5 text-white shadow-lg">
+        <div><h2 class="!mb-0 text-2xl font-extrabold !text-white">Vender</h2><p class="mt-1 text-sm text-blue-100">Toca los productos para armar la venta.</p></div>
+        <div class="flex gap-3"><div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${nSold}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Ventas del turno</div></div>
+          <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${money(sold)}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Vendido</div></div></div></div></div>
+      <div class="pos">
+      <div><div class="relative"><span class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">${icon('lupa')}</span>
+        <input id="q" placeholder="Buscar producto…" value="${esc(S.q)}" oninput="S.q=this.value;A.grid()" class="!rounded-2xl !py-3 !pl-11"></div>
         <div class="chips"><button class="${S.cat === 'all' ? 'on' : ''}" onclick="S.cat='all';views.vender()">Todos</button>
         <button class="fchip ${S.cat === 'fav' ? 'on' : ''}" onclick="S.cat='fav';views.vender()">${icon('estrella')} Favoritos</button>
         ${cats.map((c) => `<button class="${S.cat === c ? 'on' : ''}" data-c="${esc(c)}" onclick="S.cat=this.dataset.c;views.vender()">${esc(c)}</button>`).join('')}</div>
         <div class="prods" id="grid"></div></div>
       <div class="card"><h3>Venta</h3><div id="cart"></div></div></div>
-      <div class="card"><h3>Retiro / cambio entre Nequi y efectivo</h3>
-        <p class="mute">Comisión sugerida: $500 por cada $50.000.</p>
-        <div class="row"><div><label>Tipo de movimiento</label><select id="wd" onchange="A.wdFee()"><option value="nequi_efectivo">Nequi → efectivo (el cliente transfiere, tú entregas efectivo)</option><option value="efectivo_nequi">Efectivo → Nequi (el cliente da efectivo, tú transfieres)</option></select></div>
-        <div><label>Monto a entregar</label><input id="wa" type="number" inputmode="numeric" min="1" oninput="A.wdFee()"></div>
-        <div><label>Comisión</label><input id="wf" type="number" inputmode="numeric" min="0" value="0"></div>
-        <div><label>La comisión se cobró en</label><select id="wm"><option value="nequi">Nequi</option><option value="efectivo">Efectivo</option></select></div></div>
-        <p id="wsum" class="mute"></p>
-        <button class="btn" onclick="A.withdraw()">Registrar retiro</button>
-        ${wds.length ? `<div class="tw" style="margin-top:1rem"><table><tr><th>Hora</th><th>Tipo</th><th class="n">Monto</th><th class="n">Comisión</th><th></th></tr>${wds.map((w) =>
-          `<tr style="${w.voided ? 'opacity:.5;text-decoration:line-through' : ''}"><td>${dt(w.created_at).split(', ').pop()}</td><td>${w.direction === 'efectivo_nequi' ? 'Efectivo → Nequi' : 'Nequi → efectivo'}</td><td class="n">${money(w.amount)}</td><td class="n">${money(w.fee)}</td>
-          <td class="n">${w.voided ? '<span class="tag err">Anulado</span>' : `<button class="btn sec sm" onclick="A.voidWd(${w.id})">Anular</button>`}</td></tr>`).join('')}</table></div>` : ''}</div>
-      <div class="card"><h3>Ventas de este turno</h3><div class="tw">${salesTable(sales, true)}</div></div>`;
+      <div class="ord">
+      <section class="mb-5 rounded-3xl border border-line bg-white p-5 shadow-sm"><h3 class="!mb-1 text-lg font-extrabold text-navy">Retiro o cambio entre Nequi y efectivo</h3>
+        <p class="mb-3 text-sm text-slate-500">Comisión sugerida: $500 por cada $50.000.</p>
+        <input type="hidden" id="wd" value="nequi_efectivo"><input type="hidden" id="wm" value="nequi">
+        <div class="mb-3"><div class="mb-1 ${lbl}">Tipo de movimiento</div>
+          <div class="flex flex-col overflow-hidden rounded-2xl border border-line sm:flex-row" data-seg="wd">
+            ${[['nequi_efectivo', payLogo('nequi') + ' Nequi → efectivo', 'El cliente transfiere, tú entregas efectivo'], ['efectivo_nequi', payLogo('efectivo') + ' Efectivo → Nequi', 'El cliente da efectivo, tú transfieres']].map(([v, t, h], i) => `<button type="button" data-v="${v}" onclick="A.loanSeg('wd','${v}');A.wdFee()" class="flex-1 px-4 py-2.5 text-left ${i ? 'border-t border-line sm:border-l sm:border-t-0' : ''} ${v === 'nequi_efectivo' ? 'bg-brand text-white' : 'text-slate-600 hover:bg-ice'}"><span class="inline-flex items-center gap-1.5 text-sm font-bold">${t}</span><span class="block text-xs opacity-80">${h}</span></button>`).join('')}</div></div>
+        <div class="flex flex-wrap gap-3">
+          <div class="min-w-[9rem] flex-1"><label class="${lbl}">Monto a entregar</label><input id="wa" type="number" inputmode="numeric" min="1" placeholder="$ 0" oninput="A.wdFee()" class="!rounded-xl !py-3 !text-lg !font-extrabold"></div>
+          <div class="min-w-[9rem] flex-1"><label class="${lbl}">Comisión</label><input id="wf" type="number" inputmode="numeric" min="0" value="0" class="!rounded-xl !py-3 !text-lg !font-extrabold"></div>
+          <div><div class="mb-1 ${lbl}">La comisión se cobró en</div>${loanSeg('wm', [['nequi', payLogo('nequi') + ' Nequi'], ['efectivo', payLogo('efectivo') + ' Efectivo']], 'nequi')}</div></div>
+        <p id="wsum" class="mt-2 text-sm text-slate-500"></p>
+        <button class="btn mt-3 w-full !rounded-2xl !py-3 text-base sm:w-auto sm:px-8" onclick="A.withdraw()">Registrar retiro</button>
+        ${wds.length ? `<div class="mt-4 flex flex-col gap-2">${wds.map((w) => `<div class="flex flex-wrap items-center gap-3 rounded-2xl bg-ice/50 px-3 py-2 ${w.voided ? 'opacity-50' : ''}">
+          <span class="text-sm text-slate-500">${dt(w.created_at).split(', ').pop()}</span><b class="min-w-0 flex-1 text-sm text-navy ${w.voided ? 'line-through' : ''}">${w.direction === 'efectivo_nequi' ? 'Efectivo → Nequi' : 'Nequi → efectivo'}</b>
+          <span class="text-sm">${money(w.amount)} <span class="text-slate-500">· comisión ${money(w.fee)}</span></span>
+          ${w.voided ? '<span class="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-700">Anulado</span>' : `<button class="btn sec sm !rounded-xl" onclick="A.voidWd(${w.id})">Anular</button>`}</div>`).join('')}</div>` : ''}</section>
+      <section class="rounded-3xl border border-line bg-white p-5 shadow-sm"><h3 class="!mb-3 text-lg font-extrabold text-navy">Ventas de este turno</h3><div class="tw">${salesTable(sales, true)}</div></section></div></div>`;
     A.grid(); A.cart();
   },
 
