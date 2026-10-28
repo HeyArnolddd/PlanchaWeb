@@ -302,44 +302,39 @@ function loginView() {
 // ---------- Vistas ----------
 const views = {
   async resumen() {
-    const admin = S.user.role === 'admin';
-    const d = await api(admin ? '/dashboard' : '/summary'), sh = d.open_shift;
-    const lbl = 'text-[11px] font-bold uppercase tracking-wide';
-    const tile = (label, value, { sub = '', logo = '', ic = 'resumen', tone = 'bg-ice text-brand' } = {}) => `<div class="flex items-center gap-3 rounded-2xl border border-line bg-white p-3.5 shadow-sm">
-      ${logo ? payLogo(logo, 'h-11 w-11') : `<span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${tone}">${icon(ic)}</span>`}
-      <div class="min-w-0"><div class="${lbl} truncate text-slate-500">${label}</div><div class="truncate text-xl font-extrabold tracking-tight text-navy">${value}</div>${sub ? `<div class="truncate text-xs text-slate-500">${sub}</div>` : ''}</div></div>`;
-    const hero = (title, sub, a, b) => `<div class="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-r from-navy to-brand p-5 text-white shadow-lg">
-      <div><h2 class="!mb-0 text-2xl font-extrabold !text-white">${title}</h2><p class="mt-1 text-sm text-blue-100">${sub}</p></div>
-      <div class="flex gap-3">${[a, b].filter(Boolean).map(([n, t]) => `<div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${n}</div><div class="${lbl} text-blue-100">${t}</div></div>`).join('')}</div></div>`;
-    const card = (title, body) => `<section class="min-w-0 flex-1 rounded-3xl border border-line bg-white p-5 shadow-sm"><h3 class="!mb-3 text-lg font-extrabold text-navy">${title}</h3>${body}</section>`;
-    const turno = sh ? `<div class="flex items-center gap-3">${avatar({ id: sh.user_id, name: sh.user_name, photo: sh.user_id === S.user.id ? S.user.photo : undefined }, 'sm')}
-        <div><b class="text-navy">${esc(sh.user_name)}</b><div class="text-sm text-slate-500">Abrió caja ${dt(sh.opened_at)}${admin ? ` · ${sh.sales_count} ventas · ${money(sh.sales_cash + sh.sales_nequi)}` : ''}</div></div></div>`
-      : '<span class="text-slate-500">No hay caja abierta.</span>';
-    const top = admin
-      ? (d.top.length ? Object.entries(d.top.reduce((g, p) => ((g[p.category] ||= []).push(p), g), {})).map(([c, ps]) => `<h4 class="mb-1 mt-3 text-sm font-bold text-slate-600">${esc(c)}</h4><table>${ps.map((p) => `<tr><td>${esc(p.name)}</td><td class="n">${p.qty}</td></tr>`).join('')}</table>`).join('') : '<span class="text-slate-500">Sin ventas aún.</span>')
-      : (d.top.length ? `<table>${d.top.map((p) => `<tr><td>${esc(p.name)}</td><td class="n">${p.qty}</td></tr>`).join('')}</table>` : '<span class="text-slate-500">Sin ventas aún.</span>');
-    const t = d.today;
-    if (!admin) {
-      $('#main').innerHTML = `<div class="ord">${hero('Resumen', 'Cómo va el día.', [t.n, 'Ventas hoy'], [money(t.total), 'Vendido'])}
-        <div class="mb-5">${card('Turno actual', turno)}</div>
-        <div class="flex flex-col gap-5 lg:flex-row lg:items-start">${card('Stock bajo', lowStock(d.low))}${card('Más vendidos hoy', top)}</div></div>`;
+    if (S.user.role !== 'admin') {
+      const d = await api('/summary'), s = d.open_shift;
+      $('#main').innerHTML = `<h2>Resumen</h2>
+        <div class="grid"><div class="stat"><span>Ventas de hoy (${d.today.n})</span><b>${money(d.today.total)}</b></div></div><br>
+        <div class="card"><h3>Turno actual</h3>${s ? `<b>${esc(s.user_name)}</b> abrió caja ${dt(s.opened_at)}` : '<span class="mute">No hay caja abierta.</span>'}</div>
+        <div class="grid">
+          <div class="card"><h3>Stock bajo</h3>${lowStock(d.low)}</div>
+          <div class="card"><h3>Más vendidos hoy</h3>${d.top.length ? `<table>${d.top.map((p) => `<tr><td>${esc(p.name)}</td><td class="n">${p.qty}</td></tr>`).join('')}</table>` : '<span class="mute">Sin ventas aún.</span>'}</div>
+        </div>`;
       return;
     }
-    const net = t.profit - t.expenses;
-    $('#main').innerHTML = `<div class="ord">${hero('Resumen', 'Cómo va el día y cómo está la caja.', [money(t.total), `Ventas hoy (${t.n})`], [money(net), 'Ganancia neta'])}
-      <div class="mb-2 ${lbl} text-slate-500">Caja según el sistema</div>
-      <div class="mb-5 flex flex-col gap-3 sm:flex-row"><div class="flex-1">${tile('Efectivo', money(d.register.cash), { logo: 'efectivo' })}</div><div class="flex-1">${tile('Nequi', money(d.register.nequi), { logo: 'nequi' })}</div>
-        <div class="flex-1">${tile('Total esperado', money(d.register.cash + d.register.nequi), { ic: 'dinero' })}</div></div>
-      <div class="mb-2 ${lbl} text-slate-500">Hoy</div>
-      <div class="mb-5 flex flex-wrap gap-3">${[
-        tile('Ganancia', money(t.profit), { ic: 'reportes', tone: 'bg-emerald-100 text-emerald-700' }),
-        tile(`Retiros Nequi (${t.withdrawals})`, money(t.fees), { sub: 'comisiones', ic: 'caja', tone: 'bg-sky-100 text-sky-700' }),
-        tile('Gastos de implementos', money(t.expenses), { ic: 'gastos', tone: 'bg-amber-100 text-amber-700' }),
-        tile('Pagos de pedidos', money(t.orders), { ic: 'pedidos', tone: 'bg-ice text-brand' }),
-        tile('Inventario', `${money(d.inventory.cost)} → ${money(d.inventory.value)}`, { sub: 'costo → venta', ic: 'productos' }),
-      ].map((x) => `<div class="w-full sm:w-[calc(50%-.375rem)] xl:w-[calc(33.333%-.5rem)]">${x}</div>`).join('')}</div>
-      <div class="mb-5">${card('Turno actual', turno)}</div>
-      <div class="flex flex-col gap-5 lg:flex-row lg:items-start">${card('Stock bajo', lowStock(d.low))}${card('Más vendidos (30 días)', top)}</div></div>`;
+    const d = await api('/dashboard');
+    const s = d.open_shift;
+    $('#main').innerHTML = `
+      <h2>Resumen</h2>
+      <div class="grid">
+        <div class="stat"><span>Efectivo en caja (según sistema)</span><b>${money(d.register.cash)}</b></div>
+        <div class="stat"><span>Nequi (según sistema)</span><b>${money(d.register.nequi)}</b></div>
+        <div class="stat"><span>Total esperado</span><b>${money(d.register.cash + d.register.nequi)}</b></div>
+        <div class="stat"><span>Ventas de hoy (${d.today.n})</span><b>${money(d.today.total)}</b></div>
+        <div class="stat"><span>Ganancia hoy</span><b>${money(d.today.profit)}</b></div>
+        <div class="stat"><span>Retiros Nequi hoy (${d.today.withdrawals}) · comisiones</span><b>${money(d.today.fees)}</b></div>
+        <div class="stat"><span>Gastos de implementos hoy</span><b>${money(d.today.expenses)}</b></div>
+        <div class="stat"><span>Pagos de pedidos hoy</span><b>${money(d.today.orders)}</b></div>
+        <div class="stat"><span>Ganancia neta hoy</span><b>${money(d.today.profit - d.today.expenses)}</b></div>
+        <div class="stat"><span>Inventario (costo → venta)</span><b style="font-size:1.1rem">${money(d.inventory.cost)} → ${money(d.inventory.value)}</b></div>
+      </div><br>
+      <div class="card"><h3>Turno actual</h3>${s ? `<b>${esc(s.user_name)}</b> abrió caja ${dt(s.opened_at)} · ${s.sales_count} ventas · ${money(s.sales_cash + s.sales_nequi)}`
+        : '<span class="mute">No hay caja abierta.</span>'}</div>
+      <div class="grid">
+        <div class="card"><h3>Stock bajo</h3>${lowStock(d.low)}</div>
+        <div class="card"><h3>Más vendidos (30 días)</h3>${d.top.length ? Object.entries(d.top.reduce((g, p) => ((g[p.category] ||= []).push(p), g), {})).map(([c, ps]) => `<h4 style="margin:.6rem 0 .2rem">${esc(c)}</h4><table>${ps.map((p) => `<tr><td>${esc(p.name)}</td><td class="n">${p.qty}</td></tr>`).join('')}</table>`).join('') : '<span class="mute">Sin ventas aún.</span>'}</div>
+      </div>`;
   },
 
   async caja() {
