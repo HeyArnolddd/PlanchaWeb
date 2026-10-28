@@ -410,7 +410,8 @@ const views = {
     const avail = items.filter((i) => i.active && i.available > 0);
     $('#main').innerHTML = `<h2>Préstamo de implementos</h2>
       <div class="card"><h3>Nuevo préstamo</h3>
-        ${avail.length ? `<label>Implemento</label><select id="li">${avail.map((i) => `<option value="${i.id}">${esc(i.name)} (${i.available} disp.)</option>`).join('')}</select>
+        ${avail.length ? `<label>Implemento</label><select id="li" onchange="A.loanPrev()">${avail.map((i) => `<option value="${i.id}">${esc(i.name)} (${i.available} disp.)</option>`).join('')}</select>
+        <div id="lprev" style="margin-top:.4rem"></div>
         <label>Nombre de la persona</label><input id="lb" maxlength="80">
         <div class="row"><div><label>Valor del préstamo</label><input id="lf" type="number" inputmode="numeric" min="0" value="0"></div>
         <div><label>Entra a</label><select id="lm"><option value="efectivo">Caja efectivo</option><option value="nequi">Caja Nequi</option></select></div>
@@ -419,20 +420,21 @@ const views = {
         : '<span class="mute">No hay implementos disponibles para prestar.</span>'}</div>
       <div class="card tw"><h3>Pendientes de devolución <span class="tag ${pending.length ? 'warn' : 'ok'}">${pending.length}</span></h3>
         ${pending.length ? `<table><tr><th>Implemento</th><th>Persona</th><th>Prestado</th><th>Devolver antes de</th><th class="n">Valor</th><th></th></tr>
-        ${pending.map((l) => `<tr><td>${esc(l.item)}</td><td>${esc(l.borrower)}<br><small class="mute">Atendió ${esc(l.who)}</small></td><td>${dt(l.created_at)}</td>
+        ${pending.map((l) => `<tr><td>${loanThumb(items.find((x) => x.id === l.item_id))} ${esc(l.item)}</td><td>${esc(l.borrower)}<br><small class="mute">Atendió ${esc(l.who)}</small></td><td>${dt(l.created_at)}</td>
           <td>${dt(l.due_at)}${l.late ? ' <span class="tag err">Vencido</span>' : ''}</td><td class="n">${money(l.fee)}${l.method ? `<br><small class="mute">${l.method}</small>` : ''}</td>
           <td class="n"><button class="btn sm" onclick="A.loanReturn(${l.id})">Devuelto</button>${admin ? ` <button class="btn sec sm" onclick="A.loanVoid(${l.id})">Anular</button>` : ''}</td></tr>`).join('')}</table>`
         : '<span class="mute">Nada pendiente.</span>'}</div>
       <div class="card tw"><h3>Historial reciente</h3>
         ${history.length ? `<table><tr><th>Implemento</th><th>Persona</th><th>Prestado</th><th>Devuelto</th><th class="n">Valor</th></tr>
-        ${history.map((l) => `<tr style="${l.voided ? 'opacity:.5;text-decoration:line-through' : ''}"><td>${esc(l.item)}</td><td>${esc(l.borrower)}</td><td>${dt(l.created_at)}<br><small class="mute">${esc(l.who)}</small></td>
+        ${history.map((l) => `<tr style="${l.voided ? 'opacity:.5;text-decoration:line-through' : ''}"><td>${loanThumb(items.find((x) => x.id === l.item_id))} ${esc(l.item)}</td><td>${esc(l.borrower)}</td><td>${dt(l.created_at)}<br><small class="mute">${esc(l.who)}</small></td>
           <td>${l.voided ? '<span class="tag err">Anulado</span>' : `${dt(l.returned_at)}<br><small class="mute">Recibió ${esc(l.received_by)}</small>`}</td><td class="n">${money(l.fee)}</td></tr>`).join('')}</table>`
         : '<span class="mute">Sin movimientos.</span>'}</div>
       ${admin ? `<div class="card tw"><div class="row" style="align-items:center"><h3 style="flex:3">Inventario de implementos</h3><button class="btn sm" onclick="A.loanItemForm()">+ Implemento</button></div>
         ${items.length ? `<table><tr><th>Implemento</th><th class="n">Total</th><th class="n">Disponibles</th><th></th></tr>
-        ${items.map((i) => `<tr style="${i.active ? '' : 'opacity:.5'}"><td>${esc(i.name)}${i.active ? '' : ' (inactivo)'}</td><td class="n">${i.qty}</td><td class="n">${i.available}</td>
+        ${items.map((i) => `<tr style="${i.active ? '' : 'opacity:.5'}"><td>${loanThumb(i)} ${esc(i.name)}${i.active ? '' : ' (inactivo)'}</td><td class="n">${i.qty}</td><td class="n">${i.available}</td>
           <td class="n"><button class="btn sec sm" onclick="A.loanItemForm(${i.id})">Editar</button></td></tr>`).join('')}</table>`
         : '<span class="mute">Aún no hay implementos. Agrega raquetas, juegos de mesa, etc.</span>'}</div>` : ''}`;
+    if (avail.length) A.loanPrev();
   },
   async pedidos() {
     const [{ pending, history }, prods, cats] = await Promise.all([api('/orders'), api('/products'), api('/categories')]);
@@ -692,6 +694,10 @@ document.addEventListener('mousedown', (e) => {
   const box = $('#ores');
   if (box && !box.hidden && !e.target.closest('#ores, #os')) box.hidden = true;
 });
+// Préstamos: miniatura del implemento (foto o ícono)
+const loanThumb = (it, size = 'h-10 w-10') => (it && it.photo
+  ? `<img class="${size} shrink-0 rounded-lg object-cover" style="width:40px;height:40px;border-radius:10px;object-fit:cover;vertical-align:middle" src="/api/loan-items/${it.id}/photo?v=${it.photo}" alt="">`
+  : `<span style="display:inline-flex;width:40px;height:40px;border-radius:10px;align-items:center;justify-content:center;background:var(--ice);color:var(--brand);vertical-align:middle">${icon('productos')}</span>`);
 const ordStep = (dec, inc, n) => `<div class="flex items-center overflow-hidden rounded-xl border border-line bg-ice/50">
   <button class="h-8 w-8 text-lg font-bold text-brand hover:bg-ice" onclick="${dec}">−</button><b class="w-9 text-center text-sm">${n}</b><button class="h-8 w-8 text-lg font-bold text-brand hover:bg-ice" onclick="${inc}">+</button></div>`;
 
@@ -1233,8 +1239,13 @@ const A = window.A = {
     if (confirm('¿Anular este préstamo? El dinero se revierte de la caja y el implemento queda libre.') && await act(() => api(`/loans/${id}/void`, 'POST'), 'Préstamo anulado')) views.prestamos();
   },
   loanItemForm(id) {
+    S.photo = undefined;
     const i = id ? S.loanItems.find((x) => x.id === id) : { name: '', qty: 1, active: 1 };
     modal(`<h3>${id ? 'Editar' : 'Nuevo'} implemento</h3>
+      <label>Foto (opcional)</label>
+      <img id="pimg" class="pprev" ${i.photo ? `src="/api/loan-items/${i.id}/photo?v=${i.photo}"` : 'style="display:none"'} alt="">
+      <input id="pf" type="file" accept="image/*" onchange="A.pickPhoto(this)">
+      ${i.photo ? '<a href="#" onclick="A.rmPhoto();return false" class="mute">Quitar foto</a>' : ''}
       <label>Nombre</label><input id="ln" maxlength="80" value="${esc(i.name)}">
       <label>Cantidad total</label><input id="lq" type="number" inputmode="numeric" min="1" value="${i.qty}">
       ${id ? `<label><input type="checkbox" id="la" style="width:auto" ${i.active ? 'checked' : ''}> Activo (se puede prestar)</label>` : ''}
@@ -1243,7 +1254,17 @@ const A = window.A = {
   async saveLoanItem(id) {
     const body = { name: val('ln'), qty: val('lq') };
     if (id) body.active = $('#la').checked;
-    if (await act(() => api(id ? `/loan-items/${id}` : '/loan-items', id ? 'PUT' : 'POST', body), 'Guardado')) { closeModal(); views.prestamos(); }
+    const r = await act(() => api(id ? `/loan-items/${id}` : '/loan-items', id ? 'PUT' : 'POST', body), 'Guardado');
+    if (!r) return;
+    const pid = id || r.id, photo = S.photo;
+    S.photo = undefined; closeModal();
+    if (photo === 'remove') await act(() => api(`/loan-items/${pid}/photo`, 'DELETE'));
+    else if (photo) await act(() => api(`/loan-items/${pid}/photo`, 'PUT', { image: photo }));
+    views.prestamos();
+  },
+  loanPrev() {
+    const it = S.loanItems.find((x) => x.id === +val('li'));
+    $('#lprev').innerHTML = it && it.photo ? `<img src="/api/loan-items/${it.id}/photo?v=${it.photo}" alt="" style="width:96px;height:96px;object-fit:cover;border-radius:14px">` : '';
   },
 
   async fixCount(id) {

@@ -255,6 +255,12 @@ CREATE TABLE IF NOT EXISTS loan_items (
   active INTEGER NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS loan_item_photos (
+  item_id INTEGER PRIMARY KEY REFERENCES loan_items(id) ON DELETE CASCADE,
+  data BYTEA NOT NULL,
+  mime TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL
+);
 CREATE TABLE IF NOT EXISTS loans (
   id SERIAL PRIMARY KEY,
   item_id INTEGER NOT NULL REFERENCES loan_items(id),
@@ -1048,7 +1054,8 @@ const LOAN_SQL = `SELECT l.*, i.name AS item, u.name AS who, r.name AS received_
   (l.returned_at IS NULL AND l.voided=0 AND l.due_at < now()) AS late
   FROM loans l JOIN loan_items i ON i.id=l.item_id JOIN users u ON u.id=l.user_id LEFT JOIN users r ON r.id=l.returned_by`;
 app.get('/api/loan-items', auth, wrap(() =>
-  D.all(`SELECT i.*, i.qty - COALESCE((SELECT COUNT(*) FROM loans l WHERE l.item_id=i.id AND l.returned_at IS NULL AND l.voided=0),0) AS available
+  D.all(`SELECT i.*, (SELECT extract(epoch FROM updated_at)::bigint FROM loan_item_photos f WHERE f.item_id=i.id) AS photo,
+    i.qty - COALESCE((SELECT COUNT(*) FROM loans l WHERE l.item_id=i.id AND l.returned_at IS NULL AND l.voided=0),0) AS available
     FROM loan_items i ORDER BY i.active DESC, i.name`)));
 app.post('/api/loan-items', auth, admin, wrap(async (req) => {
   const name = str(req.body.name, 'Nombre', 80);
@@ -1069,6 +1076,27 @@ app.put('/api/loan-items/:id', auth, admin, wrap(async (req) => {
     await t.run('UPDATE loan_items SET name=$1, qty=$2, active=$3 WHERE id=$4', [name, qty, req.body.active === false ? 0 : 1, id]);
     await audit(t, req.user, 'Editó implemento de préstamo', `${name} · ${qty} uds`);
   });
+  return { ok: true };
+}));
+app.get('/api/loan-items/:id/photo', auth, wrap(async (req, res) => {
+  const f = await D.get('SELECT data, mime FROM loan_item_photos WHERE item_id=$1', [int(req.params.id, 'id')]);
+  if (!f) throw new HttpError(404, 'Sin foto');
+  res.set({ 'Content-Type': f.mime, 'Cache-Control': 'private, max-age=31536000' });
+  res.end(f.data);
+}));
+app.put('/api/loan-items/:id/photo', auth, admin, wrap(async (req) => {
+  const id = int(req.params.id, 'id');
+  const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(req.body.image || ''));
+  if (!m) throw bad('Imagen inválida');
+  const data = Buffer.from(m[2], 'base64');
+  if (data.length > 200 * 1024) throw bad('La imagen es demasiado grande');
+  if (!await D.get('SELECT 1 FROM loan_items WHERE id=$1', [id])) throw new HttpError(404, 'No existe');
+  await D.run(`INSERT INTO loan_item_photos (item_id,data,mime,updated_at) VALUES ($1,$2,$3,$4)
+    ON CONFLICT (item_id) DO UPDATE SET data=EXCLUDED.data, mime=EXCLUDED.mime, updated_at=EXCLUDED.updated_at`, [id, data, m[1], now()]);
+  return { ok: true };
+}));
+app.delete('/api/loan-items/:id/photo', auth, admin, wrap(async (req) => {
+  await D.run('DELETE FROM loan_item_photos WHERE item_id=$1', [int(req.params.id, 'id')]);
   return { ok: true };
 }));
 app.get('/api/loans', auth, wrap(async () => ({
