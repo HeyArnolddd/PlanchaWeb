@@ -455,7 +455,7 @@ const views = {
         <section class="min-w-0 flex-1 rounded-3xl border border-line bg-white p-5 shadow-sm lg:max-w-xl">
           <h3 class="!mb-3 flex items-center gap-2 text-lg font-extrabold text-navy"><span class="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-sm text-white">1</span> Nuevo pedido</h3>
           <div class="relative">
-            <input id="os" autocomplete="off" placeholder="🔎 Escribe el producto (ej. coca zero)…" class="!rounded-2xl !py-3" oninput="A.ordFind()" onfocus="A.ordFind()" onkeydown="if(event.key==='Escape')$('#ores').hidden=true">
+            <input id="os" autocomplete="off" placeholder="🔎 Escribe el producto (ej. coca zero)…" class="!rounded-2xl !py-3" oninput="A.ordFind()" onfocus="A.ordFind()" onkeydown="if(event.key==='Escape'){$('#ores').hidden=true;A.ordUnpick()}">
             <div id="ores" hidden class="absolute inset-x-0 top-full z-20 mt-1.5 max-h-80 overflow-y-auto rounded-2xl border border-line bg-white p-1.5 shadow-xl"></div>
           </div>
           <div id="osel"></div>
@@ -1135,9 +1135,13 @@ const A = window.A = {
     $('#osel').innerHTML = `<div class="mt-3 flex items-center gap-3 rounded-2xl border-2 border-brand/30 bg-ice/60 p-3">
       ${ordThumb(p, 'h-16 w-16')}
       <div class="min-w-0 flex-1"><b class="block truncate text-slate-800">${esc(p.name)}</b><small class="text-slate-500">${esc(p.category || 'Sin categoría')} · stock actual ${p.stock}</small></div>
-      <input id="oq" type="number" inputmode="numeric" min="1" placeholder="Cant." class="!w-20 !text-center !text-lg !font-extrabold" onkeydown="if(event.key==='Enter')A.ordAdd()">
-      <button class="btn !rounded-xl" onclick="A.ordAdd()">Agregar</button></div>`;
+      <input id="oq" type="number" inputmode="numeric" min="1" placeholder="Cant." class="!w-20 !text-center !text-lg !font-extrabold" onkeydown="if(event.key==='Enter')A.ordAdd();if(event.key==='Escape')A.ordUnpick()">
+      <button class="btn !rounded-xl" onclick="A.ordAdd()">Agregar</button>
+      <button class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-white hover:text-rose-500" aria-label="Quitar selección" title="Elegir otro producto" onclick="A.ordUnpick()">✕</button></div>`;
     $('#oq').focus();
+  },
+  ordUnpick() {
+    S.ordSel = null; $('#osel').innerHTML = ''; $('#os').focus(); A.ordFind();
   },
   ordAdd() {
     const id = S.ordSel, qty = +val('oq');
