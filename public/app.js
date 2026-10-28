@@ -674,6 +674,11 @@ window.views = views; window.S = S;
 const ordThumb = (p, size) => (p && p.photo
   ? `<img class="${size} shrink-0 rounded-xl object-cover ring-1 ring-line" src="${photoUrl(p)}" alt="">`
   : `<span class="${size} flex shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-ice to-blue-200 text-brand">${icon('productos')}</span>`);
+// Cierra el desplegable del buscador de Pedidos al hacer clic fuera de él
+document.addEventListener('mousedown', (e) => {
+  const box = $('#ores');
+  if (box && !box.hidden && !e.target.closest('#ores, #os')) box.hidden = true;
+});
 const ordStep = (dec, inc, n) => `<div class="flex items-center overflow-hidden rounded-xl border border-line bg-ice/50">
   <button class="h-8 w-8 text-lg font-bold text-brand hover:bg-ice" onclick="${dec}">−</button><b class="w-9 text-center text-sm">${n}</b><button class="h-8 w-8 text-lg font-bold text-brand hover:bg-ice" onclick="${inc}">+</button></div>`;
 
