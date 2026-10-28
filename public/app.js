@@ -408,90 +408,63 @@ const views = {
     S.loanItems = items;
     const admin = S.user.role === 'admin';
     const avail = items.filter((i) => i.active && i.available > 0);
-    $('#main').innerHTML = `<h2>Préstamo de implementos</h2>
-      <div class="card"><h3>Nuevo préstamo</h3>
-        ${avail.length ? `<label>Implemento</label><select id="li" onchange="A.loanPrev()">${avail.map((i) => `<option value="${i.id}">${esc(i.name)} (${i.available} disp.)</option>`).join('')}</select>
-        <div id="lprev" style="margin-top:.4rem"></div>
-        <label>Nombre de la persona</label><input id="lb" maxlength="80">
-        <div class="row"><div><label>Valor del préstamo</label><input id="lf" type="number" inputmode="numeric" min="0" value="0"></div>
-        <div><label>Entra a</label><select id="lm"><option value="efectivo">Caja efectivo</option><option value="nequi">Caja Nequi</option></select></div>
-        <div><label>Plazo</label><select id="ld"><option value="1">1 día</option><option value="2" selected>2 días</option></select></div></div>
-        <p><button class="btn" onclick="A.loan()">Registrar préstamo</button></p>`
-        : '<span class="mute">No hay implementos disponibles para prestar.</span>'}</div>
-      <div class="card tw"><h3>Pendientes de devolución <span class="tag ${pending.length ? 'warn' : 'ok'}">${pending.length}</span></h3>
-        ${pending.length ? `<table><tr><th>Implemento</th><th>Persona</th><th>Prestado</th><th>Devolver antes de</th><th class="n">Valor</th><th></th></tr>
-        ${pending.map((l) => `<tr><td>${loanThumb(items.find((x) => x.id === l.item_id))} ${esc(l.item)}</td><td>${esc(l.borrower)}<br><small class="mute">Atendió ${esc(l.who)}</small></td><td>${dt(l.created_at)}</td>
-          <td>${dt(l.due_at)}${l.late ? ' <span class="tag err">Vencido</span>' : ''}</td><td class="n">${money(l.fee)}${l.method ? `<br><small class="mute">${l.method}</small>` : ''}</td>
-          <td class="n"><button class="btn sm" onclick="A.loanReturn(${l.id})">Devuelto</button>${admin ? ` <button class="btn sec sm" onclick="A.loanVoid(${l.id})">Anular</button>` : ''}</td></tr>`).join('')}</table>`
-        : '<span class="mute">Nada pendiente.</span>'}</div>
-      <div class="card tw"><h3>Historial reciente</h3>
-        ${history.length ? `<table><tr><th>Implemento</th><th>Persona</th><th>Prestado</th><th>Devuelto</th><th class="n">Valor</th></tr>
-        ${history.map((l) => `<tr style="${l.voided ? 'opacity:.5;text-decoration:line-through' : ''}"><td>${loanThumb(items.find((x) => x.id === l.item_id))} ${esc(l.item)}</td><td>${esc(l.borrower)}</td><td>${dt(l.created_at)}<br><small class="mute">${esc(l.who)}</small></td>
-          <td>${l.voided ? '<span class="tag err">Anulado</span>' : `${dt(l.returned_at)}<br><small class="mute">Recibió ${esc(l.received_by)}</small>`}</td><td class="n">${money(l.fee)}</td></tr>`).join('')}</table>`
-        : '<span class="mute">Sin movimientos.</span>'}</div>
-      ${admin ? `<div class="card tw"><div class="row" style="align-items:center"><h3 style="flex:3">Inventario de implementos</h3><button class="btn sm" onclick="A.loanItemForm()">+ Implemento</button></div>
-        ${items.length ? `<table><tr><th>Implemento</th><th class="n">Total</th><th class="n">Disponibles</th><th></th></tr>
-        ${items.map((i) => `<tr style="${i.active ? '' : 'opacity:.5'}"><td>${loanThumb(i)} ${esc(i.name)}${i.active ? '' : ' (inactivo)'}</td><td class="n">${i.qty}</td><td class="n">${i.available}</td>
-          <td class="n"><button class="btn sec sm" onclick="A.loanItemForm(${i.id})">Editar</button></td></tr>`).join('')}</table>`
-        : '<span class="mute">Aún no hay implementos. Agrega raquetas, juegos de mesa, etc.</span>'}</div>` : ''}`;
-    if (avail.length) A.loanPrev();
-  },
-  async pedidos() {
-    const [{ pending, history }, prods, cats] = await Promise.all([api('/orders'), api('/products'), api('/categories')]);
-    S.prods = prods; S.cats = cats; S.ordPending = pending; S.ordSel = null;
-    const d = S.orderDraft ||= { items: [], total: '', note: '' };
-    const pendTotal = pending.reduce((t, o) => t + Number(o.total), 0);
-    const byId = (id) => prods.find((p) => p.id === id);
-    const line = (i) => `<li class="flex items-center gap-2.5 py-1">${ordThumb(byId(i.product_id), 'h-9 w-9')}<span class="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">${esc(i.name)}${i.product_id ? '' : ' <span class="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">NUEVO</span>'}</span>
-      <span class="rounded-lg bg-ice px-2 py-0.5 text-sm font-extrabold text-brand">${i.received_qty != null && i.received_qty !== i.qty ? `${i.received_qty} de ${i.qty}` : '×' + i.qty}</span></li>`;
+    const late = pending.filter((l) => l.late).length;
+    const item = (l) => items.find((x) => x.id === l.item_id);
+    const chip = (txt, cls) => `<span class="rounded-full px-2.5 py-0.5 text-xs font-bold ${cls}">${txt}</span>`;
     $('#main').innerHTML = `<div class="ord">
       <div class="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-r from-navy to-brand p-5 text-white shadow-lg">
-        <div><h2 class="!mb-0 text-2xl font-extrabold !text-white">Pedidos a proveedores</h2>
-          <p class="mt-1 text-sm text-blue-100">Registra lo que pediste; quien lo reciba verifica, paga y suma el stock.</p></div>
+        <div><h2 class="!mb-0 text-2xl font-extrabold !text-white">Préstamo de implementos</h2>
+          <p class="mt-1 text-sm text-blue-100">Raquetas, juegos de mesa y más. Registra el préstamo y márcalo cuando lo devuelvan.</p></div>
         <div class="flex gap-3">
-          <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${pending.length}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Pendientes</div></div>
-          <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${money(pendTotal)}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Por pagar</div></div>
+          <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${pending.length}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Prestados</div></div>
+          <div class="rounded-2xl ${late ? 'bg-rose-500/80' : 'bg-white/15'} px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${late}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Vencidos</div></div>
         </div>
       </div>
       <div class="flex flex-col gap-5 lg:flex-row lg:items-start">
         <section class="min-w-0 flex-1 rounded-3xl border border-line bg-white p-5 shadow-sm lg:max-w-xl">
-          <h3 class="!mb-3 flex items-center gap-2 text-lg font-extrabold text-navy"><span class="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-sm text-white">1</span> Nuevo pedido</h3>
-          <div class="relative">
-            <input id="os" autocomplete="off" placeholder="🔎 Escribe el producto (ej. coca zero)…" class="!rounded-2xl !py-3" oninput="A.ordFind()" onfocus="A.ordFind()" onkeydown="if(event.key==='Escape'){$('#ores').hidden=true;A.ordUnpick()}">
-            <div id="ores" hidden class="absolute inset-x-0 top-full z-20 mt-1.5 max-h-80 overflow-y-auto rounded-2xl border border-line bg-white p-1.5 shadow-xl"></div>
-          </div>
-          <div id="osel"></div>
-          <div id="odraft" class="mt-4"></div>
-          <div class="mt-4 rounded-2xl bg-ice/60 p-3">
-            <div class="flex flex-wrap gap-3">
-              <div class="min-w-[9rem] flex-1"><label class="text-xs font-bold uppercase tracking-wide text-slate-500">Valor total del pedido</label><input id="ot" type="number" inputmode="numeric" min="1" placeholder="$ 0" value="${d.total}" oninput="S.orderDraft.total=this.value" class="!text-lg !font-extrabold"></div>
-              <div class="min-w-[9rem] flex-[2]"><label class="text-xs font-bold uppercase tracking-wide text-slate-500">Nota (opcional)</label><input id="on" maxlength="200" placeholder="Proveedor, observaciones…" value="${esc(d.note)}" oninput="S.orderDraft.note=this.value"></div>
+          <h3 class="!mb-3 flex items-center gap-2 text-lg font-extrabold text-navy"><span class="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-sm text-white">1</span> Nuevo préstamo</h3>
+          ${avail.length ? `<input type="hidden" id="li"><input type="hidden" id="lm" value="efectivo"><input type="hidden" id="ld" value="2">
+          <div class="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">¿Qué implemento?</div>
+          <div class="flex flex-wrap gap-2.5">${avail.map((i) => `<button type="button" data-i="${i.id}" onclick="A.loanPick(${i.id})" class="litem flex w-[7.2rem] flex-col items-center gap-1.5 rounded-2xl border-2 border-line bg-white p-2 text-center transition hover:border-brand/50 hover:shadow-md">
+              ${loanThumb(i, 'h-20 w-20')}<b class="line-clamp-2 text-xs leading-tight text-slate-800">${esc(i.name)}</b><small class="text-[11px] text-slate-500">${i.available} disp.</small></button>`).join('')}</div>
+          <div class="mt-4"><label class="text-xs font-bold uppercase tracking-wide text-slate-500">Nombre de la persona</label><input id="lb" maxlength="80" placeholder="¿A quién se le presta?" class="!rounded-2xl !py-3"></div>
+          <div class="mt-3 rounded-2xl bg-ice/60 p-3">
+            <div class="flex flex-wrap items-end gap-3">
+              <div class="min-w-[8rem] flex-1"><label class="text-xs font-bold uppercase tracking-wide text-slate-500">Valor del préstamo</label><input id="lf" type="number" inputmode="numeric" min="0" value="0" class="!text-lg !font-extrabold"></div>
+              <div><div class="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Entra a</div>${loanSeg('lm', [['efectivo', '💵 Efectivo'], ['nequi', '📱 Nequi']], 'efectivo')}</div>
+              <div><div class="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Plazo</div>${loanSeg('ld', [['1', '1 día'], ['2', '2 días']], '2')}</div>
             </div>
           </div>
-          <button class="btn mt-4 w-full !rounded-2xl !py-3 text-base" onclick="A.ordSave()">Registrar pedido</button>
+          <button class="btn mt-4 w-full !rounded-2xl !py-3 text-base" onclick="A.loan()">Registrar préstamo</button>`
+          : '<div class="rounded-2xl border border-dashed border-line p-6 text-center text-slate-500"><div class="text-3xl">🎾</div>No hay implementos disponibles para prestar.</div>'}
         </section>
         <section class="min-w-0 flex-1">
-          <h3 class="!mb-3 flex items-center gap-2 text-lg font-extrabold text-navy"><span class="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-sm text-white">2</span> Pendientes por recibir</h3>
-          ${pending.length ? `<div class="flex flex-col gap-3">${pending.map((o) => `<article class="overflow-hidden rounded-3xl border border-amber-200 bg-white shadow-sm">
-            <header class="flex items-center justify-between gap-2 bg-amber-50 px-4 py-2.5">
-              <div><b class="text-navy">Pedido #${o.id}</b><div class="text-xs text-slate-500">${dt(o.created_at)} · pidió ${esc(o.who)}</div></div>
-              <div class="text-right text-xl font-extrabold text-navy">${money(o.total)}</div></header>
-            <ul class="divide-y divide-slate-100 px-4 py-1.5">${o.items.map(line).join('')}</ul>
-            ${o.note ? `<p class="px-4 pb-1 text-xs italic text-slate-500">${esc(o.note)}</p>` : ''}
-            <footer class="flex gap-2 px-4 pb-3 pt-2"><button class="btn flex-1 !rounded-xl" onclick="A.ordReceive(${o.id})">✔ Recibir y pagar</button>
-              ${S.user.role === 'admin' || o.user_id === S.user.id ? `<button class="btn sec !rounded-xl" onclick="A.ordCancel(${o.id})">Cancelar</button>` : ''}</footer></article>`).join('')}</div>`
-          : '<div class="rounded-3xl border border-dashed border-line bg-white/70 p-8 text-center text-slate-500"><div class="text-3xl">📦</div>No hay pedidos pendientes.</div>'}
+          <h3 class="!mb-3 flex items-center gap-2 text-lg font-extrabold text-navy"><span class="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-sm text-white">2</span> Pendientes de devolución</h3>
+          ${pending.length ? `<div class="flex flex-col gap-3">${pending.map((l) => `<article class="overflow-hidden rounded-3xl border ${l.late ? 'border-rose-300' : 'border-amber-200'} bg-white shadow-sm">
+            <div class="flex items-center gap-3 p-3">${loanThumb(item(l), 'h-16 w-16')}
+              <div class="min-w-0 flex-1"><b class="block truncate text-navy">${esc(l.item)}</b><div class="truncate text-sm text-slate-700">👤 ${esc(l.borrower)}</div>
+                <div class="text-xs text-slate-500">Prestado ${dt(l.created_at)} · atendió ${esc(l.who)}</div></div>
+              <div class="text-right"><div class="text-lg font-extrabold text-navy">${money(l.fee)}</div>${l.method ? `<small class="text-xs text-slate-500">${l.method}</small>` : ''}</div></div>
+            <div class="flex flex-wrap items-center gap-2 ${l.late ? 'bg-rose-50' : 'bg-amber-50'} px-3 py-2">
+              <span class="text-xs font-semibold ${l.late ? 'text-rose-700' : 'text-amber-800'}">⏰ Devolver antes de ${dt(l.due_at)}</span>${l.late ? chip('VENCIDO', 'bg-rose-500 text-white') : ''}
+              <span class="ml-auto flex gap-2"><button class="btn sm !rounded-xl" onclick="A.loanReturn(${l.id})">✔ Devuelto</button>${admin ? `<button class="btn sec sm !rounded-xl" onclick="A.loanVoid(${l.id})">Anular</button>` : ''}</span></div></article>`).join('')}</div>`
+          : '<div class="rounded-3xl border border-dashed border-line bg-white/70 p-8 text-center text-slate-500"><div class="text-3xl">✅</div>Nada pendiente: todo fue devuelto.</div>'}
         </section>
       </div>
       <section class="mt-6"><h3 class="!mb-3 text-lg font-extrabold text-navy">Historial reciente</h3>
-        ${history.length ? `<div class="flex flex-col gap-2">${history.map((o) => `<details class="rounded-2xl border border-line bg-white px-4 py-2.5 shadow-sm">
-          <summary class="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1"><b class="text-navy">#${o.id}</b>
-            ${o.status === 'recibido' ? '<span class="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-700">Recibido</span>' : '<span class="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-700">Cancelado</span>'}
-            <span class="text-xs text-slate-500">${dt(o.created_at)} · ${esc(o.who)}${o.status === 'recibido' ? ` → ${esc(o.received_name)} (${o.method})` : ''}</span>
-            <b class="ml-auto text-navy">${money(o.status === 'recibido' ? o.paid : o.total)}</b></summary>
-          <ul class="mt-1 divide-y divide-slate-100">${o.items.map(line).join('')}</ul></details>`).join('')}</div>`
-        : '<span class="text-slate-500">Sin pedidos.</span>'}</section></div>`;
-    A.ordDraft();
+        ${history.length ? `<div class="flex flex-col gap-2">${history.map((l) => `<div class="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-white px-3 py-2 shadow-sm ${l.voided ? 'opacity-60' : ''}">
+          ${loanThumb(item(l), 'h-10 w-10')}
+          <div class="min-w-0 flex-1"><b class="block truncate text-sm text-navy ${l.voided ? 'line-through' : ''}">${esc(l.item)} <span class="font-medium text-slate-600">· ${esc(l.borrower)}</span></b>
+            <div class="text-xs text-slate-500">Prestó ${esc(l.who)} · ${dt(l.created_at)}${l.voided ? '' : ` → recibió ${esc(l.received_by)} · ${dt(l.returned_at)}`}</div></div>
+          ${l.voided ? chip('Anulado', 'bg-rose-100 text-rose-700') : chip('Devuelto', 'bg-emerald-100 text-emerald-700')}<b class="text-navy">${money(l.fee)}</b></div>`).join('')}</div>`
+        : '<span class="text-slate-500">Sin movimientos.</span>'}</section>
+      ${admin ? `<section class="mt-6"><div class="mb-3 flex items-center justify-between"><h3 class="!mb-0 text-lg font-extrabold text-navy">Inventario de implementos</h3><button class="btn sm !rounded-xl" onclick="A.loanItemForm()">+ Implemento</button></div>
+        ${items.length ? `<div class="flex flex-wrap gap-3">${items.map((i) => `<div class="flex w-full items-center gap-3 rounded-2xl border border-line bg-white p-3 shadow-sm sm:w-[calc(50%-.375rem)] xl:w-[calc(33.333%-.5rem)] ${i.active ? '' : 'opacity-50'}">
+          ${loanThumb(i, 'h-14 w-14')}<div class="min-w-0 flex-1"><b class="block truncate text-navy">${esc(i.name)}</b>
+            <div class="text-xs text-slate-500">${i.available} de ${i.qty} disponibles${i.active ? '' : ' · inactivo'}</div></div>
+          <button class="btn sec sm !rounded-xl" onclick="A.loanItemForm(${i.id})">Editar</button></div>`).join('')}</div>`
+        : '<div class="rounded-3xl border border-dashed border-line bg-white/70 p-6 text-center text-slate-500">Aún no hay implementos. Agrega raquetas, juegos de mesa, etc.</div>'}</section>` : ''}</div>`;
+    if (avail.length) A.loanPick(avail[0].id);
   },
   async dinero() {
     const [{ register, adjustments }, prods] = await Promise.all([api('/register'), api('/products')]);
@@ -695,9 +668,11 @@ document.addEventListener('mousedown', (e) => {
   if (box && !box.hidden && !e.target.closest('#ores, #os')) box.hidden = true;
 });
 // Préstamos: miniatura del implemento (foto o ícono)
-const loanThumb = (it, size = 'h-10 w-10') => (it && it.photo
-  ? `<img class="${size} shrink-0 rounded-lg object-cover" style="width:40px;height:40px;border-radius:10px;object-fit:cover;vertical-align:middle" src="/api/loan-items/${it.id}/photo?v=${it.photo}" alt="">`
-  : `<span style="display:inline-flex;width:40px;height:40px;border-radius:10px;align-items:center;justify-content:center;background:var(--ice);color:var(--brand);vertical-align:middle">${icon('productos')}</span>`);
+const loanThumb = (it, size = 'h-12 w-12') => (it && it.photo
+  ? `<img class="${size} shrink-0 rounded-xl object-cover ring-1 ring-line" src="/api/loan-items/${it.id}/photo?v=${it.photo}" alt="">`
+  : `<span class="${size} flex shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-ice to-blue-200 text-brand">${icon('productos')}</span>`);
+// Préstamos: botones tipo selector que escriben su valor en un input oculto
+const loanSeg = (id, opts, cur) => `<div class="flex overflow-hidden rounded-xl border border-line bg-white" data-seg="${id}">${opts.map(([v, t]) => `<button type="button" data-v="${v}" onclick="A.loanSeg('${id}','${v}')" class="px-3 py-2 text-sm font-bold ${v === cur ? 'bg-brand text-white' : 'text-slate-600 hover:bg-ice'}">${t}</button>`).join('')}</div>`;
 const ordStep = (dec, inc, n) => `<div class="flex items-center overflow-hidden rounded-xl border border-line bg-ice/50">
   <button class="h-8 w-8 text-lg font-bold text-brand hover:bg-ice" onclick="${dec}">−</button><b class="w-9 text-center text-sm">${n}</b><button class="h-8 w-8 text-lg font-bold text-brand hover:bg-ice" onclick="${inc}">+</button></div>`;
 
@@ -1262,9 +1237,19 @@ const A = window.A = {
     else if (photo) await act(() => api(`/loan-items/${pid}/photo`, 'PUT', { image: photo }));
     views.prestamos();
   },
-  loanPrev() {
-    const it = S.loanItems.find((x) => x.id === +val('li'));
-    $('#lprev').innerHTML = it && it.photo ? `<img src="/api/loan-items/${it.id}/photo?v=${it.photo}" alt="" style="width:96px;height:96px;object-fit:cover;border-radius:14px">` : '';
+  loanPick(id) {
+    $('#li').value = id;
+    document.querySelectorAll('.litem').forEach((b) => {
+      const on = +b.dataset.i === id;
+      b.classList.toggle('border-brand', on); b.classList.toggle('bg-ice', on); b.classList.toggle('shadow-md', on);
+    });
+  },
+  loanSeg(id, v) {
+    $('#' + id).value = v;
+    document.querySelectorAll(`[data-seg="${id}"] button`).forEach((b) => {
+      const on = b.dataset.v === v;
+      b.classList.toggle('bg-brand', on); b.classList.toggle('text-white', on); b.classList.toggle('text-slate-600', !on);
+    });
   },
 
   async fixCount(id) {
