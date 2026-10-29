@@ -158,9 +158,11 @@ const lastChatId = () => (S.chat.length ? S.chat[S.chat.length - 1].id : 0);
 const EMOJIS = '😀 😁 😂 🤣 😊 😍 😘 😎 🤔 😅 😢 😭 😡 🥳 😴 🙄 😬 🤗 👍 👎 👏 🙌 🙏 💪 👋 🤝 ✌️ 👌 🔥 ⭐ ❤️ 💙 💯 🎉 🎁 ✅ ❌ ⚠️ 💸 💵 📱 🍔 🍟 🥟 🥤 🍫 🍦 🍕 ☕ 🧹 🧾 📦 ⏰ 📌 👀 🚀'.split(' ');
 const peerName = () => (S.peer === 0 ? 'Equipo (todos)' : ((S.chatUsers && S.chatUsers.users.find((x) => x.id === S.peer)) || { name: 'Mensaje privado' }).name);
 // cabecera de una conversación: foto y nombre de con quién hablas
+const GROUP_AV = (cls = 'h-10 w-10') => `<span class="grid ${cls} shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand to-sky-400 text-white shadow-sm"><svg viewBox="0 0 24 24" class="h-1/2 w-1/2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M21 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>`;
 function peerHead() {
   const u = S.peer ? (S.chatUsers && S.chatUsers.users.find((x) => x.id === S.peer)) : null;
-  return (S.peer === 0 ? `<b class="av sm">${icon('usuarios')}</b>` : avatar(u || { id: S.peer, name: peerName() }, 'sm', true)) + esc(peerName());
+  const av = S.peer === 0 ? GROUP_AV('h-9 w-9') : avatar(u || { id: S.peer, name: peerName() }, 'sm', true);
+  return `${av}<span class="min-w-0 leading-tight"><b class="block truncate text-[15px] font-extrabold">${esc(peerName())}</b><small class="block text-[11px] font-medium text-blue-100">${S.peer === 0 ? 'Chat de todo el equipo' : 'Mensaje privado'}</small></span>`;
 }
 function chatShell() {
   let w = $('#cw');
@@ -172,20 +174,33 @@ function chatShell() {
 function chatDraw() {
   const w = $('#cw'); if (!w) return;
   if (!S.chatOpen) {
-    w.innerHTML = '<button class="cw-btn" onclick="A.chatToggle()"><img class="cwi" src="/chaticon.png" alt="">Chat<b class="badge" id="cwbadge" hidden></b></button>';
+    w.innerHTML = '<button class="relative inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-brand to-sky-500 py-2 pl-2 pr-5 text-[15px] font-extrabold text-white shadow-xl shadow-blue-600/40 transition hover:-translate-y-0.5 hover:shadow-2xl" onclick="A.chatToggle()"><img class="h-8 w-8 rounded-full bg-white p-1 shadow" src="/chaticon.png" alt="">Chat<b class="badge !m-0" id="cwbadge" hidden></b></button>';
     chatPaintBadge(); return;
   }
-  w.innerHTML = `<div class="cw-panel"><div class="cw-head">${S.peer === null ? '' : '<button onclick="A.chatBack()" aria-label="Volver">←</button>'}
-    <b class="cwt">${S.peer === null ? '<img class="cwi" src="/chaticon.png" alt="">Chat' : peerHead()}</b><button onclick="A.chatToggle()" aria-label="Cerrar">✕</button></div>
-    ${S.peer === null ? '<div id="chatside" class="cw-list"></div>'
-      : `<div id="chatlist" class="chatlist"></div><div id="cwpick" class="cw-pick" hidden></div><div class="cw-send"><button class="cw-ic" onclick="A.pick()" aria-label="Emojis y stickers">${icon('sonrisa')}</button><input id="cm" maxlength="500" autocomplete="off" placeholder="Escribe un mensaje…" onkeydown="if(event.key==='Enter')A.say()"><button class="cw-go" onclick="A.say()" aria-label="Enviar"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button></div>`}</div>`;
+  const hb = 'grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/15 text-base text-white transition hover:bg-white/25';
+  w.innerHTML = `<div class="flex h-[min(34rem,80vh)] w-[min(24rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5">
+    <div class="flex items-center gap-3 bg-gradient-to-r from-navy via-brand to-sky-500 px-4 py-3 text-white">
+      ${S.peer === null ? '' : `<button class="${hb}" onclick="A.chatBack()" aria-label="Volver">←</button>`}
+      <div class="flex min-w-0 flex-1 items-center gap-2.5">${S.peer === null
+        ? '<img class="h-9 w-9 rounded-full bg-white p-1 shadow" src="/chaticon.png" alt=""><span class="leading-tight"><b class="block text-[15px] font-extrabold">Chat</b><small class="block text-[11px] font-medium text-blue-100">Equipo y mensajes privados</small></span>'
+        : peerHead()}</div>
+      <button class="${hb}" onclick="A.chatToggle()" aria-label="Cerrar">✕</button></div>
+    ${S.peer === null ? '<div id="chatside" class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2"></div>'
+      : `<div id="chatlist" class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto bg-gradient-to-b from-ice/70 to-white px-3 py-3"></div>
+        <div id="cwpick" class="cw-pick" hidden></div>
+        <div class="flex items-center gap-2 border-t border-line bg-white p-3">
+          <button class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-ice text-lg text-brand transition hover:bg-blue-100" onclick="A.pick()" aria-label="Emojis y stickers">${icon('sonrisa')}</button>
+          <input id="cm" class="!min-w-0 !flex-1 !rounded-full !border-line !bg-ice/60 !px-4 !py-2.5" maxlength="500" autocomplete="off" placeholder="Escribe un mensaje…" onkeydown="if(event.key==='Enter')A.say()">
+          <button class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand to-sky-500 text-white shadow-md shadow-blue-600/40 transition hover:scale-105" onclick="A.say()" aria-label="Enviar"><svg viewBox="0 0 24 24" class="h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button></div>`}</div>`;
   chatPaintSide(); chatPaintList();
   const f = $('#cm'); if (f) f.focus();
 }
 function chatPaintSide() {
   const side = $('#chatside'); if (!side || !S.chatUsers) return;
-  const row = (id, name, n, photo) => `<button onclick="A.openChat(${id})"><span class="crow">${id ? avatar({ id, name, photo }, 'sm') : `<b class="av sm">${icon('usuarios')}</b>`}${esc(name)}</span>${n ? `<b class="badge">${n}</b>` : ''}</button>`;
-  side.innerHTML = row(0, 'Equipo (todos)', S.chatUsers.general) + S.chatUsers.users.map((u) => row(u.id, u.name, u.unread, u.photo)).join('');
+  const row = (id, name, n, photo) => `<button class="flex w-full items-center justify-between gap-3 rounded-2xl px-3 py-2.5 text-left transition hover:bg-ice [&_.av]:!h-10 [&_.av]:!w-10" onclick="A.openChat(${id})">
+    <span class="flex min-w-0 items-center gap-3">${id ? avatar({ id, name, photo }, 'sm') : GROUP_AV()}<span class="min-w-0"><b class="block truncate text-sm font-bold text-slate-800">${esc(name)}</b><small class="block text-xs text-slate-500">${id ? 'Mensaje privado' : 'Todos los usuarios'}</small></span></span>
+    ${n ? `<b class="grid h-5 min-w-5 place-items-center rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white">${n}</b>` : ''}</button>`;
+  side.innerHTML = row(0, 'Equipo', S.chatUsers.general) + '<div class="mx-3 my-1 border-t border-line"></div>' + S.chatUsers.users.map((u) => row(u.id, u.name, u.unread, u.photo)).join('');
 }
 function chatPaintBadge() {
   const d = $('#cwbadge'); if (!d || !S.chatUsers) return;
@@ -196,19 +211,25 @@ function chatPaintList() {
   const box = $('#chatlist'); if (!box) return;
   const bottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
   const day = (m) => new Date(m.created_at).toLocaleDateString('es-CO', { timeZone: 'America/Bogota', weekday: 'long', day: 'numeric', month: 'long' });
+  const near = (x, y) => new Date(y.created_at) - new Date(x.created_at) < 5 * 6e4;
   box.innerHTML = S.chat.map((m, i) => {
     const mine = m.user_id === S.user.id, prev = S.chat[i - 1], next = S.chat[i + 1];
     const newDay = !prev || day(prev) !== day(m);
-    const first = newDay || prev.user_id !== m.user_id || new Date(m.created_at) - new Date(prev.created_at) > 5 * 6e4;
-    const last = !next || next.user_id !== m.user_id || day(next) !== day(m) || new Date(next.created_at) - new Date(m.created_at) > 5 * 6e4;
+    const first = newDay || prev.user_id !== m.user_id || !near(prev, m);
+    const last = !next || next.user_id !== m.user_id || day(next) !== day(m) || !near(m, next);
     const time = dt(m.created_at).split(', ').pop();
-    const seen = mine && S.peer ? `<span class="seen">${m.id <= S.peerRead ? '✓✓' : '✓'}</span>` : '';
-    const body = m.sticker_id ? `<img class="stk" src="/api/stickers/${m.sticker_id}/img" alt="sticker">` : `<div class="mt">${m.body ? esc(m.body) : '<i class="mute">sticker eliminado</i>'}</div>`;
-    return (newDay ? `<div class="dsep"><span>${esc(day(m))}</span></div>` : '')
-      + `<div class="mrow ${mine ? 'me' : ''} ${first ? 'first' : ''} ${last ? 'last' : ''}">${mine ? '' : last ? avatar({ id: m.user_id, name: m.user_name, photo: m.photo }, 'sm', true) : '<span class="avgap"></span>'}`
-      + `<div class="msg ${mine ? 'me' : ''}">${!mine && first && !S.peer ? `<small class="who">${esc(m.user_name)}</small>` : ''}${body}<small class="tm">${time}${seen}</small></div></div>`;
+    const seen = mine && S.peer ? `<span class="font-extrabold tracking-tighter ${m.id <= S.peerRead ? 'text-sky-200' : ''}">${m.id <= S.peerRead ? '✓✓' : '✓'}</span>` : '';
+    const body = m.sticker_id ? `<img class="h-28 w-28 object-contain" src="/api/stickers/${m.sticker_id}/img" alt="sticker">`
+      : `<div class="whitespace-pre-wrap text-[14px] leading-snug [overflow-wrap:anywhere]">${m.body ? esc(m.body) : '<i class="opacity-60">sticker eliminado</i>'}</div>`;
+    const corner = mine ? `${last ? 'rounded-br-md' : ''} ${first ? '' : 'rounded-tr-md'}` : `${last ? 'rounded-bl-md' : ''} ${first ? '' : 'rounded-tl-md'}`;
+    const look = mine ? 'bg-gradient-to-br from-brand to-sky-500 text-white' : 'bg-white text-slate-800 ring-1 ring-line';
+    return (newDay ? `<div class="my-2 self-center rounded-full bg-white px-3 py-0.5 text-[11px] font-bold capitalize text-slate-500 shadow-sm ring-1 ring-line">${esc(day(m))}</div>` : '')
+      + `<div class="flex max-w-[88%] items-end gap-2 ${mine ? 'flex-row-reverse self-end' : 'self-start'} ${first ? 'mt-2' : ''}">
+        ${mine ? '' : last ? avatar({ id: m.user_id, name: m.user_name, photo: m.photo }, 'sm', true) : '<span class="w-[30px] shrink-0"></span>'}
+        <div class="min-w-0 rounded-2xl px-3 py-1.5 shadow-sm ${look} ${corner}">${!mine && first && !S.peer ? `<div class="text-[11px] font-extrabold text-brand">${esc(m.user_name)}</div>` : ''}${body}
+          <div class="mt-0.5 flex items-center justify-end gap-1 text-[10px] ${mine ? 'text-white/70' : 'text-slate-400'}">${time}${seen}</div></div></div>`;
   }).join('')
-    || '<div class="cempty"><span>Aún no hay mensajes</span><small>¡Escribe el primero!</small></div>';
+    || '<div class="m-auto text-center"><b class="block text-navy">Aún no hay mensajes</b><small class="text-slate-500">¡Escribe el primero!</small></div>';
   if (bottom) box.scrollTop = box.scrollHeight;
 }
 async function chatPoll() {
