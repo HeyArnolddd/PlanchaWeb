@@ -50,6 +50,26 @@ async function act(fn, ok) {
 
 const S = { user: null, view: null, chat: [], peerRead: 0, peer: null, chatOpen: false, cart: [], benefit: null, method: 'efectivo', cat: 'all', q: '' };
 const ADMIN_TABS = [['resumen', 'Resumen'], ['vender', 'Vender'], ['caja', 'Mi caja'], ['prestamos', 'Préstamo de implementos'], ['productos', 'Productos'], ['dinero', 'Dinero'], ['emprendimientos', 'Emprendimientos'], ['gastos', 'Gastos'], ['pedidos', 'Pedidos'], ['reportes', 'Reportes'], ['rentabilidad', 'Rentabilidad emprend.'], ['turnos', 'Turnos'], ['horario', 'Horario'], ['actividad', 'Actividad'], ['usuarios', 'Usuarios']];
+// Permisos que el admin puede otorgar a un usuario de turno (el admin los tiene todos)
+const PERM_DEFS = [
+  ['productos', 'Productos: crear, editar y eliminar', 'Pestaña Productos con precios de compra, categorías y fotos'],
+  ['stock', 'Stock: sumar o corregir cantidades', 'Ingresos y ajustes de stock, historial de ingresos'],
+  ['dinero', 'Dinero: ver y ajustar la caja', 'Pestaña Dinero, ajustes de caja y registro de pérdidas'],
+  ['gastos', 'Gastos: ver y registrar', 'Pestaña Gastos'],
+  ['reportes', 'Reportes y Resumen completo', 'Pestañas Reportes y Resumen con ganancias'],
+  ['emprendimientos', 'Emprendimientos: pagos y rentabilidad', 'Pestañas Emprendimientos y Rentabilidad'],
+  ['prestamos', 'Préstamos: administrar implementos', 'Crear implementos y anular préstamos'],
+  ['actividad', 'Actividad: ver quién hizo qué', 'Pestaña Actividad (registro de movimientos)'],
+];
+const can = (k) => S.user.role === 'admin' || (S.user.perms || []).includes(k);
+function userTabs() {
+  if (S.user.role === 'admin') return ADMIN_TABS;
+  const vis = (k) => ({ productos: can('productos') || can('stock'), dinero: can('dinero'), gastos: can('gastos'), reportes: can('reportes'), emprendimientos: can('emprendimientos'), rentabilidad: can('emprendimientos'), actividad: can('actividad') })[k];
+  const base = TURNO_TABS.filter(([k]) => k !== 'inventario' || !vis('productos'));
+  const extra = ADMIN_TABS.filter(([k]) => vis(k) && !base.find((t) => t[0] === k));
+  const order = ADMIN_TABS.map((t) => t[0]);
+  return [...base, ...extra].sort((p, q) => order.indexOf(p[0] === 'inventario' ? 'productos' : p[0]) - order.indexOf(q[0] === 'inventario' ? 'productos' : q[0]));
+}
 const TURNO_TABS = [['resumen', 'Resumen'], ['caja', 'Caja'], ['vender', 'Vender'], ['prestamos', 'Préstamo de implementos'], ['inventario', 'Productos'], ['pedidos', 'Pedidos'], ['turnos', 'Mis turnos'], ['horario', 'Horario']];
 // Menú lateral: grupos de vistas (las que el rol no tenga se omiten)
 const NAV_GROUPS = [['Principal', ['resumen']], ['Ventas', ['vender', 'caja', 'prestamos']], ['Inventario', ['productos', 'inventario', 'emprendimientos']], ['Finanzas', ['dinero', 'gastos', 'pedidos', 'reportes', 'rentabilidad']], ['Equipo', ['turnos', 'horario', 'actividad', 'usuarios']]];
@@ -127,7 +147,7 @@ const val = (id) => $('#' + id).value;
 async function boot() {
   S.user = await api('/me').catch(() => null);
   if (!S.user) { clearInterval(S.chatTimer); S.chatOpen = false; S.peer = null; S.chat = []; chatShell(); return loginView(); }
-  const tabs = S.user.role === 'admin' ? ADMIN_TABS : S.user.can_emp ? [...TURNO_TABS, ['emprendimientos', 'Emprendimientos'], ['rentabilidad', 'Rentabilidad emprend.']] : TURNO_TABS;
+  const tabs = userTabs();
   try { const rv = sessionStorage.getItem('reloadView'); if (rv) { sessionStorage.removeItem('reloadView'); if (!S.view) S.view = rv; } } catch {} // tras una actualización automática, vuelve a la misma vista
   if (!S.view || !tabs.find((t) => t[0] === S.view)) S.view = tabs[0][0];
   const first = !$('.shell');
@@ -335,7 +355,7 @@ function loginView() {
 // ---------- Vistas ----------
 const views = {
   async resumen() {
-    if (S.user.role !== 'admin') {
+    if (!can('reportes')) {
       const d = await api('/summary'), s = d.open_shift;
       $('#main').innerHTML = `<h2>Resumen</h2>
         <div class="grid"><div class="stat"><span>Ventas de hoy (${d.today.n})</span><b>${money(d.today.total)}</b></div></div><br>
@@ -463,7 +483,7 @@ const views = {
     const act = prods.filter((p) => p.active), tr = act.filter((p) => p.track_stock);
     const cost = tr.reduce((s, p) => s + p.stock * p.buy_price, 0), value = tr.reduce((s, p) => s + p.stock * p.sell_price, 0);
     $('#main').innerHTML = `<div class="ph"><h2>Productos y stock</h2><span class="sp"></span>
-        <button class="btn" onclick="A.productForm()">+ Producto</button><button class="btn sec" onclick="A.catManager()">Categorías</button></div>
+        ${can('productos') ? '<button class="btn" onclick="A.productForm()">+ Producto</button><button class="btn sec" onclick="A.catManager()">Categorías</button>' : ''}</div>
       <div class="grid">
         <div class="stat"><span>Productos activos</span><b>${act.length}</b><small>${prods.length - act.length} desactivados</small></div>
         <div class="stat"><span>Inventario (costo → venta)</span><b style="font-size:1.1rem">${money(cost)} → ${money(value)}</b><small>Ganancia potencial ${money(value - cost)}</small></div>
@@ -1112,7 +1132,7 @@ const A = window.A = {
 
   // Productos
   pgrid() {
-    const words = norm(S.pq).split(/\s+/).filter(Boolean), admin = S.user.role === 'admin';
+    const words = norm(S.pq).split(/\s+/).filter(Boolean), admin = can('productos') || can('stock');
     const st = (p) => (!p.track_stock ? 'free' : p.stock <= 0 ? 'out' : p.stock <= p.min_stock ? 'low' : 'ok');
     const list = S.prods.filter((p) => (S.pcat === 'all' || (p.category || 'Sin categoría') === S.pcat)
       && (S.pst === 'off' ? !p.active : p.active && (S.pst === 'all' || st(p) === S.pst))
@@ -1449,14 +1469,17 @@ const A = window.A = {
     modal(`<h3>${id ? 'Editar' : 'Nuevo'} usuario</h3>
       <label>Nombre</label><input id="un" value="${esc(u.name)}">
       <label>Usuario (para ingresar)</label><input id="uu" value="${esc(u.username)}" ${id ? 'disabled' : ''} autocapitalize="none">
-      <label>Rol</label><select id="ur"><option value="turno" ${u.role === 'turno' ? 'selected' : ''}>Turno (vende)</option><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrador</option></select>
+      <label>Rol</label><select id="ur" onchange="$('#uperms') && ($('#uperms').hidden = this.value === 'admin', $('#uadm').hidden = this.value !== 'admin')"><option value="turno" ${u.role === 'turno' ? 'selected' : ''}>Turno (vende)</option><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrador</option></select>
       <label>${id ? 'Nueva contraseña (dejar vacío para no cambiar)' : 'Contraseña (mín. 6)'}</label><input id="up" type="password" autocomplete="new-password">
-      ${id ? `<label><input type="checkbox" id="ue" style="width:auto" ${u.can_emp ? 'checked' : ''}> Puede pagar Emprendimientos</label><label><input type="checkbox" id="ua" style="width:auto" ${u.active ? 'checked' : ''}> Activo</label>` : ''}
+      ${id ? `<div id="uperms" ${u.role === 'admin' ? 'hidden' : ''}><label>Permisos adicionales</label>
+        <div style="display:grid;gap:.45rem;margin:.2rem 0 .6rem">${PERM_DEFS.map(([k, t, d]) => `<label style="display:flex;gap:.55rem;align-items:flex-start;margin:0;font-weight:600"><input type="checkbox" class="up" value="${k}" style="width:auto;margin-top:.2rem" ${(u.perms || []).includes(k) ? 'checked' : ''}><span>${t}<small class="mute" style="display:block;font-weight:400">${d}</small></span></label>`).join('')}</div></div>
+        <p id="uadm" class="mute" ${u.role === 'admin' ? '' : 'hidden'}>El administrador tiene todos los permisos.</p>
+        <label><input type="checkbox" id="ua" style="width:auto" ${u.active ? 'checked' : ''}> Activo</label>` : ''}
       <p><button class="btn" onclick="A.saveUser(${id || 0})">Guardar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);
   },
   async saveUser(id) {
     const body = { name: val('un'), role: val('ur'), password: val('up') };
-    if (id) { body.active = $('#ua').checked; body.can_emp = $('#ue').checked; if (!body.password) delete body.password; } else body.username = val('uu');
+    if (id) { body.active = $('#ua').checked; body.perms = [...document.querySelectorAll('.up:checked')].map((c) => c.value); if (!body.password) delete body.password; } else body.username = val('uu');
     if (await act(() => api(id ? `/users/${id}` : '/users', id ? 'PUT' : 'POST', body), 'Guardado')) { closeModal(); boot(); }
   },
 };
@@ -1582,7 +1605,7 @@ function reportCharts(tr) {
 }
 
 // ---------- Reportes: emprendimientos (rentabilidad y pérdidas) ----------
-const reportTabs = () => S.user.role !== 'admin' ? '' : `<div class="seg rtabs"><button class="${S.view === 'rentabilidad' ? '' : 'on'}" onclick="go('reportes')">General</button><button class="${S.view === 'rentabilidad' ? 'on' : ''}" onclick="go('rentabilidad')">Emprendimientos</button></div>`;
+const reportTabs = () => !(can('reportes') && can('emprendimientos')) ? '' : `<div class="seg rtabs"><button class="${S.view === 'rentabilidad' ? '' : 'on'}" onclick="go('reportes')">General</button><button class="${S.view === 'rentabilidad' ? 'on' : ''}" onclick="go('rentabilidad')">Emprendimientos</button></div>`;
 const pctOf = (x, y) => (y ? (x / y * 100).toFixed(1).replace('.', ',') + '%' : '—');
 function empPanel(er) {
   const sel = `<div class="seg rsel">${RANGOS.map(([n, l]) => `<button class="${S.rp === n ? 'on' : ''}" onclick="A.rp(${n})">${l}</button>`).join('')}</div>`;
@@ -1683,5 +1706,5 @@ function productCard(p, admin, st, i) {
       <div class="pc-price"><b>${money(p.sell_price)}</b>${admin ? `<span>compra ${money(p.buy_price)}</span><em class="${unit >= 0 ? 'ok' : 'err'}">${unit >= 0 ? '+' : '−'}${money(Math.abs(unit))} · ${p.sell_price ? Math.round(unit / p.sell_price * 100) : 0}%</em>` : ''}</div>
       <div class="pc-stock ${st}"><div class="pc-bar"><i style="width:${pct}%"></i></div>
         <div class="pc-st"><span>${label}</span><b>${st === 'free' ? '—' : p.stock + ' uds'}</b></div>${st === 'free' ? '' : `<small>Mínimo ${p.min_stock}</small>`}</div>
-      ${admin ? `<div class="pc-act">${p.track_stock ? `<button class="btn sm" onclick="A.stockForm(${p.id})">+ Stock</button>` : ''}<button class="btn sec sm" onclick="A.productForm(${p.id})">Editar</button></div>` : ''}</div></article>`;
+      ${admin && (can('stock') || can('productos')) ? `<div class="pc-act">${p.track_stock && can('stock') ? `<button class="btn sm" onclick="A.stockForm(${p.id})">+ Stock</button>` : ''}${can('productos') ? `<button class="btn sec sm" onclick="A.productForm(${p.id})">Editar</button>` : ''}</div>` : ''}</div></article>`;
 }

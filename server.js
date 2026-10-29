@@ -192,6 +192,7 @@ DO $$ BEGIN
     UPDATE users SET can_emp=1 WHERE lower(username)='teresa' OR lower(name) LIKE 'teresa%';
   END IF;
 END $$;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS perms TEXT NOT NULL DEFAULT '';
 ALTER TABLE payouts ADD COLUMN IF NOT EXISTS payee TEXT;
 ALTER TABLE payouts ADD COLUMN IF NOT EXISTS product_id INTEGER;
 ALTER TABLE payouts ADD COLUMN IF NOT EXISTS sold_qty INTEGER NOT NULL DEFAULT 0;
@@ -383,14 +384,23 @@ app.use('/api', (req, res, next) => {
   const token = parseCookies(req).sid;
   if (!token) return next();
   req.token = token;
-  D.get(`SELECT u.id,u.username,u.name,u.role,u.must_change,u.can_emp,
+  D.get(`SELECT u.id,u.username,u.name,u.role,u.must_change,u.can_emp,u.perms,
     (SELECT extract(epoch FROM updated_at)::bigint FROM user_photos f WHERE f.user_id=u.id) AS photo FROM sessions s
     JOIN users u ON u.id=s.user_id WHERE s.token=$1 AND u.active=1`, [token])
-    .then((u) => { req.user = u; next(); }, next);
+    .then((u) => { if (u) u.perms = permList(u); req.user = u; next(); }, next);
 });
 const auth = (req, res, next) => (req.user ? next() : next(new HttpError(401, 'Inicia sesión')));
 const admin = (req, res, next) => (req.user?.role === 'admin' ? next() : next(new HttpError(403, 'Solo administrador')));
-const emp = (req, res, next) => (req.user?.role === 'admin' || req.user?.can_emp ? next() : next(new HttpError(403, 'Sin acceso a emprendimientos')));
+// Permisos que el admin puede otorgar a un usuario de turno (el admin los tiene todos). 'emprendimientos' vive en can_emp
+const PERMS = ['productos', 'stock', 'dinero', 'gastos', 'reportes', 'actividad', 'prestamos', 'emprendimientos'];
+const permList = (u) => {
+  if (u.role === 'admin') return PERMS.slice();
+  const l = String(u.perms || '').split(',').filter((k) => PERMS.includes(k) && k !== 'emprendimientos');
+  return u.can_emp ? [...l, 'emprendimientos'] : l;
+};
+const hasPerm = (u, ...ks) => !!u && (u.role === 'admin' || ks.some((k) => u.perms.includes(k)));
+const can = (k) => (req, res, next) => (hasPerm(req.user, k) ? next() : next(new HttpError(403, 'No tienes permiso para esto')));
+const emp = can('emprendimientos');
 
 app.post('/api/login', wrap(async (req, res) => {
   const u = await D.get('SELECT * FROM users WHERE username=$1 AND active=1', [String(req.body.username || '').trim().toLowerCase()]);
@@ -401,7 +411,7 @@ app.post('/api/login', wrap(async (req, res) => {
   await D.run('INSERT INTO sessions (token,user_id,created_at) VALUES ($1,$2,$3)', [token, u.id, now()]);
   await audit(D, u, 'Inició sesión');
   res.setHeader('Set-Cookie', `sid=${token}; ${cookieOpts(req, 60 * 60 * 24 * 14)}`);
-  return { id: u.id, username: u.username, name: u.name, role: u.role, must_change: u.must_change, can_emp: u.can_emp };
+  return { id: u.id, username: u.username, name: u.name, role: u.role, must_change: u.must_change, can_emp: u.can_emp, perms: permList(u) };
 }));
 app.post('/api/logout', wrap(async (req, res) => {
   if (req.token) await D.run('DELETE FROM sessions WHERE token=$1', [req.token]);
@@ -421,7 +431,7 @@ app.post('/api/password', auth, wrap(async (req) => {
 
 // ---------- Usuarios ----------
 app.get('/api/users', auth, admin, wrap(() =>
-  D.all('SELECT id,username,name,role,active,can_emp FROM users ORDER BY active DESC, name')));
+  D.all('SELECT id,username,name,role,active,can_emp,perms FROM users ORDER BY active DESC, name').then((r) => r.map((u) => ({ ...u, perms: permList(u) })))));
 app.post('/api/users', auth, admin, wrap(async (req) => {
   const username = str(req.body.username, 'Usuario', 30).toLowerCase();
   const name = str(req.body.name, 'Nombre', 60);
@@ -442,11 +452,14 @@ app.put('/api/users/:id', auth, admin, wrap(async (req) => {
   const name = req.body.name ? str(req.body.name, 'Nombre', 60) : u.name;
   const role = req.body.role ? (req.body.role === 'admin' ? 'admin' : 'turno') : u.role;
   const active = req.body.active === undefined ? u.active : (req.body.active ? 1 : 0);
-  const canEmp = req.body.can_emp === undefined ? u.can_emp : (req.body.can_emp ? 1 : 0);
+  const prev = permList(u);
+  const want = Array.isArray(req.body.perms) ? PERMS.filter((k) => req.body.perms.includes(k)) : null;
+  const canEmp = want ? (want.includes('emprendimientos') ? 1 : 0) : req.body.can_emp === undefined ? u.can_emp : (req.body.can_emp ? 1 : 0);
+  const perms = want ? want.filter((k) => k !== 'emprendimientos').join(',') : u.perms;
   if (id === req.user.id && (!active || role !== 'admin')) throw bad('No puedes quitarte el acceso de administrador a ti mismo');
   if (!active && await D.get('SELECT 1 FROM shifts WHERE user_id=$1 AND closed_at IS NULL', [id]))
     throw bad('Este usuario tiene la caja abierta; ciérrala antes de desactivarlo');
-  await D.run('UPDATE users SET name=$1, role=$2, active=$3, can_emp=$5 WHERE id=$4', [name, role, active, id, canEmp]);
+  await D.run('UPDATE users SET name=$1, role=$2, active=$3, can_emp=$5, perms=$6 WHERE id=$4', [name, role, active, id, canEmp, perms]);
   if (req.body.password) {
     const p = String(req.body.password);
     if (p.length < 6) throw bad('La contraseña debe tener al menos 6 caracteres');
@@ -456,7 +469,11 @@ app.put('/api/users/:id', auth, admin, wrap(async (req) => {
   const ch = [];
   if (name !== u.name) ch.push(`nombre → ${name}`);
   if (role !== u.role) ch.push(`rol → ${role === 'admin' ? 'Admin' : 'Turno'}`);
-  if (canEmp !== u.can_emp) ch.push(canEmp ? 'acceso a Emprendimientos' : 'sin acceso a Emprendimientos');
+  if (want && role !== 'admin') {
+    const add = want.filter((k) => !prev.includes(k)), del = prev.filter((k) => !want.includes(k));
+    if (add.length) ch.push('permisos + ' + add.join(', '));
+    if (del.length) ch.push('permisos − ' + del.join(', '));
+  } else if (canEmp !== u.can_emp) ch.push(canEmp ? 'acceso a Emprendimientos' : 'sin acceso a Emprendimientos');
   if (active !== u.active) ch.push(active ? 'activado' : 'desactivado');
   if (req.body.password) ch.push('nueva contraseña');
   await audit(D, req.user, 'Editó usuario', `${u.name} (${u.username})${ch.length ? ': ' + ch.join(', ') : ''}`);
@@ -465,12 +482,12 @@ app.put('/api/users/:id', auth, admin, wrap(async (req) => {
 
 // ---------- Categorías ----------
 app.get('/api/categories', auth, wrap(() => D.all('SELECT * FROM categories ORDER BY name')));
-app.post('/api/categories', auth, admin, wrap(async (req) => {
+app.post('/api/categories', auth, can('productos'), wrap(async (req) => {
   const name = str(req.body.name, 'Nombre', 40);
   try { const r = await D.get('INSERT INTO categories (name) VALUES ($1) RETURNING id', [name]); await audit(D, req.user, 'Creó categoría', name); return r; }
   catch (e) { dup(e, 'Esa categoría ya existe'); }
 }));
-app.put('/api/categories/:id', auth, admin, wrap(async (req) => {
+app.put('/api/categories/:id', auth, can('productos'), wrap(async (req) => {
   const name = str(req.body.name, 'Nombre', 40);
   try {
     const id = int(req.params.id, 'id');
@@ -481,7 +498,7 @@ app.put('/api/categories/:id', auth, admin, wrap(async (req) => {
   }
   catch (e) { dup(e, 'Esa categoría ya existe'); }
 }));
-app.delete('/api/categories/:id', auth, admin, wrap(async (req) => {
+app.delete('/api/categories/:id', auth, can('productos'), wrap(async (req) => {
   const id = int(req.params.id, 'id');
   if (await D.get('SELECT 1 FROM products WHERE category_id=$1', [id])) throw bad('Hay productos en esta categoría; muévelos primero');
   const c = await D.get('DELETE FROM categories WHERE id=$1 RETURNING name', [id]);
@@ -496,7 +513,7 @@ app.get('/api/products', auth, wrap(async (req) => {
     FROM products p LEFT JOIN categories c ON c.id=p.category_id ORDER BY p.active DESC, c.name, p.name`);
   rows.forEach((r) => {
     if (/^(empanada|vitrina)/i.test(r.category || '')) r.benefit_price = r.buy_price;
-    if (req.user.role !== 'admin') delete r.buy_price;
+    if (!hasPerm(req.user, 'productos', 'stock', 'dinero')) delete r.buy_price;
   });
   return rows;
 }));
@@ -519,7 +536,7 @@ async function productBody(b) {
     track_stock: b.track_stock === false || b.track_stock === 0 ? 0 : 1,
   };
 }
-app.post('/api/products', auth, admin, wrap(async (req) => {
+app.post('/api/products', auth, can('productos'), wrap(async (req) => {
   const p = await productBody(req.body);
   const qty = p.track_stock ? int(req.body.stock ?? 0, 'cantidad inicial') : 0;
   return tx(async (t) => {
@@ -531,11 +548,13 @@ app.post('/api/products', auth, admin, wrap(async (req) => {
     return { id };
   });
 }));
-app.put('/api/products/:id', auth, admin, wrap(async (req) => {
+app.put('/api/products/:id', auth, can('productos'), wrap(async (req) => {
   const id = int(req.params.id, 'id');
   const p = await productBody(req.body);
   const active = req.body.active === undefined ? 1 : (req.body.active ? 1 : 0);
   const old = await D.get('SELECT * FROM products WHERE id=$1', [id]);
+  if (old && p.track_stock && req.body.stock !== undefined && req.body.stock !== '' && int(req.body.stock, 'stock') !== old.stock && !hasPerm(req.user, 'stock'))
+    throw new HttpError(403, 'No tienes permiso para cambiar el stock');
   await D.run(`UPDATE products SET name=$1,category_id=$2,buy_price=$3,sell_price=$4,min_stock=$5,active=$6,track_stock=$7 WHERE id=$8`,
     [p.name, p.category_id, p.buy_price, p.sell_price, p.min_stock, active, p.track_stock, id]);
   if (old) {
@@ -560,7 +579,7 @@ app.put('/api/products/:id', auth, admin, wrap(async (req) => {
   return { ok: true };
 }));
 // Eliminar producto: si ya tiene historial (ventas, ingresos, pedidos) no se puede borrar sin romper los reportes, así que se desactiva
-app.delete('/api/products/:id', auth, admin, wrap(async (req) => {
+app.delete('/api/products/:id', auth, can('productos'), wrap(async (req) => {
   const id = int(req.params.id, 'id');
   const old = await D.get('SELECT name FROM products WHERE id=$1', [id]);
   if (!old) throw bad('Producto no encontrado');
@@ -620,7 +639,7 @@ app.get('/api/products/:id/photo', auth, wrap(async (req, res) => {
   res.set({ 'Content-Type': f.mime, 'Cache-Control': 'private, max-age=31536000' });
   res.end(f.data);
 }));
-app.put('/api/products/:id/photo', auth, admin, wrap(async (req) => {
+app.put('/api/products/:id/photo', auth, can('productos'), wrap(async (req) => {
   const id = int(req.params.id, 'id');
   const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(req.body.image || ''));
   if (!m) throw bad('Imagen inválida');
@@ -633,12 +652,12 @@ app.put('/api/products/:id/photo', auth, admin, wrap(async (req) => {
   await audit(D, req.user, 'Cambió foto de producto', (await D.get('SELECT name FROM products WHERE id=$1', [id])).name);
   return { ok: true };
 }));
-app.delete('/api/products/:id/photo', auth, admin, wrap(async (req) => {
+app.delete('/api/products/:id/photo', auth, can('productos'), wrap(async (req) => {
   await D.run('DELETE FROM product_photos WHERE product_id=$1', [int(req.params.id, 'id')]);
   return { ok: true };
 }));
 // Ingreso de stock (llegó mercancía nueva)
-app.post('/api/products/:id/stock', auth, admin, wrap(async (req) => {
+app.post('/api/products/:id/stock', auth, can('stock'), wrap(async (req) => {
   const id = int(req.params.id, 'id');
   const qty = int(req.body.qty, 'cantidad', { min: 1 });
   return tx(async (t) => {
@@ -653,14 +672,14 @@ app.post('/api/products/:id/stock', auth, admin, wrap(async (req) => {
   });
 }));
 // Corrección de inventario (conteo físico)
-app.post('/api/products/:id/set-stock', auth, admin, wrap(async (req) => {
+app.post('/api/products/:id/set-stock', auth, can('stock'), wrap(async (req) => {
   const id = int(req.params.id, 'id'), stock = int(req.body.stock, 'stock');
   const p = await D.get('SELECT name, stock FROM products WHERE id=$1', [id]);
   await D.run('UPDATE products SET stock=$1 WHERE id=$2', [stock, id]);
   if (p) await audit(D, req.user, 'Corrigió stock', `${p.name}: ${p.stock} → ${stock}`);
   return { ok: true };
 }));
-app.get('/api/stock-entries', auth, admin, wrap(() =>
+app.get('/api/stock-entries', auth, can('stock'), wrap(() =>
   D.all(`SELECT e.*, p.name AS product, u.name AS "user" FROM stock_entries e
     JOIN products p ON p.id=e.product_id JOIN users u ON u.id=e.user_id
     ORDER BY e.id DESC LIMIT 100`)));
@@ -1092,14 +1111,14 @@ app.get('/api/loan-items', auth, wrap(() =>
   D.all(`SELECT i.*, (SELECT extract(epoch FROM updated_at)::bigint FROM loan_item_photos f WHERE f.item_id=i.id) AS photo,
     i.qty - COALESCE((SELECT SUM(l.qty) FROM loans l WHERE l.item_id=i.id AND l.returned_at IS NULL AND l.voided=0),0) AS available
     FROM loan_items i ORDER BY i.active DESC, i.name`)));
-app.post('/api/loan-items', auth, admin, wrap(async (req) => {
+app.post('/api/loan-items', auth, can('prestamos'), wrap(async (req) => {
   const name = str(req.body.name, 'Nombre', 80);
   const qty = int(req.body.qty ?? 1, 'cantidad', { min: 1, max: 10000 });
   const { id } = await D.get('INSERT INTO loan_items (name,qty,created_at) VALUES ($1,$2,$3) RETURNING id', [name, qty, now()]);
   await audit(D, req.user, 'Agregó implemento de préstamo', `${name} · ${qty} uds`);
   return { id };
 }));
-app.put('/api/loan-items/:id', auth, admin, wrap(async (req) => {
+app.put('/api/loan-items/:id', auth, can('prestamos'), wrap(async (req) => {
   const id = int(req.params.id, 'id');
   const name = str(req.body.name, 'Nombre', 80);
   const qty = int(req.body.qty, 'cantidad', { min: 1, max: 10000 });
@@ -1119,7 +1138,7 @@ app.get('/api/loan-items/:id/photo', auth, wrap(async (req, res) => {
   res.set({ 'Content-Type': f.mime, 'Cache-Control': 'private, max-age=31536000' });
   res.end(f.data);
 }));
-app.put('/api/loan-items/:id/photo', auth, admin, wrap(async (req) => {
+app.put('/api/loan-items/:id/photo', auth, can('prestamos'), wrap(async (req) => {
   const id = int(req.params.id, 'id');
   const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(req.body.image || ''));
   if (!m) throw bad('Imagen inválida');
@@ -1130,7 +1149,7 @@ app.put('/api/loan-items/:id/photo', auth, admin, wrap(async (req) => {
     ON CONFLICT (item_id) DO UPDATE SET data=EXCLUDED.data, mime=EXCLUDED.mime, updated_at=EXCLUDED.updated_at`, [id, data, m[1], now()]);
   return { ok: true };
 }));
-app.delete('/api/loan-items/:id/photo', auth, admin, wrap(async (req) => {
+app.delete('/api/loan-items/:id/photo', auth, can('prestamos'), wrap(async (req) => {
   await D.run('DELETE FROM loan_item_photos WHERE item_id=$1', [int(req.params.id, 'id')]);
   return { ok: true };
 }));
@@ -1191,7 +1210,7 @@ app.post('/api/loans/:id/return', auth, wrap(async (req) => {
   });
 }));
 // Solo el admin anula (error de digitación): devuelve el dinero de la caja y libera el implemento
-app.post('/api/loans/:id/void', auth, admin, wrap(async (req) => {
+app.post('/api/loans/:id/void', auth, can('prestamos'), wrap(async (req) => {
   const id = int(req.params.id, 'id');
   return tx(async (t) => {
     const l = await t.get(`${LOAN_SQL} WHERE l.id=$1 FOR UPDATE OF l`, [id]);
@@ -1207,13 +1226,13 @@ app.post('/api/loans/:id/void', auth, admin, wrap(async (req) => {
 }));
 
 // ---------- Administración de dinero ----------
-app.get('/api/register', auth, admin, wrap(async () => ({
+app.get('/api/register', auth, can('dinero'), wrap(async () => ({
   register: await reg(),
   adjustments: await D.all(`SELECT a.*, u.name AS "user" FROM adjustments a JOIN users u ON u.id=a.user_id
     ORDER BY a.id DESC LIMIT 50`),
 })));
 // Ingresos/retiros manuales (consignar, sacar para comprar mercancía, base inicial, etc.)
-app.post('/api/register/adjust', auth, admin, wrap(async (req) => {
+app.post('/api/register/adjust', auth, can('dinero'), wrap(async (req) => {
   const m = method(req.body.method);
   const amount = int(req.body.amount, 'monto', { min: -1e9 });
   if (amount === 0) throw bad('El monto no puede ser 0');
@@ -1228,7 +1247,7 @@ app.post('/api/register/adjust', auth, admin, wrap(async (req) => {
 }));
 
 // ---------- Productos descartados: salen del stock y cuentan como pérdida (al costo), sin tocar la caja ----------
-app.post('/api/write-offs', auth, admin, wrap(async (req) => {
+app.post('/api/write-offs', auth, can('dinero'), wrap(async (req) => {
   const items = Array.isArray(req.body.items) ? req.body.items : [];
   if (!items.length || items.length > 500) throw bad('Elige al menos un producto');
   const note = String(req.body.note || '').trim().slice(0, 200) || null;
@@ -1251,7 +1270,7 @@ app.post('/api/write-offs', auth, admin, wrap(async (req) => {
     return { ok: true, total, n };
   });
 }));
-app.get('/api/write-offs', auth, admin, wrap(async (req) => {
+app.get('/api/write-offs', auth, can('dinero'), wrap(async (req) => {
   const { a, b } = range(req.query);
   const rows = await D.all(`SELECT w.*, p.name AS product, u.name AS "user" FROM write_offs w
     JOIN products p ON p.id=w.product_id JOIN users u ON u.id=w.user_id
@@ -1310,9 +1329,9 @@ app.post('/api/payouts', auth, emp, wrap(async (req) => {
 
 // ---------- Gastos: implementos (cucharas, vasos, etc.) y pagos de pedidos a proveedores ----------
 // method = de dónde salió la plata; si es null, no se descuenta de la caja.
-app.get('/api/expenses', auth, admin, wrap(() =>
+app.get('/api/expenses', auth, can('gastos'), wrap(() =>
   D.all(`SELECT e.*, u.name AS "user" FROM expenses e JOIN users u ON u.id=e.user_id ORDER BY e.id DESC LIMIT 200`)));
-app.post('/api/expenses', auth, admin, wrap(async (req) => {
+app.post('/api/expenses', auth, can('gastos'), wrap(async (req) => {
   const description = str(req.body.description, 'Descripción', 150);
   const amount = int(req.body.amount, 'monto', { min: 1 });
   const m = req.body.method ? method(req.body.method) : null;
@@ -1325,7 +1344,7 @@ app.post('/api/expenses', auth, admin, wrap(async (req) => {
   });
   return { ok: true };
 }));
-app.delete('/api/expenses/:id', auth, admin, wrap(async (req) => {
+app.delete('/api/expenses/:id', auth, can('gastos'), wrap(async (req) => {
   const id = int(req.params.id, 'id');
   await tx(async (t) => {
     const e = await t.get('DELETE FROM expenses WHERE id=$1 RETURNING *', [id]);
@@ -1337,7 +1356,7 @@ app.delete('/api/expenses/:id', auth, admin, wrap(async (req) => {
 }));
 
 // ---------- Resumen ----------
-app.get('/api/dashboard', auth, admin, wrap(async () => {
+app.get('/api/dashboard', auth, can('reportes'), wrap(async () => {
   const start = new Date(); start.setUTCHours(5, 0, 0, 0); // medianoche Colombia (UTC-5)
   if (start > new Date()) start.setUTCDate(start.getUTCDate() - 1);
   const [t, profit, exp, top, low, inv, shift, register, wd] = await Promise.all([
@@ -1413,7 +1432,7 @@ async function weekTotals(a, b) {
   ]);
   return { sales, items, exp, wd, lost };
 }
-app.get('/api/reports/week', auth, admin, wrap(async (req) => {
+app.get('/api/reports/week', auth, can('reportes'), wrap(async (req) => {
   const start = mondayOf(req.query.start ? ymd(req.query.start, 'semana') : today());
   const prev = addDays(start, -7);
   const [cur, old, top] = await Promise.all([
@@ -1463,7 +1482,7 @@ async function trendOf(a, b) {
   ]);
   return { ...base, cash, ticket, cost, top, pays, cats, buckets, hours, dows };
 }
-app.get('/api/reports/trend', auth, admin, wrap(async (req) => {
+app.get('/api/reports/trend', auth, can('reportes'), wrap(async (req) => {
   const { from, to, a, b } = range(req.query, 366);
   const span = Math.round((new Date(to) - new Date(from)) / 864e5) + 1;
   const pf = addDays(from, -span);
@@ -1535,7 +1554,7 @@ app.get('/api/reports/emprendimientos', auth, emp, wrap(async (req) => {
 }));
 
 // Ventas por hora del día y por día de la semana (hora de Colombia)
-app.get('/api/reports/hours', auth, admin, wrap(async (req) => {
+app.get('/api/reports/hours', auth, can('reportes'), wrap(async (req) => {
   const { a, b } = range(req.query, 366);
   const [hours, dows] = await Promise.all([
     D.all(`SELECT extract(hour from created_at AT TIME ZONE '${TZ}')::int AS h, COUNT(*) AS n, SUM(total) AS total FROM sales
@@ -1547,7 +1566,7 @@ app.get('/api/reports/hours', auth, admin, wrap(async (req) => {
 }));
 
 // Extracto para rendición de cuentas: todos los movimientos del rango, en CSV (Excel en español: separador ;)
-app.get('/api/export.csv', auth, admin, wrap(async (req, res) => {
+app.get('/api/export.csv', auth, can('reportes'), wrap(async (req, res) => {
   const { from, to, a, b } = range(req.query, 366);
   const p = [a, b];
   const [sales, items, wds, exps, adjs, shifts, stocks, loans] = await Promise.all([
@@ -1613,7 +1632,7 @@ app.get('/api/export.csv', auth, admin, wrap(async (req, res) => {
   await audit(D, req.user, 'Descargó extracto CSV', `${from} a ${to}`);
 }));
 
-app.get('/api/audit', auth, admin, wrap((req) => {
+app.get('/api/audit', auth, can('actividad'), wrap((req) => {
   const q = String(req.query.q || '').trim().slice(0, 60);
   return D.all(`SELECT id, user_name, action, detail, created_at FROM audit_log
     WHERE ($1='' OR user_name ILIKE '%'||$1||'%' OR action ILIKE '%'||$1||'%' OR detail ILIKE '%'||$1||'%')
