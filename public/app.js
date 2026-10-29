@@ -127,7 +127,7 @@ const val = (id) => $('#' + id).value;
 async function boot() {
   S.user = await api('/me').catch(() => null);
   if (!S.user) { clearInterval(S.chatTimer); S.chatOpen = false; S.peer = null; S.chat = []; chatShell(); return loginView(); }
-  const tabs = S.user.role === 'admin' ? ADMIN_TABS : S.user.can_emp ? [...TURNO_TABS, ['emprendimientos', 'Emprendimientos']] : TURNO_TABS;
+  const tabs = S.user.role === 'admin' ? ADMIN_TABS : S.user.can_emp ? [...TURNO_TABS, ['emprendimientos', 'Emprendimientos'], ['rentabilidad', 'Rentabilidad emprend.']] : TURNO_TABS;
   try { const rv = sessionStorage.getItem('reloadView'); if (rv) { sessionStorage.removeItem('reloadView'); if (!S.view) S.view = rv; } } catch {} // tras una actualización automática, vuelve a la misma vista
   if (!S.view || !tabs.find((t) => t[0] === S.view)) S.view = tabs[0][0];
   const first = !$('.shell');
@@ -1536,7 +1536,7 @@ function reportCharts(tr) {
 }
 
 // ---------- Reportes: emprendimientos (rentabilidad y pérdidas) ----------
-const reportTabs = () => `<div class="seg rtabs"><button class="${S.view === 'rentabilidad' ? '' : 'on'}" onclick="go('reportes')">General</button><button class="${S.view === 'rentabilidad' ? 'on' : ''}" onclick="go('rentabilidad')">Emprendimientos</button></div>`;
+const reportTabs = () => S.user.role !== 'admin' ? '' : `<div class="seg rtabs"><button class="${S.view === 'rentabilidad' ? '' : 'on'}" onclick="go('reportes')">General</button><button class="${S.view === 'rentabilidad' ? 'on' : ''}" onclick="go('rentabilidad')">Emprendimientos</button></div>`;
 const pctOf = (x, y) => (y ? (x / y * 100).toFixed(1).replace('.', ',') + '%' : '—');
 function empPanel(er) {
   const sel = `<div class="seg rsel">${RANGOS.map(([n, l]) => `<button class="${S.rp === n ? 'on' : ''}" onclick="A.rp(${n})">${l}</button>`).join('')}</div>`;

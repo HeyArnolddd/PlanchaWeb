@@ -1471,7 +1471,7 @@ async function empTotals(a, b, ids) {
   ]);
   return { sold, lost, daySold, dayLost };
 }
-app.get('/api/reports/emprendimientos', auth, admin, wrap(async (req) => {
+app.get('/api/reports/emprendimientos', auth, emp, wrap(async (req) => {
   const { from, to, a, b } = range(req.query, 366);
   const span = Math.round((new Date(to) - new Date(from)) / 864e5) + 1;
   const prods = await D.all(`SELECT p.id, p.name FROM products p JOIN categories c ON c.id=p.category_id WHERE c.name ~* '^emprendimiento' ORDER BY p.name`);
