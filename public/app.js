@@ -178,7 +178,7 @@ function chatDraw() {
   w.innerHTML = `<div class="cw-panel"><div class="cw-head">${S.peer === null ? '' : '<button onclick="A.chatBack()" aria-label="Volver">←</button>'}
     <b class="cwt">${S.peer === null ? '<img class="cwi" src="/chaticon.png" alt="">Chat' : peerHead()}</b><button onclick="A.chatToggle()" aria-label="Cerrar">✕</button></div>
     ${S.peer === null ? '<div id="chatside" class="cw-list"></div>'
-      : `<div id="chatlist" class="chatlist"></div><div id="cwpick" class="cw-pick" hidden></div><div class="cw-send"><button class="btn sec sm" onclick="A.pick()" aria-label="Emojis y stickers">${icon('sonrisa')}</button><input id="cm" maxlength="500" placeholder="Escribe un mensaje…" onkeydown="if(event.key==='Enter')A.say()"><button class="btn sm" onclick="A.say()">Enviar</button></div>`}</div>`;
+      : `<div id="chatlist" class="chatlist"></div><div id="cwpick" class="cw-pick" hidden></div><div class="cw-send"><button class="cw-ic" onclick="A.pick()" aria-label="Emojis y stickers">${icon('sonrisa')}</button><input id="cm" maxlength="500" autocomplete="off" placeholder="Escribe un mensaje…" onkeydown="if(event.key==='Enter')A.say()"><button class="cw-go" onclick="A.say()" aria-label="Enviar"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button></div>`}</div>`;
   chatPaintSide(); chatPaintList();
   const f = $('#cm'); if (f) f.focus();
 }
@@ -195,8 +195,20 @@ function chatPaintBadge() {
 function chatPaintList() {
   const box = $('#chatlist'); if (!box) return;
   const bottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
-  box.innerHTML = S.chat.map((m) => `<div class="mrow ${m.user_id === S.user.id ? 'me' : ''}">${avatar(m.user_id === S.user.id ? S.user : { id: m.user_id, name: m.user_name, photo: m.photo }, 'sm', true)}<div class="msg ${m.user_id === S.user.id ? 'me' : ''}"><small>${m.user_id === S.user.id ? 'Tú' : esc(m.user_name)} · ${dt(m.created_at).split(', ').pop()}</small>${m.sticker_id ? `<img class="stk" src="/api/stickers/${m.sticker_id}/img" alt="sticker">` : `<div>${m.body ? esc(m.body) : '<i class="mute">sticker eliminado</i>'}</div>`}${m.user_id === S.user.id && S.peer ? `<small class="seen">${m.id <= S.peerRead ? '✓✓ Visto' : '✓ Enviado'}</small>` : ''}</div></div>`).join('')
-    || '<span class="mute">Aún no hay mensajes. ¡Escribe el primero!</span>';
+  const day = (m) => new Date(m.created_at).toLocaleDateString('es-CO', { timeZone: 'America/Bogota', weekday: 'long', day: 'numeric', month: 'long' });
+  box.innerHTML = S.chat.map((m, i) => {
+    const mine = m.user_id === S.user.id, prev = S.chat[i - 1], next = S.chat[i + 1];
+    const newDay = !prev || day(prev) !== day(m);
+    const first = newDay || prev.user_id !== m.user_id || new Date(m.created_at) - new Date(prev.created_at) > 5 * 6e4;
+    const last = !next || next.user_id !== m.user_id || day(next) !== day(m) || new Date(next.created_at) - new Date(m.created_at) > 5 * 6e4;
+    const time = dt(m.created_at).split(', ').pop();
+    const seen = mine && S.peer ? `<span class="seen">${m.id <= S.peerRead ? '✓✓' : '✓'}</span>` : '';
+    const body = m.sticker_id ? `<img class="stk" src="/api/stickers/${m.sticker_id}/img" alt="sticker">` : `<div class="mt">${m.body ? esc(m.body) : '<i class="mute">sticker eliminado</i>'}</div>`;
+    return (newDay ? `<div class="dsep"><span>${esc(day(m))}</span></div>` : '')
+      + `<div class="mrow ${mine ? 'me' : ''} ${first ? 'first' : ''} ${last ? 'last' : ''}">${mine ? '' : last ? avatar({ id: m.user_id, name: m.user_name, photo: m.photo }, 'sm', true) : '<span class="avgap"></span>'}`
+      + `<div class="msg ${mine ? 'me' : ''}">${!mine && first && !S.peer ? `<small class="who">${esc(m.user_name)}</small>` : ''}${body}<small class="tm">${time}${seen}</small></div></div>`;
+  }).join('')
+    || '<div class="cempty"><span>Aún no hay mensajes</span><small>¡Escribe el primero!</small></div>';
   if (bottom) box.scrollTop = box.scrollHeight;
 }
 async function chatPoll() {
