@@ -276,6 +276,8 @@ CREATE TABLE IF NOT EXISTS loans (
   created_at TIMESTAMPTZ NOT NULL
 );
 CREATE INDEX IF NOT EXISTS loans_item ON loans (item_id);
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS qty INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS group_id INTEGER;
 CREATE TABLE IF NOT EXISTS purchase_orders (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -1055,7 +1057,7 @@ const LOAN_SQL = `SELECT l.*, i.name AS item, u.name AS who, r.name AS received_
   FROM loans l JOIN loan_items i ON i.id=l.item_id JOIN users u ON u.id=l.user_id LEFT JOIN users r ON r.id=l.returned_by`;
 app.get('/api/loan-items', auth, wrap(() =>
   D.all(`SELECT i.*, (SELECT extract(epoch FROM updated_at)::bigint FROM loan_item_photos f WHERE f.item_id=i.id) AS photo,
-    i.qty - COALESCE((SELECT COUNT(*) FROM loans l WHERE l.item_id=i.id AND l.returned_at IS NULL AND l.voided=0),0) AS available
+    i.qty - COALESCE((SELECT SUM(l.qty) FROM loans l WHERE l.item_id=i.id AND l.returned_at IS NULL AND l.voided=0),0) AS available
     FROM loan_items i ORDER BY i.active DESC, i.name`)));
 app.post('/api/loan-items', auth, admin, wrap(async (req) => {
   const name = str(req.body.name, 'Nombre', 80);
@@ -1071,7 +1073,7 @@ app.put('/api/loan-items/:id', auth, admin, wrap(async (req) => {
   await tx(async (t) => {
     const it = await t.get('SELECT * FROM loan_items WHERE id=$1 FOR UPDATE', [id]);
     if (!it) throw new HttpError(404, 'No existe');
-    const out = (await t.get('SELECT COUNT(*) c FROM loans WHERE item_id=$1 AND returned_at IS NULL AND voided=0', [id])).c;
+    const out = Number((await t.get('SELECT COALESCE(SUM(qty),0) c FROM loans WHERE item_id=$1 AND returned_at IS NULL AND voided=0', [id])).c);
     if (qty < out) throw bad(`Hay ${out} prestados; la cantidad no puede ser menor`);
     await t.run('UPDATE loan_items SET name=$1, qty=$2, active=$3 WHERE id=$4', [name, qty, req.body.active === false ? 0 : 1, id]);
     await audit(t, req.user, 'Editó implemento de préstamo', `${name} · ${qty} uds`);
@@ -1104,7 +1106,15 @@ app.get('/api/loans', auth, wrap(async () => ({
   history: await D.all(`${LOAN_SQL} WHERE l.returned_at IS NOT NULL OR l.voided=1 ORDER BY l.id DESC LIMIT 50`),
 })));
 app.post('/api/loans', auth, wrap(async (req) => {
-  const itemId = int(req.body.item_id, 'implemento');
+  // varios implementos por préstamo, cada uno con su cantidad; el valor es único y se guarda en la primera línea
+  const lines = Array.isArray(req.body.items) ? req.body.items : [{ item_id: req.body.item_id, qty: 1 }];
+  if (!lines.length || lines.length > 50) throw bad('Elige al menos un implemento');
+  const merged = new Map();
+  for (const l of lines) {
+    const iid = int(l.item_id, 'implemento');
+    merged.set(iid, (merged.get(iid) || 0) + int(l.qty ?? 1, 'cantidad', { min: 1, max: 10000 }));
+  }
+  const ids = [...merged.keys()].sort((a, b) => a - b);
   const borrower = str(req.body.borrower, 'Nombre de la persona', 80);
   const fee = int(req.body.fee ?? 0, 'valor del préstamo');
   const m = fee > 0 ? method(req.body.method) : null;
@@ -1113,16 +1123,26 @@ app.post('/api/loans', auth, wrap(async (req) => {
     const s = await openShift(t);
     if (!s) throw bad('Primero debes abrir caja');
     if (s.user_id !== req.user.id) throw bad(`La caja la abrió ${s.user_name}`);
-    const it = await t.get('SELECT * FROM loan_items WHERE id=$1 FOR UPDATE', [itemId]);
-    if (!it || !it.active) throw bad('Ese implemento no está disponible');
-    const out = (await t.get('SELECT COUNT(*) c FROM loans WHERE item_id=$1 AND returned_at IS NULL AND voided=0', [itemId])).c;
-    if (out >= it.qty) throw bad('Ya están prestadas todas las unidades de este implemento');
+    const its = [];
+    for (const iid of ids) {
+      const it = await t.get('SELECT * FROM loan_items WHERE id=$1 FOR UPDATE', [iid]);
+      if (!it || !it.active) throw bad('Ese implemento no está disponible');
+      const out = Number((await t.get('SELECT COALESCE(SUM(qty),0) c FROM loans WHERE item_id=$1 AND returned_at IS NULL AND voided=0', [iid])).c);
+      const qty = merged.get(iid);
+      if (out + qty > it.qty) throw bad(`De "${it.name}" solo quedan ${it.qty - out} disponibles`);
+      its.push({ it, qty });
+    }
     if (fee > 0) await t.run(`UPDATE register SET ${col(m)}=${col(m)}+$1 WHERE id=1`, [fee]);
     const at = now();
-    const { id } = await t.get(`INSERT INTO loans (item_id,shift_id,user_id,borrower,fee,method,due_at,created_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`, [itemId, s.id, req.user.id, borrower, fee, m, new Date(at.getTime() + days * 864e5), at]);
-    await audit(t, req.user, 'Registró préstamo', `#${id} · ${it.name} a ${borrower} · ${fee}${m ? ' (' + m + ')' : ''}`);
-    return { id };
+    const due = new Date(at.getTime() + days * 864e5);
+    let first = null;
+    for (const { it, qty } of its) {
+      const { id } = await t.get(`INSERT INTO loans (item_id,shift_id,user_id,borrower,fee,method,due_at,created_at,qty,group_id)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`, [it.id, s.id, req.user.id, borrower, first ? 0 : fee, first ? null : m, due, at, qty, first]);
+      if (!first) { first = id; await t.run('UPDATE loans SET group_id=$1 WHERE id=$1', [id]); }
+    }
+    await audit(t, req.user, 'Registró préstamo', `#${first} · ${its.map((x) => `${x.qty}× ${x.it.name}`).join(', ')} a ${borrower} · ${fee}${m ? ' (' + m + ')' : ''}`);
+    return { id: first };
   });
 }));
 app.post('/api/loans/:id/return', auth, wrap(async (req) => {
@@ -1133,7 +1153,7 @@ app.post('/api/loans/:id/return', auth, wrap(async (req) => {
     if (l.voided) throw bad('Este préstamo fue anulado');
     if (l.returned_at) throw bad('Ya estaba devuelto');
     await t.run('UPDATE loans SET returned_at=$1, returned_by=$2 WHERE id=$3', [now(), req.user.id, id]);
-    await audit(t, req.user, 'Recibió implemento prestado', `#${id} · ${l.item} de ${l.borrower}`);
+    await audit(t, req.user, 'Recibió implemento prestado', `#${id} · ${l.qty}× ${l.item} de ${l.borrower}`);
     return { ok: true };
   });
 }));
@@ -1144,9 +1164,11 @@ app.post('/api/loans/:id/void', auth, admin, wrap(async (req) => {
     const l = await t.get(`${LOAN_SQL} WHERE l.id=$1 FOR UPDATE OF l`, [id]);
     if (!l) throw new HttpError(404, 'No existe');
     if (l.voided) throw bad('Ya estaba anulado');
-    if (l.fee > 0) await t.run(`UPDATE register SET ${col(l.method)}=${col(l.method)}-$1 WHERE id=1`, [l.fee]);
-    await t.run('UPDATE loans SET voided=1 WHERE id=$1', [id]);
-    await audit(t, req.user, 'Anuló préstamo', `#${id} · ${l.item} de ${l.borrower} · ${l.fee}`);
+    // un préstamo con varios implementos se anula completo: el valor está en la primera línea
+    const grp = await t.all('SELECT id, fee, method FROM loans WHERE voided=0 AND (id=$1 OR group_id=COALESCE($2,$1)) FOR UPDATE', [id, l.group_id]);
+    for (const g of grp) if (g.fee > 0) await t.run(`UPDATE register SET ${col(g.method)}=${col(g.method)}-$1 WHERE id=1`, [g.fee]);
+    await t.run('UPDATE loans SET voided=1 WHERE id = ANY($1::int[])', [grp.map((g) => g.id)]);
+    await audit(t, req.user, 'Anuló préstamo', `#${id} · ${l.qty}× ${l.item} de ${l.borrower} · ${grp.reduce((n, g) => n + Number(g.fee), 0)}`);
     return { ok: true };
   });
 }));

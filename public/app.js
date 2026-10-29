@@ -459,10 +459,12 @@ const views = {
       <div class="flex flex-col gap-5 lg:flex-row lg:items-start">
         <section class="min-w-0 flex-1 rounded-3xl border border-line bg-white p-5 shadow-sm lg:max-w-xl">
           <h3 class="!mb-3 flex items-center gap-2 text-lg font-extrabold text-navy"><span class="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-sm text-white">1</span> Nuevo préstamo</h3>
-          ${avail.length ? `<input type="hidden" id="li"><input type="hidden" id="lm" value="efectivo"><input type="hidden" id="ld" value="2">
-          <div class="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">¿Qué implemento?</div>
-          <div class="flex flex-wrap gap-2.5">${avail.map((i) => `<button type="button" data-i="${i.id}" onclick="A.loanPick(${i.id})" class="litem flex w-[7.2rem] flex-col items-center gap-1.5 rounded-2xl border-2 border-line bg-white p-2 text-center transition hover:border-brand/50 hover:shadow-md">
-              ${loanThumb(i, 'h-20 w-20')}<b class="line-clamp-2 text-xs leading-tight text-slate-800">${esc(i.name)}</b><small class="text-[11px] text-slate-500">${i.available} disp.</small></button>`).join('')}</div>
+          ${avail.length ? `<input type="hidden" id="lm" value="efectivo"><input type="hidden" id="ld" value="2">
+          <div class="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">¿Qué implementos y cuántos?</div>
+          <div class="flex flex-wrap gap-2.5">${avail.map((i) => `<div data-i="${i.id}" class="litem flex w-[7.2rem] flex-col items-center gap-1.5 rounded-2xl border-2 border-line bg-white p-2 text-center transition">
+              <button type="button" onclick="A.loanChg(${i.id},1)" class="flex flex-col items-center gap-1.5">${loanThumb(i, 'h-20 w-20')}<b class="line-clamp-2 text-xs leading-tight text-slate-800">${esc(i.name)}</b></button>
+              <small class="text-[11px] text-slate-500">${i.available} disp.</small>
+              <div class="qty"><button type="button" onclick="A.loanChg(${i.id},-1)">−</button><span id="lq${i.id}">0</span><button type="button" onclick="A.loanChg(${i.id},1)">+</button></div></div>`).join('')}</div>
           <div class="mt-4"><label class="text-xs font-bold uppercase tracking-wide text-slate-500">Nombre de la persona</label><input id="lb" maxlength="80" placeholder="¿A quién se le presta?" class="!rounded-2xl !py-3"></div>
           <div class="mt-3 rounded-2xl bg-ice/60 p-3">
             <div class="flex flex-wrap items-end gap-3">
@@ -478,9 +480,9 @@ const views = {
           <h3 class="!mb-3 flex items-center gap-2 text-lg font-extrabold text-navy"><span class="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-sm text-white">2</span> Pendientes de devolución</h3>
           ${pending.length ? `<div class="flex flex-col gap-3">${pending.map((l) => `<article class="overflow-hidden rounded-3xl border ${l.late ? 'border-rose-300' : 'border-amber-200'} bg-white shadow-sm">
             <div class="flex items-center gap-3 p-3">${loanThumb(item(l), 'h-16 w-16')}
-              <div class="min-w-0 flex-1"><b class="block truncate text-navy">${esc(l.item)}</b><div class="truncate text-sm text-slate-700">${icon('usuarios')} ${esc(l.borrower)}</div>
+              <div class="min-w-0 flex-1"><b class="block truncate text-navy">${l.qty > 1 ? l.qty + '× ' : ''}${esc(l.item)}</b><div class="truncate text-sm text-slate-700">${icon('usuarios')} ${esc(l.borrower)}</div>
                 <div class="text-xs text-slate-500">Prestado ${dt(l.created_at)} · atendió ${esc(l.who)}</div></div>
-              <div class="text-right"><div class="text-lg font-extrabold text-navy">${money(l.fee)}</div>${l.method ? `<small class="text-xs text-slate-500">${payTag(l.method)}</small>` : ''}</div></div>
+              <div class="text-right"><div class="text-lg font-extrabold text-navy">${l.fee || !l.group_id || l.group_id === l.id ? money(l.fee) : '<small class="text-xs font-semibold text-slate-500">incluido</small>'}</div>${l.method ? `<small class="text-xs text-slate-500">${payTag(l.method)}</small>` : ''}</div></div>
             <div class="flex flex-wrap items-center gap-2 ${l.late ? 'bg-rose-50' : 'bg-amber-50'} px-3 py-2">
               <span class="text-xs font-semibold ${l.late ? 'text-rose-700' : 'text-amber-800'}">${icon('reloj')} Devolver antes de ${dt(l.due_at)}</span>${l.late ? chip('VENCIDO', 'bg-rose-500 text-white') : ''}
               <span class="ml-auto flex gap-2"><button class="btn sm !rounded-xl" onclick="A.loanReturn(${l.id})">${icon('check')} Devuelto</button>${admin ? `<button class="btn sec sm !rounded-xl" onclick="A.loanVoid(${l.id})">Anular</button>` : ''}</span></div></article>`).join('')}</div>`
@@ -490,7 +492,7 @@ const views = {
       <section class="mt-6"><h3 class="!mb-3 text-lg font-extrabold text-navy">Historial reciente</h3>
         ${history.length ? `<div class="flex flex-col gap-2">${history.map((l) => `<div class="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-white px-3 py-2 shadow-sm ${l.voided ? 'opacity-60' : ''}">
           ${loanThumb(item(l), 'h-10 w-10')}
-          <div class="min-w-0 flex-1"><b class="block truncate text-sm text-navy ${l.voided ? 'line-through' : ''}">${esc(l.item)} <span class="font-medium text-slate-600">· ${esc(l.borrower)}</span></b>
+          <div class="min-w-0 flex-1"><b class="block truncate text-sm text-navy ${l.voided ? 'line-through' : ''}">${l.qty > 1 ? l.qty + '× ' : ''}${esc(l.item)} <span class="font-medium text-slate-600">· ${esc(l.borrower)}</span></b>
             <div class="text-xs text-slate-500">Prestó ${esc(l.who)} · ${dt(l.created_at)}${l.voided ? '' : ` → recibió ${esc(l.received_by)} · ${dt(l.returned_at)}`}</div></div>
           ${l.voided ? chip('Anulado', 'bg-rose-100 text-rose-700') : chip('Devuelto', 'bg-emerald-100 text-emerald-700')}<b class="text-navy">${money(l.fee)}</b></div>`).join('')}</div>`
         : '<span class="text-slate-500">Sin movimientos.</span>'}</section>
@@ -500,7 +502,7 @@ const views = {
             <div class="text-xs text-slate-500">${i.available} de ${i.qty} disponibles${i.active ? '' : ' · inactivo'}</div></div>
           <button class="btn sec sm !rounded-xl" onclick="A.loanItemForm(${i.id})">Editar</button></div>`).join('')}</div>`
         : '<div class="rounded-3xl border border-dashed border-line bg-white/70 p-6 text-center text-slate-500">Aún no hay implementos. Agrega raquetas, juegos de mesa, etc.</div>'}</section>` : ''}</div>`;
-    if (avail.length) A.loanPick(avail[0].id);
+    S.loanSel = {};
   },
   async pedidos() {
     const [{ pending, history }, prods, cats] = await Promise.all([api('/orders'), api('/products'), api('/categories')]);
@@ -1336,7 +1338,9 @@ const A = window.A = {
   // Préstamo de implementos
   async loan() {
     const fee = Number(val('lf')) || 0, m = val('lm');
-    const body = { item_id: val('li'), borrower: val('lb'), fee, method: m, days: val('ld') };
+    const sel = Object.entries(S.loanSel || {}).filter(([, q]) => q > 0).map(([id, q]) => ({ item_id: +id, qty: q }));
+    const body = { items: sel, borrower: val('lb'), fee, method: m, days: val('ld') };
+    if (!sel.length) return toast('Elige al menos un implemento');
     if (!body.borrower.trim()) return toast('Escribe el nombre de la persona');
     if (fee > 0 && !confirm(`Debes haber recibido ${money(fee)} en ${m}. ¿Registrar el préstamo?`)) return;
     if (await act(() => api('/loans', 'POST', body), 'Préstamo registrado')) views.prestamos();
@@ -1371,12 +1375,13 @@ const A = window.A = {
     else if (photo) await act(() => api(`/loan-items/${pid}/photo`, 'PUT', { image: photo }));
     views.prestamos();
   },
-  loanPick(id) {
-    $('#li').value = id;
-    document.querySelectorAll('.litem').forEach((b) => {
-      const on = +b.dataset.i === id;
-      b.classList.toggle('border-brand', on); b.classList.toggle('bg-ice', on); b.classList.toggle('shadow-md', on);
-    });
+  loanChg(id, d) {
+    const it = S.loanItems.find((x) => x.id === id);
+    const q = Math.max(0, Math.min(it.available, ((S.loanSel || (S.loanSel = {}))[id] || 0) + d));
+    S.loanSel[id] = q;
+    $('#lq' + id).textContent = q;
+    const b = document.querySelector(`.litem[data-i="${id}"]`);
+    b.classList.toggle('border-brand', q > 0); b.classList.toggle('bg-ice', q > 0); b.classList.toggle('shadow-md', q > 0);
   },
   loanSeg(id, v) {
     $('#' + id).value = v;
