@@ -158,7 +158,7 @@ const lastChatId = () => (S.chat.length ? S.chat[S.chat.length - 1].id : 0);
 const EMOJIS = '😀 😁 😂 🤣 😊 😍 😘 😎 🤔 😅 😢 😭 😡 🥳 😴 🙄 😬 🤗 👍 👎 👏 🙌 🙏 💪 👋 🤝 ✌️ 👌 🔥 ⭐ ❤️ 💙 💯 🎉 🎁 ✅ ❌ ⚠️ 💸 💵 📱 🍔 🍟 🥟 🥤 🍫 🍦 🍕 ☕ 🧹 🧾 📦 ⏰ 📌 👀 🚀'.split(' ');
 const peerName = () => (S.peer === 0 ? 'Equipo (todos)' : ((S.chatUsers && S.chatUsers.users.find((x) => x.id === S.peer)) || { name: 'Mensaje privado' }).name);
 // cabecera de una conversación: foto y nombre de con quién hablas
-const GROUP_AV = (cls = 'h-10 w-10') => `<span class="grid ${cls} shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand to-sky-400 text-white shadow-sm"><svg viewBox="0 0 24 24" class="block h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M21 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>`;
+const GROUP_AV = (cls = 'h-10 w-10') => `<span class="flex items-center justify-center ${cls} shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand to-sky-400 text-white shadow-sm"><svg viewBox="0 0 24 24" class="block h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M21 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>`;
 function peerHead() {
   const u = S.peer ? (S.chatUsers && S.chatUsers.users.find((x) => x.id === S.peer)) : null;
   const av = S.peer === 0 ? GROUP_AV('h-9 w-9') : avatar(u || { id: S.peer, name: peerName() }, 'sm', true);
@@ -174,10 +174,10 @@ function chatShell() {
 function chatDraw() {
   const w = $('#cw'); if (!w) return;
   if (!S.chatOpen) {
-    w.innerHTML = '<button class="relative inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-brand to-sky-500 py-2 pl-2 pr-5 text-[15px] font-extrabold text-white shadow-xl shadow-blue-600/40 transition hover:-translate-y-0.5 hover:shadow-2xl" onclick="A.chatToggle()"><img class="h-8 w-8 rounded-full bg-white p-1 shadow" src="/chaticon.png" alt="">Chat<b class="badge !m-0" id="cwbadge" hidden></b></button>';
+    w.innerHTML = '<button class="border-0 relative inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-brand to-sky-500 py-2 pl-2 pr-5 text-[15px] font-extrabold text-white shadow-xl shadow-blue-600/40 transition hover:-translate-y-0.5 hover:shadow-2xl" onclick="A.chatToggle()"><img class="h-8 w-8 rounded-full bg-white p-1 shadow" src="/chaticon.png" alt="">Chat<b class="badge !m-0" id="cwbadge" hidden></b></button>';
     chatPaintBadge(); return;
   }
-  const hb = 'grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/15 p-0 text-white transition hover:bg-white/25';
+  const hb = 'border-0 flex items-center justify-center h-8 w-8 shrink-0 place-items-center rounded-full bg-white/15 p-0 text-white transition hover:bg-white/25';
   w.innerHTML = `<div class="flex h-[min(36rem,82vh)] w-[min(25rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5">
     <div class="flex items-center gap-3 bg-gradient-to-r from-navy via-brand to-sky-500 px-4 py-3.5 text-white">
       ${S.peer === null ? '' : `<button class="${hb}" onclick="A.chatBack()" aria-label="Volver"><svg viewBox="0 0 24 24" class="block h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>`}
@@ -189,17 +189,17 @@ function chatDraw() {
       : `<div id="chatlist" class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto bg-gradient-to-b from-ice/70 to-white px-4 py-4"></div>
         <div id="cwpick" class="cw-pick" hidden></div>
         <div class="flex items-center gap-3 border-t border-line bg-white px-4 py-3.5">
-          <button class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-ice p-0 text-brand transition hover:bg-blue-100" onclick="A.pick()" aria-label="Emojis y stickers"><svg viewBox="0 0 24 24" class="block h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2.5 4 2.5S16 14 16 14M9 9.5h.01M15 9.5h.01"/></svg></button>
+          <button class="border-0 flex items-center justify-center h-10 w-10 shrink-0 place-items-center rounded-full bg-ice p-0 text-brand transition hover:bg-blue-100" onclick="A.pick()" aria-label="Emojis y stickers"><svg viewBox="0 0 24 24" class="block h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2.5 4 2.5S16 14 16 14M9 9.5h.01M15 9.5h.01"/></svg></button>
           <input id="cm" class="!min-w-0 !flex-1 !rounded-full !border-line !bg-ice/60 !px-4 !py-2.5" maxlength="500" autocomplete="off" placeholder="Escribe un mensaje…" onkeydown="if(event.key==='Enter')A.say()">
-          <button class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand to-sky-500 p-0 text-white shadow-md shadow-blue-600/40 transition hover:scale-105" onclick="A.say()" aria-label="Enviar"><svg viewBox="0 0 24 24" class="block h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button></div>`}</div>`;
+          <button class="border-0 flex items-center justify-center h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand to-sky-500 p-0 text-white shadow-md shadow-blue-600/40 transition hover:scale-105" onclick="A.say()" aria-label="Enviar"><svg viewBox="0 0 24 24" class="block h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button></div>`}</div>`;
   chatPaintSide(); chatPaintList();
   const f = $('#cm'); if (f) f.focus();
 }
 function chatPaintSide() {
   const side = $('#chatside'); if (!side || !S.chatUsers) return;
-  const row = (id, name, n, photo) => `<button class="flex w-full items-center justify-between gap-3 rounded-2xl px-3.5 py-3 text-left transition hover:bg-ice [&_.av]:!h-10 [&_.av]:!w-10" onclick="A.openChat(${id})">
+  const row = (id, name, n, photo) => `<button class="border-0 bg-transparent flex w-full items-center justify-between gap-3 rounded-2xl px-3.5 py-3 text-left transition hover:bg-ice [&_.av]:!h-10 [&_.av]:!w-10" onclick="A.openChat(${id})">
     <span class="flex min-w-0 items-center gap-3.5">${id ? avatar({ id, name, photo }, 'sm') : GROUP_AV()}<span class="min-w-0"><b class="block truncate text-sm font-bold text-slate-800">${esc(name)}</b><small class="block text-xs text-slate-500">${id ? 'Mensaje privado' : 'Todos los usuarios'}</small></span></span>
-    ${n ? `<b class="grid h-5 min-w-5 place-items-center rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white">${n}</b>` : ''}</button>`;
+    ${n ? `<b class="flex items-center justify-center h-5 min-w-5 place-items-center rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white">${n}</b>` : ''}</button>`;
   side.innerHTML = row(0, 'Equipo', S.chatUsers.general) + '<div class="mx-3 my-2 border-t border-line"></div>' + S.chatUsers.users.map((u) => row(u.id, u.name, u.unread, u.photo)).join('');
 }
 function chatPaintBadge() {
