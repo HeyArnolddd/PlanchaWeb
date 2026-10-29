@@ -1172,7 +1172,7 @@ const A = window.A = {
   async writeOff(all) {
     const items = [...document.querySelectorAll('.wq')].filter((i) => i.closest('tr').style.display !== 'none').map((i) => ({ product_id: +i.dataset.id, qty: all ? +i.max : +i.value })).filter((i) => i.qty > 0);
     if (!items.length) return toast('Indica cuántas unidades descartar');
-    const cost = items.reduce((t, i) => { const p = S.prods.find((x) => x.id === i.product_id); return t + (/^empanada/i.test(p.category || '') ? 0 : i.qty * p.buy_price); }, 0);
+    const cost = items.reduce((t, i) => { const p = S.prods.find((x) => x.id === i.product_id); return t + (/^(empanada|vitrina)/i.test(p.category || '') ? 0 : i.qty * p.buy_price); }, 0);
     if (!confirm(`${all ? '¿Vaciar el stock de los productos mostrados?' : '¿Descartar estos productos?'} Se registra una pérdida de ${money(cost)}.`)) return;
     const r = await act(() => api('/write-offs', 'POST', { items, note: val('wn') }));
     if (r) { toast(`Pérdida registrada: ${money(r.total)}`); boot(); }

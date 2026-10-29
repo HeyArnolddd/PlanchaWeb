@@ -488,7 +488,7 @@ app.get('/api/products', auth, wrap(async (req) => {
     (SELECT extract(epoch FROM updated_at)::bigint FROM product_photos f WHERE f.product_id=p.id) AS photo
     FROM products p LEFT JOIN categories c ON c.id=p.category_id ORDER BY p.active DESC, c.name, p.name`);
   rows.forEach((r) => {
-    if (/^empanada/i.test(r.category || '')) r.benefit_price = r.buy_price;
+    if (/^(empanada|vitrina)/i.test(r.category || '')) r.benefit_price = r.buy_price;
     if (req.user.role !== 'admin') delete r.buy_price;
   });
   return rows;
@@ -842,7 +842,7 @@ app.post('/api/sales', auth, wrap(async (req) => {
       const row = { p, qty, bq: 0 };
       if (benefit && benefit.product_id === pid) {
         const c = p.category_id && await t.get('SELECT name FROM categories WHERE id=$1', [p.category_id]);
-        if (!c || !/^empanada/i.test(c.name)) throw bad('El beneficio solo aplica a empanadas');
+        if (!c || !/^(empanada|vitrina)/i.test(c.name)) throw bad('El beneficio solo aplica a empanadas');
         if (await t.get('SELECT 1 FROM benefit_uses WHERE person_key=$1 AND day=$2', [benefit.key, today()])) throw bad(`${benefit.name} ya usó su beneficio de hoy`);
         row.bq = 1; row.bname = benefit.name;
         total -= p.sell_price - p.buy_price;
@@ -1183,7 +1183,7 @@ app.post('/api/write-offs', auth, admin, wrap(async (req) => {
       const id = int(it.product_id, 'producto'), qty = int(it.qty, 'cantidad', { min: 1 });
       const p = await t.get('SELECT p.*, (SELECT c.name FROM categories c WHERE c.id=p.category_id) AS category FROM products p WHERE p.id=$1 FOR UPDATE OF p', [id]);
       if (!p) throw new HttpError(404, 'No existe el producto');
-      const free = /^empanada/i.test(p.category || ''); // las empanadas se pagan en gastos de pedidos: salen del stock sin pérdida
+      const free = /^(empanada|vitrina)/i.test(p.category || ''); // las empanadas se pagan en gastos de pedidos: salen del stock sin pérdida
       if (!p.track_stock) throw bad(`"${p.name}" no controla stock`);
       if (qty > p.stock) throw bad(`Solo quedan ${p.stock} de "${p.name}"`);
       await t.run('UPDATE products SET stock=stock-$1 WHERE id=$2', [qty, id]);
