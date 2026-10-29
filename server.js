@@ -192,6 +192,7 @@ DO $$ BEGIN
     UPDATE users SET can_emp=1 WHERE lower(username)='teresa' OR lower(name) LIKE 'teresa%';
   END IF;
 END $$;
+ALTER TABLE loans ADD COLUMN IF NOT EXISTS phone TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS perms TEXT NOT NULL DEFAULT '';
 ALTER TABLE payouts ADD COLUMN IF NOT EXISTS payee TEXT;
 ALTER TABLE payouts ADD COLUMN IF NOT EXISTS product_id INTEGER;
@@ -1168,9 +1169,11 @@ app.post('/api/loans', auth, wrap(async (req) => {
   }
   const ids = [...merged.keys()].sort((a, b) => a - b);
   const borrower = str(req.body.borrower, 'Nombre de la persona', 80);
+  const phone = String(req.body.phone ?? '').replace(/[\s().-]/g, '');
+  if (!/^\+?\d{7,15}$/.test(phone)) throw bad('Escribe un teléfono válido (solo números)');
   const fee = int(req.body.fee ?? 0, 'valor del préstamo');
   const m = fee > 0 ? method(req.body.method) : null;
-  const days = int(req.body.days ?? 2, 'días', { min: 1, max: 2 });
+  const days = int(req.body.days ?? 1, 'días', { min: 1, max: 2 });
   return tx(async (t) => {
     const s = await openShift(t);
     if (!s) throw bad('Primero debes abrir caja');
@@ -1189,8 +1192,8 @@ app.post('/api/loans', auth, wrap(async (req) => {
     const due = new Date(at.getTime() + days * 864e5);
     let first = null;
     for (const { it, qty } of its) {
-      const { id } = await t.get(`INSERT INTO loans (item_id,shift_id,user_id,borrower,fee,method,due_at,created_at,qty,group_id)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`, [it.id, s.id, req.user.id, borrower, first ? 0 : fee, first ? null : m, due, at, qty, first]);
+      const { id } = await t.get(`INSERT INTO loans (item_id,shift_id,user_id,borrower,fee,method,due_at,created_at,qty,group_id,phone)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`, [it.id, s.id, req.user.id, borrower, first ? 0 : fee, first ? null : m, due, at, qty, first, phone]);
       if (!first) { first = id; await t.run('UPDATE loans SET group_id=$1 WHERE id=$1', [id]); }
     }
     await audit(t, req.user, 'Registró préstamo', `#${first} · ${its.map((x) => `${x.qty}× ${x.it.name}`).join(', ')} a ${borrower} · ${fee}${m ? ' (' + m + ')' : ''}`);
