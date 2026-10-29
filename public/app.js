@@ -495,7 +495,7 @@ const views = {
   async prestamos() {
     const [items, { pending, history }] = await Promise.all([api('/loan-items'), api('/loans')]);
     S.loanItems = items;
-    const admin = S.user.role === 'admin';
+    const admin = can('prestamos');
     const avail = items.filter((i) => i.active && i.available > 0);
     const late = pending.filter((l) => l.late).length;
     const item = (l) => items.find((x) => x.id === l.item_id);
