@@ -1144,7 +1144,16 @@ const A = window.A = {
       <div class="row" id="stk" style="${p.track_stock ? '' : 'display:none'}">${id ? `<div><label>Stock actual</label><input id="pfq" type="number" inputmode="numeric" min="0" value="${p.stock}"></div>` : '<div><label>Cantidad inicial</label><input id="pfq" type="number" min="0" value="0"></div>'}
       <div><label>Avisar si stock ≤</label><input id="pm" type="number" min="0" value="${p.min_stock}"></div></div>
       ${id ? `<label><input type="checkbox" id="pa" style="width:auto" ${p.active ? 'checked' : ''}> Activo (visible para vender)</label>` : ''}
-      <p><button class="btn" onclick="A.saveProduct(${id || 0})">Guardar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);
+      <p><button class="btn" onclick="A.saveProduct(${id || 0})">Guardar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>
+      ${id ? `<hr><p class="mute">¿Ya no lo traemos? <a href="#" style="color:#dc2626" onclick="A.delProduct(${id});return false">Eliminar producto</a></p>` : ''}`);
+  },
+  async delProduct(id) {
+    const p = S.prods.find((x) => x.id === id);
+    if (!confirm(`¿Eliminar "${p.name}"? Si ya tiene ventas o ingresos registrados no se borra: queda desactivado y sale de la venta y del stock, conservando el historial.`)) return;
+    const r = await act(() => api(`/products/${id}`, 'DELETE'));
+    if (!r) return;
+    toast(r.deleted ? 'Producto eliminado' : 'Producto desactivado (tiene historial)');
+    closeModal(); boot();
   },
   async saveProduct(id) {
     const body = { name: val('pn'), category_id: val('pc'), buy_price: val('pb'), sell_price: val('ps'), min_stock: val('pm'), track_stock: $('#pt').checked };

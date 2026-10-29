@@ -554,6 +554,22 @@ app.put('/api/products/:id', auth, admin, wrap(async (req) => {
   }
   return { ok: true };
 }));
+// Eliminar producto: si ya tiene historial (ventas, ingresos, pedidos) no se puede borrar sin romper los reportes, así que se desactiva
+app.delete('/api/products/:id', auth, admin, wrap(async (req) => {
+  const id = int(req.params.id, 'id');
+  const old = await D.get('SELECT name FROM products WHERE id=$1', [id]);
+  if (!old) throw bad('Producto no encontrado');
+  try {
+    await D.run('DELETE FROM products WHERE id=$1', [id]);
+    await audit(D, req.user, 'Eliminó producto', old.name);
+    return { ok: true, deleted: true };
+  } catch (e) {
+    if (e.code !== '23503') throw e;
+    await D.run('UPDATE products SET active=0 WHERE id=$1', [id]);
+    await audit(D, req.user, 'Desactivó producto (tiene historial)', old.name);
+    return { ok: true, deleted: false };
+  }
+}));
 // Perfil propio: nombre (admite emojis) y usuario; el usuario exige la contraseña actual
 app.put('/api/me/profile', auth, wrap(async (req) => {
   const name = str(String(req.body.name ?? '').replace(/[\u0000-\u001f]/g, ' '), 'Nombre', 80);
