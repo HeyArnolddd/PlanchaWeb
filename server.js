@@ -301,6 +301,11 @@ CREATE TABLE IF NOT EXISTS purchase_order_items (
   received_qty INTEGER
 );
 CREATE INDEX IF NOT EXISTS purchase_order_items_order ON purchase_order_items (order_id);
+CREATE TABLE IF NOT EXISTS order_item_photos (
+  item_id INTEGER PRIMARY KEY REFERENCES purchase_order_items(id) ON DELETE CASCADE,
+  data BYTEA NOT NULL,
+  mime TEXT NOT NULL
+);
 INSERT INTO register (id, cash, nequi) VALUES (1, 0, 0) ON CONFLICT DO NOTHING;
 `;
 
@@ -329,7 +334,7 @@ const ensureReady = () => (ready ||= init().catch((e) => { ready = null; throw e
 const now = () => new Date();
 const app = express();
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '400kb' }));
+app.use(express.json({ limit: '2mb' }));
 app.use((req, res, next) => (req.path.startsWith('/api') ? ensureReady().then(() => next(), next) : next()));
 
 class HttpError extends Error {
@@ -995,13 +1000,23 @@ app.post('/api/orders', auth, wrap(async (req) => {
         const name = str(l.new_name, 'Nombre del producto nuevo', 80);
         const cid = l.new_category_id ? int(l.new_category_id, 'categoría') : null;
         if (cid && !await t.get('SELECT 1 FROM categories WHERE id=$1', [cid])) throw bad('Categoría inválida');
-        items.push({ name, cid, price: int(l.new_sell_price ?? 0, 'precio de venta'), qty });
+        let photo = null;
+        if (l.new_photo) {
+          const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(l.new_photo));
+          if (!m) throw bad('Imagen inválida');
+          const data = Buffer.from(m[2], 'base64');
+          if (data.length > 200 * 1024) throw bad('La imagen es demasiado grande');
+          photo = { data, mime: m[1] };
+        }
+        items.push({ name, cid, price: int(l.new_sell_price ?? 0, 'precio de venta'), qty, photo });
       }
     }
     const { id } = await t.get('INSERT INTO purchase_orders (user_id,total,note,created_at) VALUES ($1,$2,$3,$4) RETURNING id', [req.user.id, total, note, now()]);
-    for (const i of items)
-      await t.run('INSERT INTO purchase_order_items (order_id,product_id,new_name,new_category_id,new_sell_price,qty) VALUES ($1,$2,$3,$4,$5,$6)',
+    for (const i of items) {
+      const row = await t.get('INSERT INTO purchase_order_items (order_id,product_id,new_name,new_category_id,new_sell_price,qty) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
         [id, i.pid || null, i.name || null, i.cid || null, i.price || 0, i.qty]);
+      if (i.photo) await t.run('INSERT INTO order_item_photos (item_id,data,mime) VALUES ($1,$2,$3)', [row.id, i.photo.data, i.photo.mime]);
+    }
     await audit(t, req.user, 'Registró pedido', `#${id} · ${items.length} productos · total ${total}`);
     return { id };
   });
@@ -1050,6 +1065,8 @@ app.post('/api/orders/:id/receive', auth, wrap(async (req) => {
         buy = 0; // el costo unitario lo fija el admin en Productos; el pedido solo registra el total
         pid = (await t.get(`INSERT INTO products (name,category_id,buy_price,sell_price,stock,min_stock) VALUES ($1,$2,0,$3,$4,0) RETURNING id`,
           [i.new_name, i.new_category_id, i.new_sell_price, qty])).id;
+        const ph = await t.get('SELECT data, mime FROM order_item_photos WHERE item_id=$1', [i.id]);
+        if (ph) await t.run('INSERT INTO product_photos (product_id,data,mime,updated_at) VALUES ($1,$2,$3,$4)', [pid, ph.data, ph.mime, now()]);
         await audit(t, req.user, 'Creó producto (desde pedido)', `${i.new_name} · venta ${i.new_sell_price}`);
       }
       await t.run('INSERT INTO stock_entries (product_id,qty,buy_price,user_id,note,created_at) VALUES ($1,$2,$3,$4,$5,$6)',

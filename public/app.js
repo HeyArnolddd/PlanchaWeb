@@ -1293,7 +1293,7 @@ const A = window.A = {
   ordDraft() {
     const d = S.orderDraft;
     $('#odraft').innerHTML = d.items.length ? `<div class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">En este pedido (${d.items.length})</div><div class="flex flex-col gap-2">${d.items.map((i, k) => `<div class="flex items-center gap-3 rounded-2xl border border-line bg-white p-2 pr-3 shadow-sm">
-      ${ordThumb(i.product_id ? S.prods.find((p) => p.id === i.product_id) : null, 'h-12 w-12')}
+      ${i.new_photo ? `<img class="h-12 w-12 shrink-0 rounded-xl object-cover ring-1 ring-line" src="${i.new_photo}" alt="">` : ordThumb(i.product_id ? S.prods.find((p) => p.id === i.product_id) : null, 'h-12 w-12')}
       <div class="min-w-0 flex-1"><div class="truncate text-sm font-bold text-slate-800">${esc(i.name)}</div>${i.product_id ? '' : '<span class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">PRODUCTO NUEVO</span>'}</div>
       ${ordStep(`A.ordQty(${k},-1)`, `A.ordQty(${k},1)`, i.qty)}
       <button class="flex h-8 w-8 items-center justify-center rounded-full text-rose-500 hover:bg-rose-50" aria-label="Quitar" onclick="S.orderDraft.items.splice(${k},1);A.ordDraft()">✕</button></div>`).join('')}</div>` : '';
@@ -1333,8 +1333,11 @@ const A = window.A = {
     S.ordSel = null; $('#osel').innerHTML = ''; A.ordDraft(); $('#os').focus();
   },
   ordNewProduct(name = '') {
-    $('#ores').hidden = true;
+    $('#ores').hidden = true; S.photo = undefined;
     modal(`<h3>Producto nuevo</h3><p class="mute">Se crea en Productos cuando recibas el pedido. El admin puede ajustar su precio de compra después.</p>
+      <label>Foto (opcional)</label>
+      <img id="pimg" class="pprev" style="display:none" alt="">
+      <input id="pf" type="file" accept="image/*" onchange="A.pickPhoto(this)">
       <label>Nombre</label><input id="nn" maxlength="80" value="${esc(name)}">
       <label>Categoría</label><select id="nc"><option value="">Sin categoría</option>${S.cats.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
       <div class="row"><div><label>Precio de venta</label><input id="np" type="number" inputmode="numeric" min="0" value="0"></div>
@@ -1345,14 +1348,15 @@ const A = window.A = {
     const name = val('nn').trim(), qty = +val('nq');
     if (!name) return toast('Escribe el nombre');
     if (!(qty > 0)) return toast('Escribe la cantidad');
-    S.orderDraft.items.push({ new_name: name, new_category_id: val('nc'), new_sell_price: val('np') || 0, name, qty });
+    S.orderDraft.items.push({ new_name: name, new_category_id: val('nc'), new_sell_price: val('np') || 0, new_photo: S.photo || undefined, name, qty });
+    S.photo = undefined;
     closeModal(); A.ordDraft();
   },
   async ordSave() {
     const d = S.orderDraft;
     if (!d.items.length) return toast('Agrega al menos un producto');
     if (!(Number(d.total) > 0)) return toast('Escribe el valor total del pedido');
-    const items = d.items.map(({ product_id, new_name, new_category_id, new_sell_price, qty }) => ({ product_id, new_name, new_category_id, new_sell_price, qty }));
+    const items = d.items.map(({ product_id, new_name, new_category_id, new_sell_price, new_photo, qty }) => ({ product_id, new_name, new_category_id, new_sell_price, new_photo, qty }));
     if (await act(() => api('/orders', 'POST', { items, total: d.total, note: d.note }), 'Pedido registrado')) { S.orderDraft = null; views.pedidos(); }
   },
   ordReceive(id) {
