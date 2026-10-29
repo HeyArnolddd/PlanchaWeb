@@ -1115,7 +1115,7 @@ const A = window.A = {
     const words = norm(S.pq).split(/\s+/).filter(Boolean), admin = S.user.role === 'admin';
     const st = (p) => (!p.track_stock ? 'free' : p.stock <= 0 ? 'out' : p.stock <= p.min_stock ? 'low' : 'ok');
     const list = S.prods.filter((p) => (S.pcat === 'all' || (p.category || 'Sin categoría') === S.pcat)
-      && (S.pst === 'all' || (S.pst === 'off' ? !p.active : p.active && st(p) === S.pst))
+      && (S.pst === 'off' ? !p.active : p.active && (S.pst === 'all' || st(p) === S.pst))
       && words.every((w) => norm(p.name + ' ' + (p.category || '')).includes(w)));
     $('#pgrid').innerHTML = list.map((p, i) => productCard(p, admin, st(p), i)).join('') || '<div class="card mute" style="grid-column:1/-1">Sin resultados.</div>';
   },
