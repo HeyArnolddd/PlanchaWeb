@@ -487,9 +487,9 @@ app.get('/api/products', auth, wrap(async (req) => {
   const rows = await D.all(`SELECT p.*, c.name AS category,
     (SELECT extract(epoch FROM updated_at)::bigint FROM product_photos f WHERE f.product_id=p.id) AS photo
     FROM products p LEFT JOIN categories c ON c.id=p.category_id ORDER BY p.active DESC, c.name, p.name`);
-  if (req.user.role !== 'admin') rows.forEach((r) => {
+  rows.forEach((r) => {
     if (/^empanada/i.test(r.category || '')) r.benefit_price = r.buy_price;
-    delete r.buy_price;
+    if (req.user.role !== 'admin') delete r.buy_price;
   });
   return rows;
 }));
