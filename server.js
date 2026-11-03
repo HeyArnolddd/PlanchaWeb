@@ -75,6 +75,10 @@ CREATE TABLE IF NOT EXISTS stock_entries (
   note TEXT,
   created_at TIMESTAMPTZ NOT NULL
 );
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS shifts (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -753,13 +757,23 @@ app.post('/api/shifts/:id/fix-count', auth, admin, wrap(async (req) => {
     return { ok: true };
   });
 }));
-// Descuadre semanal (lunes a domingo, hora Colombia) por usuario: suma de las diferencias de sus cierres de caja
-app.get('/api/shifts/weekly', auth, wrap((req) =>
-  D.all(`SELECT to_char(date_trunc('week', h.closed_at AT TIME ZONE '${TZ}'),'YYYY-MM-DD') AS week, h.user_id, u.name AS user_name, COUNT(*) AS shifts,
+// Descuadre semanal (lunes a domingo, hora Colombia) por usuario: suma de las diferencias de sus cierres de caja.
+// Solo cuenta los cierres posteriores al último reinicio del descuadre (app_settings.diff_reset_at).
+app.get('/api/shifts/weekly', auth, wrap(async (req) => {
+  const reset = (await D.get("SELECT value FROM app_settings WHERE key='diff_reset_at'"))?.value || '1970-01-01T00:00:00Z';
+  const mine = req.user.role !== 'admin';
+  return D.all(`SELECT to_char(date_trunc('week', h.closed_at AT TIME ZONE '${TZ}'),'YYYY-MM-DD') AS week, h.user_id, u.name AS user_name, COUNT(*) AS shifts,
     SUM(h.close_cash - h.sys_close_cash) AS diff_cash, SUM(h.close_nequi - h.sys_close_nequi) AS diff_nequi
     FROM shifts h JOIN users u ON u.id=h.user_id
-    WHERE h.closed_at IS NOT NULL ${req.user.role === 'admin' ? '' : 'AND h.user_id=$1'}
-    GROUP BY 1,2,3 ORDER BY 1 DESC, 3`, req.user.role === 'admin' ? [] : [req.user.id])));
+    WHERE h.closed_at IS NOT NULL AND h.closed_at > $1 ${mine ? 'AND h.user_id=$2' : ''}
+    GROUP BY 1,2,3 ORDER BY 1 DESC, 3`, mine ? [reset, req.user.id] : [reset]);
+}));
+// Reinicia el descuadre: desde ahora solo cuentan los cierres nuevos (el historial de turnos no se toca)
+app.post('/api/shifts/reset-diff', auth, admin, wrap(async (req) => {
+  await D.run(`INSERT INTO app_settings(key,value) VALUES('diff_reset_at', now()::text) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`);
+  await audit(D, req.user, 'Reinició el descuadre de caja');
+  return { ok: true };
+}));
 app.get('/api/shifts/:id', auth, wrap(async (req) => {
   const s = await D.get(`${SHIFT_SQL} WHERE s.id=$1`, [int(req.params.id, 'id')]);
   if (!s) throw new HttpError(404, 'No existe');

@@ -805,7 +805,7 @@ const views = {
         <div><h2 class="!mb-0 text-2xl font-extrabold !text-white">${admin ? 'Turnos' : 'Mis turnos'}</h2><p class="mt-1 text-sm text-blue-100">Historial de cierres y descuadre de caja.</p></div>
         <div class="flex gap-3"><div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${rows.length}</div><div class="${lbl} text-blue-100">Turnos</div></div>
           <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${open}</div><div class="${lbl} text-blue-100">Abiertos</div></div></div></div>
-      <section class="mb-5 rounded-3xl border border-line bg-white p-5 shadow-sm"><h3 class="!mb-3 text-lg font-extrabold text-navy">Descuadre de caja</h3>
+      <section class="mb-5 rounded-3xl border border-line bg-white p-5 shadow-sm"><div class="!mb-3 flex items-center justify-between gap-3"><h3 class="!mb-0 text-lg font-extrabold text-navy">Descuadre de caja</h3>${admin ? '<button class="btn sec sm !rounded-xl" onclick="A.resetDiff()">Reiniciar</button>' : ''}</div>
         ${list.length ? `<div class="flex flex-col gap-2"><div class="flex items-center gap-3 px-3 ${lbl} text-slate-400"><span class="flex-1">Usuario</span><span class="w-36">Esta semana</span><span class="w-36">Total</span></div>
         ${list.map((p) => `<div class="flex flex-wrap items-center gap-3 rounded-2xl bg-ice/50 px-3 py-2.5">
           <span class="flex min-w-0 flex-1 items-center gap-3"><b class="av sm">${initialOf(p.name)}</b><b class="truncate text-navy">${esc(p.name)}</b></span>
@@ -1287,6 +1287,10 @@ const A = window.A = {
   },
 
   // Turnos
+  async resetDiff() {
+    if (!confirm('¿Reiniciar el descuadre de caja? Desde ahora solo se cuentan los cierres nuevos. El historial de turnos se conserva.')) return;
+    try { await api('/shifts/reset-diff', 'POST', {}); toast('Descuadre reiniciado'); views.turnos(); } catch (e) { toast(e.message); }
+  },
   async shiftDetail(id) {
     const s = await act(() => api('/shifts/' + id));
     if (!s) return;
