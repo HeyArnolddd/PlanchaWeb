@@ -204,6 +204,16 @@ ALTER TABLE payouts ADD COLUMN IF NOT EXISTS sold_qty INTEGER NOT NULL DEFAULT 0
 ALTER TABLE payouts ADD COLUMN IF NOT EXISTS lost_qty INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS payout_id INTEGER;
 ALTER TABLE write_offs ADD COLUMN IF NOT EXISTS payout_id INTEGER;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payout_id INTEGER;
+CREATE TABLE IF NOT EXISTS payout_adjustments (
+  id SERIAL PRIMARY KEY,
+  product_id INTEGER NOT NULL,
+  sold_delta INTEGER NOT NULL DEFAULT 0,
+  lost_delta INTEGER NOT NULL DEFAULT 0,
+  payout_id INTEGER,
+  user_id INTEGER NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL
+);
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'implementos';
 CREATE TABLE IF NOT EXISTS benefit_uses (
   user_id INTEGER NOT NULL REFERENCES users(id),
@@ -1299,13 +1309,19 @@ app.get('/api/write-offs', auth, can('dinero'), wrap(async (req) => {
 const LOST_PAY = 0.6; // de lo descartado solo se paga el 60% del precio de compra acordado
 const isEmp = (name) => /^emprendimiento/i.test(name || '');
 async function pendingPayouts(x, productId, lock = false) {
-  const [sold, lost] = await Promise.all([
+  const [sold, lost, adj, pr] = await Promise.all([
     x.all(`SELECT i.id, i.qty, i.cost FROM sale_items i JOIN sales s ON s.id=i.sale_id
       WHERE s.voided=0 AND i.payout_id IS NULL AND i.product_id=$1${lock ? ' FOR UPDATE OF i' : ''}`, [productId]),
     x.all(`SELECT w.id, w.qty, w.cost FROM write_offs w WHERE w.payout_id IS NULL AND w.product_id=$1${lock ? ' FOR UPDATE OF w' : ''}`, [productId]),
+    x.all(`SELECT id, sold_delta, lost_delta FROM payout_adjustments WHERE payout_id IS NULL AND product_id=$1${lock ? ' FOR UPDATE' : ''}`, [productId]),
+    x.get('SELECT buy_price FROM products WHERE id=$1', [productId]),
   ]);
   const f = (rows) => rows.reduce((t, r) => t + r.qty * r.cost, 0);
-  return { sold, lost, sold_cost: f(sold), lost_cost: Math.round(f(lost) * LOST_PAY), sold_qty: sold.reduce((t, r) => t + r.qty, 0), lost_qty: lost.reduce((t, r) => t + r.qty, 0) };
+  const unit = Number(pr?.buy_price) || 0;
+  const sd = adj.reduce((t, a) => t + a.sold_delta, 0), ld = adj.reduce((t, a) => t + a.lost_delta, 0);
+  return { sold, lost, adj, unit,
+    sold_cost: f(sold) + sd * unit, lost_cost: Math.round((f(lost) + ld * unit) * LOST_PAY),
+    sold_qty: sold.reduce((t, r) => t + r.qty, 0) + sd, lost_qty: lost.reduce((t, r) => t + r.qty, 0) + ld };
 }
 app.get('/api/payouts', auth, emp, wrap(async () => {
   const prods = (await D.all(`SELECT p.id, p.name, c.name AS category FROM products p JOIN categories c ON c.id=p.category_id ORDER BY p.name`))
@@ -1313,7 +1329,7 @@ app.get('/api/payouts', auth, emp, wrap(async () => {
   const pending = [];
   for (const p of prods) {
     const x = await pendingPayouts(D, p.id);
-    if (x.sold_qty || x.lost_qty) pending.push({ product_id: p.id, product: p.name, sold_qty: x.sold_qty, sold_cost: x.sold_cost,
+    if (x.sold_qty || x.lost_qty || x.adj.length) pending.push({ product_id: p.id, product: p.name, sold_qty: x.sold_qty, sold_cost: x.sold_cost,
       lost_qty: x.lost_qty, lost_cost: x.lost_cost, total: x.sold_cost + x.lost_cost });
   }
   const history = await D.all(`SELECT y.*, u.name AS "user" FROM payouts y JOIN users u ON u.id=y.user_id ORDER BY y.id DESC LIMIT 100`);
@@ -1328,7 +1344,7 @@ app.post('/api/payouts', auth, emp, wrap(async (req) => {
     if (!pr || !isEmp(pr.category)) throw new HttpError(404, 'No existe el producto de emprendimiento');
     const p = await pendingPayouts(t, productId, true);
     const total = p.sold_cost + p.lost_cost;
-    if (total <= 0) throw bad('No hay nada pendiente por pagar');
+    if (total <= 0 || p.sold_qty < 0 || p.lost_qty < 0) throw bad('No hay nada pendiente por pagar');
     const r = await t.get('SELECT cash,nequi FROM register WHERE id=1 FOR UPDATE');
     if (r[col(m)] < total) throw bad(`No hay suficiente ${m} en caja para este pago`);
     const { id } = await t.get(`INSERT INTO payouts (category_id,category,sold_cost,lost_cost,total,method,user_id,created_at,payee,product_id,sold_qty,lost_qty)
@@ -1336,11 +1352,46 @@ app.post('/api/payouts', auth, emp, wrap(async (req) => {
       [pr.name, p.sold_cost, p.lost_cost, total, m, req.user.id, now(), payee, productId, p.sold_qty, p.lost_qty]);
     if (p.sold.length) await t.run('UPDATE sale_items SET payout_id=$1 WHERE id = ANY($2::int[])', [id, p.sold.map((x) => x.id)]);
     if (p.lost.length) await t.run('UPDATE write_offs SET payout_id=$1 WHERE id = ANY($2::int[])', [id, p.lost.map((x) => x.id)]);
+    if (p.adj.length) await t.run('UPDATE payout_adjustments SET payout_id=$1 WHERE id = ANY($2::int[])', [id, p.adj.map((x) => x.id)]);
     await t.run(`UPDATE register SET ${col(m)}=${col(m)}-$1 WHERE id=1`, [total]);
-    await t.run('INSERT INTO expenses (user_id,description,amount,method,kind,created_at) VALUES ($1,$2,$3,$4,$5,$6)',
-      [req.user.id, `Pago emprendimiento ${pr.name} a nombre de ${payee} · vendidos ${p.sold_qty} (${p.sold_cost}) + perdidos ${p.lost_qty} al 60% (${p.lost_cost})`, total, m, 'pedido', now()]);
+    await t.run('INSERT INTO expenses (user_id,description,amount,method,kind,created_at,payout_id) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [req.user.id, `Pago emprendimiento ${pr.name} a nombre de ${payee} · vendidos ${p.sold_qty} (${p.sold_cost}) + perdidos ${p.lost_qty} al 60% (${p.lost_cost})`, total, m, 'pedido', now(), id]);
     await audit(t, req.user, 'Pagó a emprendimiento', `${pr.name} a nombre de ${payee} · ${total} (${m}) · vendidos ${p.sold_qty} · perdidos ${p.lost_qty} (60%: ${p.lost_cost})`);
     return { ok: true, total };
+  });
+}));
+
+// Corregir lo pendiente: se indica cuántos vendidos/perdidos son en realidad y se guarda la diferencia como ajuste.
+app.post('/api/payouts/adjust', auth, emp, wrap(async (req) => {
+  const productId = int(req.body.product_id, 'producto');
+  const sold = int(req.body.sold_qty, 'vendidos'), lost = int(req.body.lost_qty, 'perdidos');
+  return tx(async (t) => {
+    const pr = await t.get('SELECT p.name, c.name AS category FROM products p JOIN categories c ON c.id=p.category_id WHERE p.id=$1', [productId]);
+    if (!pr || !isEmp(pr.category)) throw new HttpError(404, 'No existe el producto de emprendimiento');
+    const p = await pendingPayouts(t, productId, true);
+    const sd = sold - p.sold_qty, ld = lost - p.lost_qty;
+    if (!sd && !ld) return { ok: true };
+    await t.run('INSERT INTO payout_adjustments (product_id,sold_delta,lost_delta,user_id,created_at) VALUES ($1,$2,$3,$4,$5)', [productId, sd, ld, req.user.id, now()]);
+    await audit(t, req.user, 'Corrigió pendiente de emprendimiento', `${pr.name} · vendidos ${p.sold_qty}→${sold} · perdidos ${p.lost_qty}→${lost}`);
+    return { ok: true };
+  });
+}));
+// Anular un pago: devuelve la plata a la caja y deja todo otra vez pendiente.
+app.post('/api/payouts/:id/cancel', auth, emp, wrap(async (req) => {
+  const id = int(req.params.id, 'pago', { min: 1 });
+  return tx(async (t) => {
+    const y = await t.get('SELECT * FROM payouts WHERE id=$1 FOR UPDATE', [id]);
+    if (!y) throw new HttpError(404, 'No existe ese pago');
+    await t.run('UPDATE sale_items SET payout_id=NULL WHERE payout_id=$1', [id]);
+    await t.run('UPDATE write_offs SET payout_id=NULL WHERE payout_id=$1', [id]);
+    await t.run('UPDATE payout_adjustments SET payout_id=NULL WHERE payout_id=$1', [id]);
+    const del = await t.run('DELETE FROM expenses WHERE payout_id=$1', [id]);
+    if (!del?.rowCount) await t.run(`DELETE FROM expenses WHERE id = (SELECT id FROM expenses WHERE payout_id IS NULL AND kind='pedido'
+      AND amount=$1 AND method=$2 AND description LIKE $3 ORDER BY id DESC LIMIT 1)`, [y.total, y.method, `Pago emprendimiento ${y.category} a nombre de ${y.payee || ''} %`]);
+    await t.run(`UPDATE register SET ${col(y.method)}=${col(y.method)}+$1 WHERE id=1`, [y.total]);
+    await t.run('DELETE FROM payouts WHERE id=$1', [id]);
+    await audit(t, req.user, 'Anuló pago a emprendimiento', `${y.category} a nombre de ${y.payee || '—'} · ${y.total} (${y.method}) devuelto a la caja`);
+    return { ok: true };
   });
 }));
 

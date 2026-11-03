@@ -658,9 +658,10 @@ const views = {
         <td class="n"><b>${money(p.total)}</b></td>
         <td><input id="pp${i}" maxlength="100" placeholder="Nombre" style="min-width:8rem"></td>
         <td><select id="pm${i}"><option value="efectivo">Efectivo</option><option value="nequi">Nequi</option></select></td>
-        <td class="n"><button class="btn sm" onclick="A.payout(${p.product_id}, ${i}, ${p.total}, '${esc(p.product).replace(/'/g, '')}')">Pagar</button></td></tr>`).join('')}</table>` : '<span class="mute">Nada pendiente en emprendimientos.</span>'}</div>
-      <div class="card tw"><h3>Pagos realizados</h3><table><tr><th>Fecha</th><th>Producto</th><th>A nombre de</th><th>Medio</th><th class="n">Vendidos</th><th class="n">Perdidos</th><th class="n">Total</th></tr>
-      ${history.map((y) => `<tr><td>${dt(y.created_at)}</td><td>${esc(y.category)}</td><td>${esc(y.payee || '—')}</td><td>${y.method}</td><td class="n">${y.sold_qty} · ${money(y.sold_cost)}</td><td class="n">${y.lost_qty} · ${money(y.lost_cost)}</td><td class="n">${money(y.total)}</td></tr>`).join('') || '<tr><td colspan="7" class="mute">Sin pagos.</td></tr>'}</table></div>`;
+        <td class="n"><button class="btn sm" onclick="A.payout(${p.product_id}, ${i}, ${p.total}, '${esc(p.product).replace(/'/g, '')}')">Pagar</button>
+          <button class="btn sm sec" onclick="A.payAdjust(${p.product_id}, ${p.sold_qty}, ${p.lost_qty})">Editar</button></td></tr>`).join('')}</table>` : '<span class="mute">Nada pendiente en emprendimientos.</span>'}</div>
+      <div class="card tw"><h3>Pagos realizados</h3><table><tr><th>Fecha</th><th>Producto</th><th>A nombre de</th><th>Medio</th><th class="n">Vendidos</th><th class="n">Perdidos</th><th class="n">Total</th><th></th></tr>
+      ${history.map((y) => `<tr><td>${dt(y.created_at)}</td><td>${esc(y.category)}</td><td>${esc(y.payee || '—')}</td><td>${y.method}</td><td class="n">${y.sold_qty} · ${money(y.sold_cost)}</td><td class="n">${y.lost_qty} · ${money(y.lost_cost)}</td><td class="n">${money(y.total)}</td><td class="n"><button class="btn sm sec" onclick="A.payCancel(${y.id}, ${y.total})">Anular</button></td></tr>`).join('') || '<tr><td colspan="8" class="mute">Sin pagos.</td></tr>'}</table></div>`;
   },
 
   async gastos() {
@@ -1263,6 +1264,18 @@ const A = window.A = {
     if (!payee) return toast('Escribe a nombre de quién se paga');
     if (!confirm(`¿Pagar ${money(total)} a ${payee} por ${name} con ${m}? Se descuenta de la caja.`)) return;
     if (await act(() => api('/payouts', 'POST', { product_id: cat, method: m, payee }), 'Pago registrado')) views.emprendimientos();
+  },
+
+  async payAdjust(pid, sold, lost) {
+    const s = prompt('¿Cuántos vendidos son en realidad?', sold); if (s === null) return;
+    const l = prompt('¿Cuántos perdidos son en realidad?', lost); if (l === null) return;
+    const sn = Number(s), ln = Number(l);
+    if (!Number.isInteger(sn) || !Number.isInteger(ln) || sn < 0 || ln < 0) return toast('Escribe números enteros (0 o más)');
+    if (await act(() => api('/payouts/adjust', 'POST', { product_id: pid, sold_qty: sn, lost_qty: ln }), 'Pendiente corregido')) views.emprendimientos();
+  },
+  async payCancel(id, total) {
+    if (!confirm(`¿Anular este pago de ${money(total)}? El dinero vuelve a la caja y lo vendido queda otra vez pendiente.`)) return;
+    if (await act(() => api(`/payouts/${id}/cancel`, 'POST'), 'Pago anulado')) views.emprendimientos();
   },
 
   kind(k) {
