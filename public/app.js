@@ -1266,12 +1266,17 @@ const A = window.A = {
     if (await act(() => api('/payouts', 'POST', { product_id: cat, method: m, payee }), 'Pago registrado')) views.emprendimientos();
   },
 
-  async payAdjust(pid, sold, lost) {
-    const s = prompt('¿Cuántos vendidos son en realidad?', sold); if (s === null) return;
-    const l = prompt('¿Cuántos perdidos son en realidad?', lost); if (l === null) return;
-    const sn = Number(s), ln = Number(l);
+  payAdjust(pid, sold, lost) {
+    modal(`<h3>Corregir pendiente</h3>
+      <p class="mute">Escribe las cantidades reales. El valor a pagar se recalcula (los perdidos se pagan al 60%).</p>
+      <div class="row"><div><label>Vendidos</label><input id="adS" type="number" min="0" inputmode="numeric" value="${sold}"></div>
+      <div><label>Perdidos</label><input id="adL" type="number" min="0" inputmode="numeric" value="${lost}"></div></div>
+      <p><button class="btn" onclick="A.payAdjustSave(${pid})">Guardar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);
+  },
+  async payAdjustSave(pid) {
+    const sn = Number(val('adS')), ln = Number(val('adL'));
     if (!Number.isInteger(sn) || !Number.isInteger(ln) || sn < 0 || ln < 0) return toast('Escribe números enteros (0 o más)');
-    if (await act(() => api('/payouts/adjust', 'POST', { product_id: pid, sold_qty: sn, lost_qty: ln }), 'Pendiente corregido')) views.emprendimientos();
+    if (await act(() => api('/payouts/adjust', 'POST', { product_id: pid, sold_qty: sn, lost_qty: ln }), 'Pendiente corregido')) { closeModal(); views.emprendimientos(); }
   },
   async payCancel(id, total) {
     if (!confirm(`¿Anular este pago de ${money(total)}? El dinero vuelve a la caja y lo vendido queda otra vez pendiente.`)) return;
