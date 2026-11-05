@@ -139,12 +139,19 @@ function lowStock(low) {
 function modal(html) {
   const m = document.createElement('div'); m.className = 'modal';
   m.innerHTML = `<div role="dialog" aria-modal="true">${html}</div>`;
-  m.addEventListener('mousedown', (e) => { if (e.target === m) m.remove(); });
+  m.addEventListener('mousedown', (e) => { if (e.target === m) dismiss(m); });
   document.body.appendChild(m);
   const f = m.querySelector('input:not([type=file]):not([type=checkbox]):not([type=hidden]),select'); if (f) f.focus();
   return m;
 }
-const closeModal = () => document.querySelectorAll('.modal').forEach((m) => m.remove());
+// Cierre con salida corta (más rápida que la entrada). Se quitan los id para que un modal nuevo no choque con el que se va
+function dismiss(m) {
+  if (!m || m.classList.contains('out')) return;
+  m.querySelectorAll('[id]').forEach((e) => e.removeAttribute('id'));
+  m.setAttribute('inert', ''); m.classList.add('out');
+  setTimeout(() => m.remove(), 160);
+}
+const closeModal = () => document.querySelectorAll('.modal:not(.out)').forEach(dismiss);
 const val = (id) => $('#' + id).value;
 
 // ---------- Shell ----------
@@ -171,6 +178,7 @@ async function boot() {
   if (first) setTimeout(() => { const sh = $('.shell'); if (sh) sh.classList.add('seen'); }, 900);
   else $('.shell').classList.add('seen');
   await views[S.view]();
+  if (S.enter) { S.enter = false; const m = $('#main'); m.classList.remove('enter'); void m.offsetWidth; m.classList.add('enter'); } // entrada breve solo al cambiar de vista
   chatShell(); chatStart();
   if (S.user.must_change) $('#main').insertAdjacentHTML('afterbegin',
     '<div class="alert bad">Estás usando la contraseña por defecto. <a href="#" onclick="A.password();return false">Cámbiala ahora</a>.</div>');
@@ -202,7 +210,7 @@ function chatDraw() {
     chatPaintBadge(); return;
   }
   const hb = 'border-0 flex items-center justify-center h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-100 p-0 text-slate-600 transition hover:bg-slate-200';
-  w.innerHTML = `<div class="flex h-[min(36rem,82vh)] w-[min(25rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-3xl bg-white shadow-2xl shadow-slate-900/25 ring-1 ring-black/5" role="dialog" aria-label="Chat">
+  w.innerHTML = `<div class="flex h-[min(36rem,82dvh)] w-[min(25rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-3xl bg-white shadow-2xl shadow-slate-900/25 ring-1 ring-black/5" role="dialog" aria-label="Chat">
     <div class="flex items-center gap-3 border-b border-line bg-white px-4 py-3.5 text-ink">
       ${S.peer === null ? '' : `<button class="${hb}" onclick="A.chatBack()" aria-label="Volver"><svg viewBox="0 0 24 24" class="block h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>`}
       <div class="flex min-w-0 flex-1 items-center gap-3">${S.peer === null
@@ -282,7 +290,7 @@ function chatStart() {
   chatPoll();
   S.chatTimer = setInterval(chatPoll, 5000);
 }
-window.go = (v) => { S.view = v; boot(); };
+window.go = (v) => { S.view = v; S.enter = true; boot(); };
 
 // Sami en el login: baila solo; mira al usuario mientras escribe su nombre, se tapa los ojos con la
 // contraseña y, si se muestra con el ojito, se tapa solo un ojo y espía
@@ -1752,7 +1760,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   const z = document.querySelectorAll('.zoom');
   if (z.length) return z.forEach((x) => x.remove());
-  const m = document.querySelectorAll('.modal'); if (m.length) m[m.length - 1].remove();
+  const m = document.querySelectorAll('.modal:not(.out)'); if (m.length) dismiss(m[m.length - 1]);
   else if ($('.shell.open')) A.sideClose();
 });
 
@@ -1778,3 +1786,18 @@ function productCard(p, admin, st, i) {
         <div class="pc-st"><span>${label}</span><b>${st === 'free' ? '—' : p.stock + ' uds'}</b></div>${st === 'free' ? '' : `<small>Mínimo ${p.min_stock}</small>`}</div>
       ${admin && (can('stock') || can('productos')) ? `<div class="pc-act">${p.track_stock && can('stock') ? `<button class="btn sm" onclick="A.stockForm(${p.id})">+ Stock</button>` : ''}${can('productos') ? `<button class="btn sec sm" onclick="A.productForm(${p.id})">Editar</button>` : ''}</div>` : ''}</div></article>`;
 }
+
+// ---------- Cifras grandes: si un monto no cabe, se reduce la letra (no se parte en dos líneas) ----------
+const FIT = '.stat b,.kpi b,.total,.pc-price b,.prod .pp strong,.cartbar b';
+function fitNums() {
+  document.querySelectorAll(FIT).forEach((el) => {
+    if (el.dataset.fs0 === undefined) el.dataset.fs0 = el.style.fontSize;
+    el.style.fontSize = el.dataset.fs0; el.classList.remove('fitwrap');
+    if (el.scrollWidth <= el.clientWidth + 1) return;
+    let fs = parseFloat(getComputedStyle(el).fontSize);
+    while (el.scrollWidth > el.clientWidth + 1 && fs > 12) { fs -= 1; el.style.fontSize = fs + 'px'; }
+    if (el.scrollWidth > el.clientWidth + 1) el.classList.add('fitwrap');
+  });
+}
+new MutationObserver(fitNums).observe($('#app'), { childList: true, subtree: true, characterData: true });
+window.addEventListener('resize', fitNums);
