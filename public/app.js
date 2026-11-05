@@ -33,19 +33,23 @@ const diffTag = (d) => d === 0 ? '<span class="tag ok">Cuadra</span>'
   : `<span class="tag ${d > 0 ? 'warn' : 'err'}">${d > 0 ? 'Sobran' : 'Faltan'} ${money(Math.abs(d))}</span>`;
 
 async function api(path, method = 'GET', body) {
-  const r = await fetch('/api' + path, {
-    method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined,
-  });
+  let r;
+  try {
+    r = await fetch('/api' + path, {
+      method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch { throw new Error('Sin conexión. Revisa el internet e inténtalo de nuevo.'); }
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.error || 'Error');
+  if (!r.ok) throw new Error(data.error || 'No se pudo completar la acción. Inténtalo de nuevo.');
   return data;
 }
-function toast(msg) {
-  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
-  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2500);
+function toast(msg, bad) {
+  const t = $('#toast'); t.setAttribute('aria-live', bad ? 'assertive' : 'polite');
+  t.classList.toggle('bad', !!bad); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), bad ? 7000 : 2800);
 }
 async function act(fn, ok) {
-  try { const r = await fn(); if (ok) toast(ok); return r; } catch (e) { toast(e.message); return null; }
+  try { const r = await fn(); if (ok) toast(ok); return r; } catch (e) { toast(e.message, true); return null; }
 }
 
 const S = { user: null, view: null, chat: [], peerRead: 0, peer: null, chatOpen: false, cart: [], benefit: null, method: 'efectivo', cat: 'all', q: '' };
@@ -326,12 +330,12 @@ function danceSami() {
   step();
 }
 function loginView() {
-  $('#app').innerHTML = `<div class="login-wrap"><i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i>
+  $('#app').innerHTML = `<div class="login-wrap">
     <div class="hero" aria-hidden="true"><div class="hero-say">¡Bienvenido!</div>
       <i class="note n1">♪</i><i class="note n2">♫</i><i class="note n3">♪</i><i class="note n4">♫</i>
       <div class="hero-bob"><img id="hero" src="/sami/hd/happy.png" alt="" draggable="false"></div><div class="hero-shd"></div></div>
     <div class="login"><img src="/logo.png" alt="ACEIS"><h2>La Plancha</h2><p class="mute">Asociación de Ingeniería de Sistemas</p>
-    <label>Usuario</label><input id="lu" autocomplete="username" autocapitalize="none">
+    <label for="lu">Usuario</label><input id="lu" autocomplete="username" autocapitalize="none">
     <label>Contraseña</label><div class="pw"><input id="lp" type="password" autocomplete="current-password">
       <button type="button" class="eye" id="eye" aria-label="Mostrar contraseña" title="Mostrar contraseña">${icon('ojo')}</button></div>
     <button class="btn" id="lb">Ingresar</button></div></div>`;
@@ -427,7 +431,7 @@ const views = {
             <p class="mb-3 text-sm text-slate-500">Cuenta el dinero real y escríbelo. El sistema lo compara con lo que debería haber.</p>
             <div class="flex flex-col gap-3 sm:flex-row"><div class="flex-1">${field('efectivo', 'cc', 'Efectivo contado', '', 'oninput="A.cajaDiff()"')}<div id="dcc" class="mt-1.5 min-h-[1.5rem]"></div></div>
               <div class="flex-1">${field('nequi', 'cn', 'Saldo Nequi', '', 'oninput="A.cajaDiff()"')}<div id="dcn" class="mt-1.5 min-h-[1.5rem]"></div></div></div>
-            <div class="mt-3"><label class="${lbl}">Observaciones (opcional)</label><input id="cnote" maxlength="300" placeholder="Algo que debamos saber del turno" class="!rounded-xl"></div>
+            <div class="mt-3"><label class="${lbl}" for="cnote">Observaciones (opcional)</label><input id="cnote" maxlength="300" placeholder="Algo que debamos saber del turno" class="!rounded-xl"></div>
             <button class="btn danger mt-4 w-full !rounded-2xl !py-3 text-base" onclick="A.closeShift()">Cerrar caja</button></section>` : ''}
         </div></div>`;
     }
@@ -444,35 +448,33 @@ const views = {
     const cats = [...new Set(S.prods.map((p) => p.category || 'Sin categoría'))];
     const lbl = 'text-xs font-bold uppercase tracking-wide text-slate-500';
     const sold = sales.filter((x) => !x.voided).reduce((t, x) => t + Number(x.total), 0), nSold = sales.filter((x) => !x.voided).length;
-    $('#main').innerHTML = `<div class="ord"><div class="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-r from-navy to-brand p-5 text-white shadow-lg">
-        <div><h2 class="!mb-0 text-2xl font-extrabold !text-white">Vender</h2><p class="mt-1 text-sm text-blue-100">Toca los productos para armar la venta.</p></div>
-        <div class="flex gap-3"><div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${nSold}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Ventas del turno</div></div>
-          <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${money(sold)}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Vendido</div></div></div></div></div>
+    $('#main').innerHTML = `<div class="vhead"><h2>Vender</h2><span class="vstat"><b>${nSold}</b> ${nSold === 1 ? 'venta' : 'ventas'} del turno · <b>${money(sold)}</b></span></div>
       <div class="pos">
       <div><div class="relative"><span class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">${icon('lupa')}</span>
         <input id="q" placeholder="Buscar producto…" value="${esc(S.q)}" oninput="S.q=this.value;A.grid()" class="!rounded-2xl !py-3 !pl-11"></div>
-        <div class="chips"><button class="${S.cat === 'all' ? 'on' : ''}" onclick="S.cat='all';views.vender()">Todos</button>
-        <button class="fchip ${S.cat === 'fav' ? 'on' : ''}" onclick="S.cat='fav';views.vender()">${icon('estrella')} Favoritos</button>
-        ${cats.map((c) => `<button class="${S.cat === c ? 'on' : ''}" data-c="${esc(c)}" onclick="S.cat=this.dataset.c;views.vender()">${esc(c)}</button>`).join('')}</div>
+        <div class="chips"><button class="${S.cat === 'all' ? 'on' : ''}" data-c="all" onclick="A.setCat('all')">Todos</button>
+        <button class="fchip ${S.cat === 'fav' ? 'on' : ''}" data-c="fav" onclick="A.setCat('fav')">${icon('estrella')} Favoritos</button>
+        ${cats.map((c) => `<button class="${S.cat === c ? 'on' : ''}" data-c="${esc(c)}" onclick="A.setCat(this.dataset.c)">${esc(c)}</button>`).join('')}</div>
         <div class="prods" id="grid"></div></div>
-      <div class="card"><h3>Venta</h3><div id="cart"></div></div></div>
+      <div class="card" id="cartcard"><h3>Venta</h3><div id="cart"></div></div></div>
+      <button type="button" class="cartbar" id="cartbar" hidden onclick="$('#cartcard').scrollIntoView({behavior:'smooth',block:'start'})"></button>
       <div class="ord">
-      <section class="mb-5 rounded-3xl border border-line bg-white p-5 shadow-sm"><h3 class="!mb-1 text-lg font-extrabold text-navy">Retiro o cambio entre Nequi y efectivo</h3>
-        <p class="mb-3 text-sm text-slate-500">Comisión sugerida: $500 por cada $50.000.</p>
+      <details class="fold mb-5 rounded-3xl border border-line bg-white p-5 shadow-sm"><summary class="text-lg font-extrabold text-navy">Retiro o cambio entre Nequi y efectivo</summary>
+        <p class="mb-3 mt-2 text-sm text-slate-500">Comisión sugerida: $500 por cada $50.000.</p>
         <input type="hidden" id="wd" value="nequi_efectivo"><input type="hidden" id="wm" value="nequi">
         <div class="mb-3"><div class="mb-1 ${lbl}">Tipo de movimiento</div>
           <div class="flex flex-col overflow-hidden rounded-2xl border border-line sm:flex-row" data-seg="wd">
             ${[['nequi_efectivo', payLogo('nequi') + ' Nequi → efectivo', 'El cliente transfiere, tú entregas efectivo'], ['efectivo_nequi', payLogo('efectivo') + ' Efectivo → Nequi', 'El cliente da efectivo, tú transfieres']].map(([v, t, h], i) => `<button type="button" data-v="${v}" onclick="A.loanSeg('wd','${v}');A.wdFee()" class="flex-1 px-4 py-2.5 text-left ${i ? 'border-t border-line sm:border-l sm:border-t-0' : ''} ${v === 'nequi_efectivo' ? 'bg-brand text-white' : 'text-slate-600 hover:bg-ice'}"><span class="inline-flex items-center gap-1.5 text-sm font-bold">${t}</span><span class="block text-xs opacity-80">${h}</span></button>`).join('')}</div></div>
         <div class="flex flex-wrap gap-3">
-          <div class="min-w-[9rem] flex-1"><label class="${lbl}">Monto a entregar</label><input id="wa" type="number" inputmode="numeric" min="1" placeholder="$ 0" oninput="A.wdFee()" class="!rounded-xl !py-3 !text-lg !font-extrabold"></div>
-          <div class="min-w-[9rem] flex-1"><label class="${lbl}">Comisión</label><input id="wf" type="number" inputmode="numeric" min="0" value="0" class="!rounded-xl !py-3 !text-lg !font-extrabold"></div>
+          <div class="min-w-[9rem] flex-1"><label class="${lbl}" for="wa">Monto a entregar</label><input id="wa" type="number" inputmode="numeric" min="1" placeholder="$ 0" oninput="A.wdFee()" class="!rounded-xl !py-3 !text-lg !font-extrabold"></div>
+          <div class="min-w-[9rem] flex-1"><label class="${lbl}" for="wf">Comisión</label><input id="wf" type="number" inputmode="numeric" min="0" value="0" class="!rounded-xl !py-3 !text-lg !font-extrabold"></div>
           <div><div class="mb-1 ${lbl}">La comisión se cobró en</div>${loanSeg('wm', [['nequi', payLogo('nequi') + ' Nequi'], ['efectivo', payLogo('efectivo') + ' Efectivo']], 'nequi')}</div></div>
         <p id="wsum" class="mt-2 text-sm text-slate-500"></p>
         <button class="btn mt-3 w-full !rounded-2xl !py-3 text-base sm:w-auto sm:px-8" onclick="A.withdraw()">Registrar retiro</button>
         ${wds.length ? `<div class="mt-4 flex flex-col gap-2">${wds.map((w) => `<div class="flex flex-wrap items-center gap-3 rounded-2xl bg-ice/50 px-3 py-2 ${w.voided ? 'opacity-50' : ''}">
           <span class="text-sm text-slate-500">${dt(w.created_at).split(', ').pop()}</span><b class="min-w-0 flex-1 text-sm text-navy ${w.voided ? 'line-through' : ''}">${w.direction === 'efectivo_nequi' ? 'Efectivo → Nequi' : 'Nequi → efectivo'}</b>
           <span class="text-sm">${money(w.amount)} <span class="text-slate-500">· comisión ${money(w.fee)}</span></span>
-          ${w.voided ? '<span class="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-700">Anulado</span>' : `<button class="btn sec sm !rounded-xl" onclick="A.voidWd(${w.id})">Anular</button>`}</div>`).join('')}</div>` : ''}</section>
+          ${w.voided ? '<span class="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-700">Anulado</span>' : `<button class="btn sec sm !rounded-xl" onclick="A.voidWd(${w.id})">Anular</button>`}</div>`).join('')}</div>` : ''}</details>
       <section class="rounded-3xl border border-line bg-white p-5 shadow-sm"><h3 class="!mb-3 text-lg font-extrabold text-navy">Ventas de este turno</h3><div class="tw">${salesTable(sales, true)}</div></section></div></div>`;
     A.grid(); A.cart();
   },
@@ -518,11 +520,11 @@ const views = {
               <button type="button" onclick="A.loanChg(${i.id},1)" class="flex flex-col items-center gap-1.5">${loanThumb(i, 'h-20 w-20')}<b class="line-clamp-2 text-xs leading-tight text-slate-800">${esc(i.name)}</b></button>
               <small class="text-[11px] text-slate-500">${i.available} disp.</small>
               <div class="qty"><button type="button" onclick="A.loanChg(${i.id},-1)">−</button><span id="lq${i.id}">0</span><button type="button" onclick="A.loanChg(${i.id},1)">+</button></div></div>`).join('')}</div>
-          <div class="mt-4"><label class="text-xs font-bold uppercase tracking-wide text-slate-500">Nombre de la persona</label><input id="lb" maxlength="80" placeholder="¿A quién se le presta?" class="!rounded-2xl !py-3"></div>
-          <div class="mt-3"><label class="text-xs font-bold uppercase tracking-wide text-slate-500">Teléfono</label><input id="lp" type="tel" inputmode="tel" maxlength="20" placeholder="Número de contacto" class="!rounded-2xl !py-3"></div>
+          <div class="mt-4"><label class="text-xs font-bold uppercase tracking-wide text-slate-500" for="lb">Nombre de la persona</label><input id="lb" maxlength="80" placeholder="¿A quién se le presta?" class="!rounded-2xl !py-3"></div>
+          <div class="mt-3"><label class="text-xs font-bold uppercase tracking-wide text-slate-500" for="lp">Teléfono</label><input id="lp" type="tel" inputmode="tel" maxlength="20" placeholder="Número de contacto" class="!rounded-2xl !py-3"></div>
           <div class="mt-3 rounded-2xl bg-ice/60 p-3">
             <div class="flex flex-wrap items-end gap-3">
-              <div class="min-w-[8rem] flex-1"><label class="text-xs font-bold uppercase tracking-wide text-slate-500">Valor del préstamo</label><input id="lf" type="number" inputmode="numeric" min="0" value="1000" class="!text-lg !font-extrabold"></div>
+              <div class="min-w-[8rem] flex-1"><label class="text-xs font-bold uppercase tracking-wide text-slate-500" for="lf">Valor del préstamo</label><input id="lf" type="number" inputmode="numeric" min="0" value="1000" class="!text-lg !font-extrabold"></div>
               <div><div class="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Entra a</div>${loanSeg('lm', [['efectivo', payLogo('efectivo') + ' Efectivo'], ['nequi', payLogo('nequi') + ' Nequi']], 'efectivo')}</div>
               <div><div class="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Plazo</div>${loanSeg('ld', [['1', '1 día'], ['2', '2 días']], '1')}</div>
             </div>
@@ -587,8 +589,8 @@ const views = {
           <div id="odraft" class="mt-4"></div>
           <div class="mt-4 rounded-2xl bg-ice/60 p-3">
             <div class="flex flex-wrap gap-3">
-              <div class="min-w-[9rem] flex-1"><label class="text-xs font-bold uppercase tracking-wide text-slate-500">Valor total del pedido</label><input id="ot" type="number" inputmode="numeric" min="1" placeholder="$ 0" value="${d.total}" oninput="S.orderDraft.total=this.value" class="!text-lg !font-extrabold"></div>
-              <div class="min-w-[9rem] flex-[2]"><label class="text-xs font-bold uppercase tracking-wide text-slate-500">Nota (opcional)</label><input id="on" maxlength="200" placeholder="Proveedor, observaciones…" value="${esc(d.note)}" oninput="S.orderDraft.note=this.value"></div>
+              <div class="min-w-[9rem] flex-1"><label class="text-xs font-bold uppercase tracking-wide text-slate-500" for="ot">Valor total del pedido</label><input id="ot" type="number" inputmode="numeric" min="1" placeholder="$ 0" value="${d.total}" oninput="S.orderDraft.total=this.value" class="!text-lg !font-extrabold"></div>
+              <div class="min-w-[9rem] flex-[2]"><label class="text-xs font-bold uppercase tracking-wide text-slate-500" for="on">Nota (opcional)</label><input id="on" maxlength="200" placeholder="Proveedor, observaciones…" value="${esc(d.note)}" oninput="S.orderDraft.note=this.value"></div>
             </div>
           </div>
           <button class="btn mt-4 w-full !rounded-2xl !py-3 text-base" onclick="A.ordSave()">Registrar pedido</button>
@@ -626,20 +628,20 @@ const views = {
       <div class="stat"><span>Total</span><b>${money(register.cash + register.nequi)}</b></div></div><br>
       <div class="card"><h3>Registrar ingreso o retiro</h3>
         <p class="mute">Úsalo para fijar la base inicial, consignar, o sacar dinero (ej. para comprar mercancía). Usa un valor negativo para retirar.</p>
-        <div class="row"><div><label>Medio</label><select id="am"><option value="efectivo">Efectivo</option><option value="nequi">Nequi</option></select></div>
-        <div><label>Monto (+ ingreso / − retiro)</label><input id="aa" type="number" inputmode="numeric"></div>
-        <div><label>Motivo</label><input id="an" maxlength="200"></div></div>
+        <div class="row"><div><label for="am">Medio</label><select id="am"><option value="efectivo">Efectivo</option><option value="nequi">Nequi</option></select></div>
+        <div><label for="aa">Monto (+ ingreso / − retiro)</label><input id="aa" type="number" inputmode="numeric"></div>
+        <div><label for="an">Motivo</label><input id="an" maxlength="200"></div></div>
         <p><button class="btn" onclick="A.adjust()">Registrar</button></p></div>
       <div class="card tw"><h3>Descartar productos (pérdida)</h3>
         <p class="mute">Producto que no se vendió y se regala o se bota. Sale del stock y se cuenta como pérdida al costo (las empanadas salen del stock sin generar pérdida, porque se pagan en Gastos); no entra dinero ni cambia la caja. La pérdida se descuenta de la ganancia neta cuando pagues al emprendimiento (pestaña Emprendimientos).</p>
         ${wo.length ? `<input id="wsq" placeholder="Buscar por nombre o categoría" oninput="A.filterWo()" style="margin-bottom:.5rem"><table id="wot"><tr><th>Producto</th><th class="n">Stock</th><th class="n">Costo</th><th class="n">Descartar</th></tr>
         ${wo.map((p) => `<tr data-s="${esc((p.name + ' ' + (p.category || '')).toLowerCase())}"><td>${esc(p.name)}${p.category ? ` <small class="mute">${esc(p.category)}</small>` : ''}</td><td class="n">${p.stock}</td><td class="n">${money(p.buy_price)}</td>
           <td class="n"><input class="wq" data-id="${p.id}" type="number" min="0" max="${p.stock}" inputmode="numeric" style="width:5rem"></td></tr>`).join('')}</table>
-        <div class="row"><div><label>Motivo (opcional)</label><input id="wn" maxlength="200" placeholder="Ej. sobrante del día"></div></div>
+        <div class="row"><div><label for="wn">Motivo (opcional)</label><input id="wn" maxlength="200" placeholder="Ej. sobrante del día"></div></div>
         <p><button class="btn" onclick="A.writeOff()">Descartar lo indicado</button>
         <button class="btn sec" onclick="A.writeOff(true)">Vaciar stock mostrado</button></p>` : '<span class="mute">No hay productos con stock.</span>'}</div>
       <div class="card tw"><h3>Reporte de pérdidas</h3>
-        <div class="row"><div><label>Desde</label><input id="wf" type="date"></div><div><label>Hasta</label><input id="wt" type="date"></div>
+        <div class="row"><div><label for="wf">Desde</label><input id="wf" type="date"></div><div><label for="wt">Hasta</label><input id="wt" type="date"></div>
         <div><label>&nbsp;</label><button class="btn sec" onclick="A.writeOffReport()">Ver</button></div></div><div id="wr"></div></div>
       <div class="card tw"><h3>Movimientos manuales</h3><table><tr><th>Fecha</th><th>Quién</th><th>Medio</th><th class="n">Monto</th><th>Motivo</th></tr>
       ${adjustments.map((a) => `<tr><td>${dt(a.created_at)}</td><td>${esc(a.user)}</td><td>${a.method}</td><td class="n ${a.amount < 0 ? 'err' : 'ok'}">${money(a.amount)}</td><td>${esc(a.note)}</td></tr>`).join('') || '<tr><td colspan="5" class="mute">Sin movimientos.</td></tr>'}</table></div>`;
@@ -684,9 +686,9 @@ const views = {
             <button id="k2" onclick="A.kind('implementos')" class="inline-flex flex-1 items-center justify-center gap-2 px-3 py-2.5 text-sm font-bold">${icon('gastos')} Implementos</button></div>
           <p class="mt-2 rounded-xl bg-ice/60 px-3 py-2 text-sm text-slate-600" id="kh"></p>
           <div class="mt-3 flex flex-col gap-3">
-            <div id="gcw"><label class="${lbl}">Proveedor / categoría</label><select id="gc" class="!rounded-xl"><option value="">Otro</option>${cats.map((c) => `<option>${esc(c.name)}</option>`).join('')}</select></div>
-            <div><label class="${lbl}" id="gdl">Nota (opcional)</label><input id="gd" maxlength="150" class="!rounded-xl"></div>
-            <div><label class="${lbl}">Monto</label><input id="ga" type="number" inputmode="numeric" min="1" placeholder="$ 0" class="!rounded-xl !py-3 !text-xl !font-extrabold"></div>
+            <div id="gcw"><label class="${lbl}" for="gc">Proveedor / categoría</label><select id="gc" class="!rounded-xl"><option value="">Otro</option>${cats.map((c) => `<option>${esc(c.name)}</option>`).join('')}</select></div>
+            <div><label class="${lbl}" id="gdl" for="gd">Nota (opcional)</label><input id="gd" maxlength="150" class="!rounded-xl"></div>
+            <div><label class="${lbl}" for="ga">Monto</label><input id="ga" type="number" inputmode="numeric" min="1" placeholder="$ 0" class="!rounded-xl !py-3 !text-xl !font-extrabold"></div>
             <div><div class="mb-1 ${lbl}">¿De dónde salió?</div><input type="hidden" id="gm" value="">
               <div class="flex flex-wrap">${loanSeg('gm', [['', 'Fuera de la caja'], ['efectivo', payLogo('efectivo') + ' Efectivo'], ['nequi', payLogo('nequi') + ' Nequi']], '')}</div></div>
           </div>
@@ -752,8 +754,8 @@ const views = {
         <div id="hours"></div></div>
       <div class="card"><h3>Extracto para rendición de cuentas (CSV)</h3>
         <p class="mute">Descarga todos los movimientos del rango: ventas, retiros, gastos, ajustes, aperturas y cierres de caja. Se abre directo en Excel.</p>
-        <div class="row"><div><label>Desde</label><input id="xf" type="date" value="${w.start}"></div>
-        <div><label>Hasta</label><input id="xt" type="date" value="${w.end}"></div></div>
+        <div class="row"><div><label for="xf">Desde</label><input id="xf" type="date" value="${w.start}"></div>
+        <div><label for="xt">Hasta</label><input id="xt" type="date" value="${w.end}"></div></div>
         <p><button class="btn" onclick="A.exportCsv()">${icon('descarga')} Descargar CSV</button></p></div>`;
     A.hours('week'); reportCharts(tr);
   },
@@ -881,12 +883,12 @@ const A = window.A = {
       <label>Nombre (puedes usar emojis)</label>
       <div class="pw"><input id="pn" value="${esc(S.user.name)}" autocomplete="off" oninput="A.pcount()"><button type="button" class="eye" id="pemo" onmousedown="event.preventDefault()" onclick="A.profileEmoji()" title="Emojis" aria-label="Emojis">${icon('sonrisa')}</button></div>
       <div id="pnpick" class="cw-pick" hidden></div><small id="pcnt" class="mute"></small>
-      <label>Usuario</label><input id="pu" value="${esc(S.user.username)}" autocomplete="off" autocapitalize="none" spellcheck="false">
+      <label for="pu">Usuario</label><input id="pu" value="${esc(S.user.username)}" autocomplete="off" autocapitalize="none" spellcheck="false">
       <div class="pf-sec"><h4>Seguridad</h4>
         <p class="mute" style="margin:.1rem 0 .3rem;font-size:.82rem">Escribe tu contraseña actual solo si cambias el usuario o la contraseña.</p>
-        <label>Contraseña actual</label><input id="pc" type="password" autocomplete="current-password">
-        <div class="row"><div><label>Nueva contraseña (mín. 6)</label><input id="pw1" type="password" autocomplete="new-password"></div>
-        <div><label>Repetir nueva</label><input id="pw2" type="password" autocomplete="new-password"></div></div></div>
+        <label for="pc">Contraseña actual</label><input id="pc" type="password" autocomplete="current-password">
+        <div class="row"><div><label for="pw1">Nueva contraseña (mín. 6)</label><input id="pw1" type="password" autocomplete="new-password"></div>
+        <div><label for="pw2">Repetir nueva</label><input id="pw2" type="password" autocomplete="new-password"></div></div></div>
       <div class="row" style="margin-top:1rem"><button class="btn sec" onclick="closeModal()">Cancelar</button><button class="btn" id="psave" onclick="A.saveProfile()">Guardar</button></div>`);
     A.pcount();
   },
@@ -929,7 +931,7 @@ const A = window.A = {
     if (ok) { closeModal(); S.avatar = undefined; boot(); }
   },
   password() {
-    modal(`<h3>Cambiar contraseña</h3><label>Actual</label><input id="p0" type="password"><label>Nueva (mín. 6)</label><input id="p1" type="password">
+    modal(`<h3>Cambiar contraseña</h3><label for="p0">Actual</label><input id="p0" type="password"><label for="p1">Nueva (mín. 6)</label><input id="p1" type="password">
       <p><button class="btn" onclick="A.savePassword()">Guardar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);
   },
   async savePassword() {
@@ -999,6 +1001,11 @@ const A = window.A = {
       <span class="fav ${p.favorite ? 'on' : ''}" role="button" aria-label="${p.favorite ? 'Quitar de favoritos' : 'Marcar como favorito'}" title="${p.favorite ? 'Quitar de favoritos' : 'Favorito'}" onclick="A.fav(event, ${p.id})">${icon('estrella')}</span>
       ${p.photo ? `<img loading="lazy" src="${photoUrl(p)}" alt="">` : ''}<b>${esc(p.name)}</b>${money(p.sell_price)}<br><small>${p.track_stock ? p.stock + ' disp.' : 'sin control de stock'}</small>${A.badge(p.id)}</button>`).join('') || '<span class="mute">Sin resultados.</span>';
   },
+  setCat(c) {
+    S.cat = c;
+    document.querySelectorAll('.chips button').forEach((b) => b.classList.toggle('on', b.dataset.c === c));
+    A.grid();
+  },
   rp(n) { S.rp = n; views.reportes(); },
   rtab(t) { S.rtab = t; views.reportes(); },
   async fav(e, id) {
@@ -1006,7 +1013,7 @@ const A = window.A = {
     const p = S.prods.find((x) => x.id === id); if (!p) return;
     p.favorite = p.favorite ? 0 : 1; A.grid();
     try { await api(`/products/${id}/favorite`, 'POST', { favorite: !!p.favorite }); }
-    catch (err) { p.favorite = p.favorite ? 0 : 1; A.grid(); toast(err.message); }
+    catch (err) { p.favorite = p.favorite ? 0 : 1; A.grid(); toast(err.message, true); }
   },
   badge(id) {
     const c = S.cart.find((x) => x.id === id);
@@ -1021,13 +1028,13 @@ const A = window.A = {
   },
   add(id) {
     const p = S.prods.find((x) => x.id === id), c = S.cart.find((x) => x.id === id);
-    if (c) { if (!p.track_stock || c.qty < p.stock) c.qty++; else toast('No hay más stock'); } else S.cart.push({ id, qty: 1 });
+    if (c) { if (!p.track_stock || c.qty < p.stock) c.qty++; else toast('No hay más stock', true); } else S.cart.push({ id, qty: 1 });
     A.cart(); A.flash(id);
   },
   chg(id, d) {
     const c = S.cart.find((x) => x.id === id), p = S.prods.find((x) => x.id === id);
     c.qty += d;
-    if (p.track_stock && c.qty > p.stock) { c.qty = p.stock; toast('No hay más stock'); }
+    if (p.track_stock && c.qty > p.stock) { c.qty = p.stock; toast('No hay más stock', true); }
     if (c.qty <= 0) S.cart = S.cart.filter((x) => x.id !== id);
     A.cart(); A.flash(id);
   },
@@ -1048,14 +1055,16 @@ const A = window.A = {
       <div class="seg"><button class="${S.method === 'efectivo' ? 'on' : ''}" onclick="S.method='efectivo';A.cart()"><img class="pay" src="/efectivo.png" alt=""> Efectivo</button>
       <button class="${S.method === 'nequi' ? 'on' : ''}" onclick="S.method='nequi';A.cart()"><img class="pay" src="/nequi.jpg" alt=""> Nequi</button>
       <button class="${S.method === 'mixto' ? 'on' : ''}" onclick="S.method='mixto';A.cart()">${icon('mezcla')} Mixto</button></div>
-      ${S.method === 'mixto' ? `<label>Pagó por Nequi</label><input id="nq" type="number" inputmode="numeric" min="1" value="${S.nq || ''}" oninput="S.nq=this.value;A.mix(${total})">
+      ${S.method === 'mixto' ? `<label for="nq">Pagó por Nequi</label><input id="nq" type="number" inputmode="numeric" min="1" value="${S.nq || ''}" oninput="S.nq=this.value;A.mix(${total})">
       <p id="mix" class="mute"></p>` : ''}
-      <p><button class="btn" style="width:100%" ${S.cart.length ? '' : 'disabled'} onclick="A.sell()">Registrar venta</button></p>
+      <p><button class="btn go" style="width:100%" ${S.cart.length ? '' : 'disabled'} onclick="A.sell()">Registrar venta</button></p>
       ${S.cart.length ? '<button class="btn sec sm" onclick="S.cart=[];S.benefit=null;A.cart()">Vaciar</button>' : ''}`;
+    const bar = $('#cartbar');
+    if (bar) { const n = S.cart.reduce((t, c) => t + c.qty, 0); bar.hidden = !n; bar.innerHTML = `<span>${n} ${n === 1 ? 'producto' : 'productos'}</span><b>${money(total)}</b><span class="go2">Ver venta ↓</span>`; }
   },
   benefit(pid) {
     modal(`<h3>${icon('regalo')} Beneficio de empanada</h3><p class="mute">La primera empanada del día de cada persona se vende al precio de compra. Solo una vez al día por persona.</p>
-      <label>Nombre de la persona</label><input id="bu" maxlength="60" onkeydown="if(event.key==='Enter')A.setBenefit(${pid})">
+      <label for="bu">Nombre de la persona</label><input id="bu" maxlength="60" onkeydown="if(event.key==='Enter')A.setBenefit(${pid})">
       <p><button class="btn" onclick="A.setBenefit(${pid})">Aplicar</button></p>`);
   },
   setBenefit(pid) {
@@ -1157,14 +1166,14 @@ const A = window.A = {
       <img id="pimg" class="pprev" ${p.photo ? `src="${photoUrl(p)}"` : 'style="display:none"'} alt="">
       <input id="pf" type="file" accept="image/*" onchange="A.pickPhoto(this)">
       ${p.photo ? '<a href="#" onclick="A.rmPhoto();return false" class="mute">Quitar foto</a>' : ''}
-      <label>Nombre</label><input id="pn" value="${esc(p.name)}">
-      <label>Categoría</label><select id="pc"><option value="">Sin categoría</option>${S.cats.map((c) => `<option value="${c.id}" ${c.id === p.category_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
-      <div class="row"><div><label>Precio de compra</label><input id="pb" type="number" inputmode="numeric" min="0" value="${p.buy_price}"></div>
-      <div><label>Precio de venta</label><input id="ps" type="number" inputmode="numeric" min="0" value="${p.sell_price}"></div></div>
+      <label for="pn">Nombre</label><input id="pn" value="${esc(p.name)}">
+      <label for="pc">Categoría</label><select id="pc"><option value="">Sin categoría</option>${S.cats.map((c) => `<option value="${c.id}" ${c.id === p.category_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
+      <div class="row"><div><label for="pb">Precio de compra</label><input id="pb" type="number" inputmode="numeric" min="0" value="${p.buy_price}"></div>
+      <div><label for="ps">Precio de venta</label><input id="ps" type="number" inputmode="numeric" min="0" value="${p.sell_price}"></div></div>
       <label><input type="checkbox" id="pt" style="width:auto" ${p.track_stock ? 'checked' : ''} onchange="$('#stk').style.display=this.checked?'':'none'"> Controlar stock</label>
       <p class="mute" style="margin:0">Desmárcalo para cosas como el vaso de gaseosa del combo: siempre se puede vender y solo registra el dinero.</p>
-      <div class="row" id="stk" style="${p.track_stock ? '' : 'display:none'}">${id ? `<div><label>Stock actual</label><input id="pfq" type="number" inputmode="numeric" min="0" value="${p.stock}"></div>` : '<div><label>Cantidad inicial</label><input id="pfq" type="number" min="0" value="0"></div>'}
-      <div><label>Avisar si stock ≤</label><input id="pm" type="number" min="0" value="${p.min_stock}"></div></div>
+      <div class="row" id="stk" style="${p.track_stock ? '' : 'display:none'}">${id ? `<div><label for="pfq">Stock actual</label><input id="pfq" type="number" inputmode="numeric" min="0" value="${p.stock}"></div>` : '<div><label for="pfq">Cantidad inicial</label><input id="pfq" type="number" min="0" value="0"></div>'}
+      <div><label for="pm">Avisar si stock ≤</label><input id="pm" type="number" min="0" value="${p.min_stock}"></div></div>
       ${id ? `<label><input type="checkbox" id="pa" style="width:auto" ${p.active ? 'checked' : ''}> Activo (visible para vender)</label>` : ''}
       <p><button class="btn" onclick="A.saveProduct(${id || 0})">Guardar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>
       ${id ? `<hr><p class="mute">¿Ya no lo traemos? <a href="#" style="color:#dc2626" onclick="A.delProduct(${id});return false">Eliminar producto</a></p>` : ''}`);
@@ -1198,9 +1207,9 @@ const A = window.A = {
   stockForm(id) {
     const p = S.prods.find((x) => x.id === id);
     modal(`<h3>Ingresar stock</h3><p><b>${esc(p.name)}</b> · hay ${p.stock}</p>
-      <div class="row"><div><label>Cantidad que llegó</label><input id="sq" type="number" inputmode="numeric" min="1"></div>
-      <div><label>Precio de compra (unidad)</label><input id="sb" type="number" inputmode="numeric" min="0" value="${p.buy_price}"></div></div>
-      <label>Nota (proveedor, factura…)</label><input id="sn" maxlength="200">
+      <div class="row"><div><label for="sq">Cantidad que llegó</label><input id="sq" type="number" inputmode="numeric" min="1"></div>
+      <div><label for="sb">Precio de compra (unidad)</label><input id="sb" type="number" inputmode="numeric" min="0" value="${p.buy_price}"></div></div>
+      <label for="sn">Nota (proveedor, factura…)</label><input id="sn" maxlength="200">
       <p><button class="btn" onclick="A.saveStock(${id})">Agregar al stock</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>
       <hr><p class="mute">¿Hiciste un conteo físico y no coincide? <a href="#" onclick="A.fixStock(${id});return false">Corregir stock</a></p>`);
   },
@@ -1216,7 +1225,7 @@ const A = window.A = {
     modal(`<h3>Categorías</h3><table>${S.cats.map((c) => `<tr><td>${esc(c.name)}</td><td class="n">
       <button class="btn sec sm" onclick="A.renameCat(${c.id})">Renombrar</button>
       <button class="btn sec sm" onclick="A.delCat(${c.id})">Borrar</button></td></tr>`).join('')}</table>
-      <label>Nueva categoría</label><input id="cn2" maxlength="40">
+      <label for="cn2">Nueva categoría</label><input id="cn2" maxlength="40">
       <p><button class="btn" onclick="A.addCat()">Agregar</button> <button class="btn sec" onclick="closeModal()">Cerrar</button></p>`);
   },
   async addCat() { if (await act(() => api('/categories', 'POST', { name: val('cn2') }))) { closeModal(); boot(); } },
@@ -1269,8 +1278,8 @@ const A = window.A = {
   payAdjust(pid, sold, lost) {
     modal(`<h3>Corregir pendiente</h3>
       <p class="mute">Escribe las cantidades reales. El valor a pagar se recalcula (los perdidos se pagan al 60%).</p>
-      <div class="row"><div><label>Vendidos</label><input id="adS" type="number" min="0" inputmode="numeric" value="${sold}"></div>
-      <div><label>Perdidos</label><input id="adL" type="number" min="0" inputmode="numeric" value="${lost}"></div></div>
+      <div class="row"><div><label for="adS">Vendidos</label><input id="adS" type="number" min="0" inputmode="numeric" value="${sold}"></div>
+      <div><label for="adL">Perdidos</label><input id="adL" type="number" min="0" inputmode="numeric" value="${lost}"></div></div>
       <p><button class="btn" onclick="A.payAdjustSave(${pid})">Guardar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);
   },
   async payAdjustSave(pid) {
@@ -1325,8 +1334,8 @@ const A = window.A = {
       ${S.user.role === 'admin' ? `<p>Ganancia del turno: <b>${money(s.profit)}</b></p>` : ''}
       ${s.notes ? `<p><i>${esc(s.notes)}</i></p>` : ''}
       ${S.user.role === 'admin' && closed ? `${s.orig_close_cash != null ? `<p class="mute">Conteo corregido. Original: efectivo ${money(s.orig_close_cash)} · Nequi ${money(s.orig_close_nequi)}</p>` : ''}
-      <div class="card"><h3>Corregir conteo (error de digitación)</h3><div class="row"><div><label>Efectivo contado real</label><input id="fcc" type="number" inputmode="numeric" min="0" value="${s.close_cash}"></div>
-      <div><label>Nequi contado real</label><input id="fcn" type="number" inputmode="numeric" min="0" value="${s.close_nequi}"></div></div>
+      <div class="card"><h3>Corregir conteo (error de digitación)</h3><div class="row"><div><label for="fcc">Efectivo contado real</label><input id="fcc" type="number" inputmode="numeric" min="0" value="${s.close_cash}"></div>
+      <div><label for="fcn">Nequi contado real</label><input id="fcn" type="number" inputmode="numeric" min="0" value="${s.close_nequi}"></div></div>
       <button class="btn sec sm" onclick="A.fixCount(${s.id})">Guardar corrección</button></div>` : ''}
       <div class="tw">${salesTable(s.sales, S.user.role === 'admin')}</div>
       <p><button class="btn" onclick="closeModal()">Cerrar</button></p>`);
@@ -1381,10 +1390,10 @@ const A = window.A = {
       <label>Foto (opcional)</label>
       <img id="pimg" class="pprev" style="display:none" alt="">
       <input id="pf" type="file" accept="image/*" onchange="A.pickPhoto(this)">
-      <label>Nombre</label><input id="nn" maxlength="80" value="${esc(name)}">
-      <label>Categoría</label><select id="nc"><option value="">Sin categoría</option>${S.cats.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
-      <div class="row"><div><label>Precio de venta</label><input id="np" type="number" inputmode="numeric" min="0" value="0"></div>
-      <div><label>Cantidad pedida</label><input id="nq" type="number" inputmode="numeric" min="1"></div></div>
+      <label for="nn">Nombre</label><input id="nn" maxlength="80" value="${esc(name)}">
+      <label for="nc">Categoría</label><select id="nc"><option value="">Sin categoría</option>${S.cats.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
+      <div class="row"><div><label for="np">Precio de venta</label><input id="np" type="number" inputmode="numeric" min="0" value="0"></div>
+      <div><label for="nq">Cantidad pedida</label><input id="nq" type="number" inputmode="numeric" min="1"></div></div>
       <p><button class="btn" onclick="A.ordAddNew()">Agregar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);
   },
   ordAddNew() {
@@ -1407,8 +1416,8 @@ const A = window.A = {
     modal(`<h3>Recibir pedido #${o.id}</h3><p class="mute">Pedido por ${esc(o.who)}. Verifica que llegó cada producto y corrige la cantidad si faltó algo.</p>
       <table><tr><th>Producto</th><th class="n">Pedido</th><th class="n">Llegó</th></tr>${o.items.map((i) => `<tr><td>${esc(i.name)}</td><td class="n">${i.qty}</td>
         <td class="n"><input class="rq" data-id="${i.id}" type="number" inputmode="numeric" min="0" value="${i.qty}" style="width:5rem"></td></tr>`).join('')}</table>
-      <div class="row"><div><label>Valor pagado (pedido: ${money(o.total)})</label><input id="rp" type="number" inputmode="numeric" min="1" value="${o.total}"></div>
-      <div><label>Pagado con</label><input type="hidden" id="rm" value="efectivo">${loanSeg('rm', [['efectivo', payLogo('efectivo') + ' Efectivo'], ['nequi', payLogo('nequi') + ' Nequi']], 'efectivo')}</div></div>
+      <div class="row"><div><label for="rp">Valor pagado (pedido: ${money(o.total)})</label><input id="rp" type="number" inputmode="numeric" min="1" value="${o.total}"></div>
+      <div><label for="rm">Pagado con</label><input type="hidden" id="rm" value="efectivo">${loanSeg('rm', [['efectivo', payLogo('efectivo') + ' Efectivo'], ['nequi', payLogo('nequi') + ' Nequi']], 'efectivo')}</div></div>
       <p><button class="btn" onclick="A.ordDone(${o.id})">Recibir y pagar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);
   },
   async ordDone(id) {
@@ -1449,8 +1458,8 @@ const A = window.A = {
       <img id="pimg" class="pprev" ${i.photo ? `src="/api/loan-items/${i.id}/photo?v=${i.photo}"` : 'style="display:none"'} alt="">
       <input id="pf" type="file" accept="image/*" onchange="A.pickPhoto(this)">
       ${i.photo ? '<a href="#" onclick="A.rmPhoto();return false" class="mute">Quitar foto</a>' : ''}
-      <label>Nombre</label><input id="ln" maxlength="80" value="${esc(i.name)}">
-      <label>Cantidad total</label><input id="lq" type="number" inputmode="numeric" min="1" value="${i.qty}">
+      <label for="ln">Nombre</label><input id="ln" maxlength="80" value="${esc(i.name)}">
+      <label for="lq">Cantidad total</label><input id="lq" type="number" inputmode="numeric" min="1" value="${i.qty}">
       ${id ? `<label><input type="checkbox" id="la" style="width:auto" ${i.active ? 'checked' : ''}> Activo (se puede prestar)</label>` : ''}
       <p><button class="btn" onclick="A.saveLoanItem(${id || 0})">Guardar</button> <button class="btn sec" onclick="closeModal()">Cancelar</button></p>`);
   },
@@ -1491,10 +1500,10 @@ const A = window.A = {
   userForm(id) {
     const u = id ? S.users.find((x) => x.id === id) : { name: '', username: '', role: 'turno', active: 1 };
     modal(`<h3>${id ? 'Editar' : 'Nuevo'} usuario</h3>
-      <label>Nombre</label><input id="un" value="${esc(u.name)}">
-      <label>Usuario (para ingresar)</label><input id="uu" value="${esc(u.username)}" ${id ? 'disabled' : ''} autocapitalize="none">
-      <label>Rol</label><select id="ur" onchange="$('#uperms') && ($('#uperms').hidden = this.value === 'admin', $('#uadm').hidden = this.value !== 'admin')"><option value="turno" ${u.role === 'turno' ? 'selected' : ''}>Turno (vende)</option><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrador</option></select>
-      <label>${id ? 'Nueva contraseña (dejar vacío para no cambiar)' : 'Contraseña (mín. 6)'}</label><input id="up" type="password" autocomplete="new-password">
+      <label for="un">Nombre</label><input id="un" value="${esc(u.name)}">
+      <label for="uu">Usuario (para ingresar)</label><input id="uu" value="${esc(u.username)}" ${id ? 'disabled' : ''} autocapitalize="none">
+      <label for="ur">Rol</label><select id="ur" onchange="$('#uperms') && ($('#uperms').hidden = this.value === 'admin', $('#uadm').hidden = this.value !== 'admin')"><option value="turno" ${u.role === 'turno' ? 'selected' : ''}>Turno (vende)</option><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrador</option></select>
+      <label for="up">${id ? 'Nueva contraseña (dejar vacío para no cambiar)' : 'Contraseña (mín. 6)'}</label><input id="up" type="password" autocomplete="new-password">
       ${id ? `<div id="uperms" ${u.role === 'admin' ? 'hidden' : ''}><label>Permisos adicionales</label>
         <div style="display:grid;gap:.45rem;margin:.2rem 0 .6rem">${PERM_DEFS.map(([k, t, d]) => `<label style="display:flex;gap:.55rem;align-items:flex-start;margin:0;font-weight:600"><input type="checkbox" class="up" value="${k}" style="width:auto;margin-top:.2rem" ${(u.perms || []).includes(k) ? 'checked' : ''}><span>${t}<small class="mute" style="display:block;font-weight:400">${d}</small></span></label>`).join('')}</div></div>
         <p id="uadm" class="mute" ${u.role === 'admin' ? '' : 'hidden'}>El administrador tiene todos los permisos.</p>
