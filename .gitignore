@@ -4,3 +4,4 @@ data/*.db*
 .vercel
 .claude/skills/impeccable/scripts/bin/
 .claude/settings.local.json
+.impeccable/hook.cache.json

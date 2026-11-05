@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "public/styles.css"
+        ],
+        "createdAt": "2026-11-05T13:35:23.922Z",
+        "reason": "Agent triage: L293 is a rotated 8px chevron icon (border-right+border-bottom at 45deg) for details summaries, not a card accent border"
+      }
+    ]
+  }
+}
