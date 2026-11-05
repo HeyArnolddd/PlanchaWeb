@@ -14,7 +14,7 @@
   .pingu .sp img{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;visibility:hidden}
   .pingu .sp img.on{visibility:visible}
   .pingu .say{position:absolute;bottom:100%;left:50%;transform:translateX(-50%) scale(.85);margin-bottom:2px;white-space:nowrap;background:#fff;color:#02005f;
-    font:700 12px/1 'Plus Jakarta Sans',system-ui,sans-serif;padding:.45rem .6rem;border-radius:10px;box-shadow:0 6px 16px -6px rgba(2,0,95,.5);
+    font:600 12px/1 -apple-system,BlinkMacSystemFont,'SF Pro Text','Inter',system-ui,sans-serif;padding:.45rem .6rem;border-radius:10px;box-shadow:0 6px 16px -6px rgba(2,0,95,.5);
     opacity:0;transition:opacity .2s,transform .2s;pointer-events:none}
   .pingu .say.on{opacity:1;transform:translateX(-50%) scale(1)}
   .pingu .say::after{content:'';position:absolute;top:100%;left:var(--tail,50%);margin-left:-5px;border:5px solid transparent;border-top-color:#fff}`;

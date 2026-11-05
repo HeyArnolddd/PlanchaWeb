@@ -27,6 +27,7 @@ async function shrinkSticker(file) {
   const out = cv.toDataURL('image/webp', 0.85);
   return out.startsWith('data:image/webp') ? out : cv.toDataURL('image/png');
 }
+const todayLong = () => { const t = new Date().toLocaleDateString('es-CO', { timeZone: 'America/Bogota', weekday: 'long', day: 'numeric', month: 'long' }); return t[0].toUpperCase() + t.slice(1); };
 const money = (n) => '$' + Number(n || 0).toLocaleString('es-CO');
 const dt = (s) => s ? new Date(s).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
 const diffTag = (d) => d === 0 ? '<span class="tag ok">Cuadra</span>'
@@ -124,8 +125,7 @@ function sideHTML(tabs) {
   return `<div class="side-head"><img src="/logo.png" alt="ACEIS"><i>La Plancha</i>
       <button class="side-col" onclick="A.sideCollapse()" aria-label="Contraer menú" title="Contraer / expandir">${icon('colapsar')}</button></div>
     <div class="side-nav">${groups}</div>
-    <div class="side-foot"><div class="me" onclick="A.profile()" title="Cambiar foto de perfil">${avatar(S.user)}<span>${esc(S.user.name)}<small>${S.user.role === 'admin' ? 'Administrador' : 'Turno'}</small></span></div>
-      <button onclick="A.profile()" title="Mi perfil">${icon('usuarios')}<span>Mi perfil</span></button>
+    <div class="side-foot"><div class="me" role="button" tabindex="0" onclick="A.profile()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();A.profile()}" title="Mi perfil" aria-label="Mi perfil">${avatar(S.user)}<span>${esc(S.user.name)}<small>${S.user.role === 'admin' ? 'Administrador' : 'Turno'}</small></span></div>
       <button onclick="A.logout()" title="Salir">${icon('salir')}<span>Salir</span></button></div>`;
 }
 
@@ -138,10 +138,10 @@ function lowStock(low) {
 }
 function modal(html) {
   const m = document.createElement('div'); m.className = 'modal';
-  m.innerHTML = `<div>${html}</div>`;
+  m.innerHTML = `<div role="dialog" aria-modal="true">${html}</div>`;
   m.addEventListener('mousedown', (e) => { if (e.target === m) m.remove(); });
   document.body.appendChild(m);
-  const f = m.querySelector('input,select'); if (f) f.focus();
+  const f = m.querySelector('input:not([type=file]):not([type=checkbox]):not([type=hidden]),select'); if (f) f.focus();
   return m;
 }
 const closeModal = () => document.querySelectorAll('.modal').forEach((m) => m.remove());
@@ -158,10 +158,10 @@ async function boot() {
   if (first) {
     $('#app').innerHTML = `<div class="shell ${lsGet('side-col') === '1' ? 'col' : ''}">
       <div class="scrim" onclick="A.sideClose()"></div>
-      <aside class="side"></aside>
+      <aside class="side" id="side" aria-label="Menú principal"></aside>
       <div class="content">
-        <div class="top"><button class="burger" onclick="A.sideOpen()" aria-label="Abrir menú">${icon('menu')}</button><h1 id="ttl"></h1><span class="sp"></span>
-          <small id="tme" onclick="A.profile()">${avatar(S.user)}<span>${esc(S.user.name)} · ${S.user.role === 'admin' ? 'Admin' : 'Turno'}</span></small></div>
+        <div class="top"><button class="burger" onclick="A.sideOpen()" aria-label="Abrir menú" aria-controls="side">${icon('menu')}</button><h1 id="ttl"></h1><span class="sp"></span>
+          <button type="button" id="tme" onclick="A.profile()" aria-label="Mi perfil">${avatar(S.user)}<span>${esc(S.user.name)}</span></button></div>
         <main id="main"></main>
       </div></div>`;
   }
@@ -182,11 +182,11 @@ const lastChatId = () => (S.chat.length ? S.chat[S.chat.length - 1].id : 0);
 const EMOJIS = '😀 😁 😂 🤣 😊 😍 😘 😎 🤔 😅 😢 😭 😡 🥳 😴 🙄 😬 🤗 👍 👎 👏 🙌 🙏 💪 👋 🤝 ✌️ 👌 🔥 ⭐ ❤️ 💙 💯 🎉 🎁 ✅ ❌ ⚠️ 💸 💵 📱 🍔 🍟 🥟 🥤 🍫 🍦 🍕 ☕ 🧹 🧾 📦 ⏰ 📌 👀 🚀'.split(' ');
 const peerName = () => (S.peer === 0 ? 'Equipo (todos)' : ((S.chatUsers && S.chatUsers.users.find((x) => x.id === S.peer)) || { name: 'Mensaje privado' }).name);
 // cabecera de una conversación: foto y nombre de con quién hablas
-const GROUP_AV = (cls = 'h-10 w-10') => `<span class="flex items-center justify-center ${cls} shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand to-sky-400 text-white shadow-sm"><svg viewBox="0 0 24 24" class="block h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M21 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>`;
+const GROUP_AV = (cls = 'h-10 w-10') => `<span class="flex items-center justify-center ${cls} shrink-0 place-items-center rounded-full bg-brand text-white shadow-sm"><svg viewBox="0 0 24 24" class="block h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M21 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>`;
 function peerHead() {
   const u = S.peer ? (S.chatUsers && S.chatUsers.users.find((x) => x.id === S.peer)) : null;
   const av = S.peer === 0 ? GROUP_AV('h-9 w-9') : avatar(u || { id: S.peer, name: peerName() }, 'sm', true);
-  return `${av}<span class="min-w-0 leading-snug"><b class="block truncate text-[15px] font-extrabold">${esc(peerName())}</b><small class="block text-[11px] font-medium text-blue-100">${S.peer === 0 ? 'Chat de todo el equipo' : 'Mensaje privado'}</small></span>`;
+  return `${av}<span class="min-w-0 leading-snug"><b class="block truncate text-[15px] font-extrabold">${esc(peerName())}</b><small class="block text-[11px] font-medium text-slate-500">${S.peer === 0 ? 'Chat de todo el equipo' : 'Mensaje privado'}</small></span>`;
 }
 function chatShell() {
   let w = $('#cw');
@@ -198,24 +198,24 @@ function chatShell() {
 function chatDraw() {
   const w = $('#cw'); if (!w) return;
   if (!S.chatOpen) {
-    w.innerHTML = '<button class="border-0 relative inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-brand to-sky-500 py-2 pl-2 pr-5 text-[15px] font-extrabold text-white shadow-xl shadow-blue-600/40 transition hover:-translate-y-0.5 hover:shadow-2xl" onclick="A.chatToggle()"><img class="h-8 w-8 rounded-full bg-white p-1 shadow" src="/chaticon.png" alt="">Chat<b class="badge !m-0" id="cwbadge" hidden></b></button>';
+    w.innerHTML = '<button class="relative inline-flex items-center gap-2 rounded-full border border-line bg-white/90 py-1.5 pl-1.5 pr-4 text-[15px] font-semibold text-ink shadow-lg shadow-slate-900/10 backdrop-blur transition hover:-translate-y-0.5 hover:shadow-xl" onclick="A.chatToggle()" aria-label="Abrir chat"><img class="h-8 w-8 rounded-full bg-ice p-1" src="/chaticon.png" alt="">Chat<b class="badge !m-0" id="cwbadge" hidden></b></button>';
     chatPaintBadge(); return;
   }
-  const hb = 'border-0 flex items-center justify-center h-8 w-8 shrink-0 place-items-center rounded-full bg-white/15 p-0 text-white transition hover:bg-white/25';
-  w.innerHTML = `<div class="flex h-[min(36rem,82vh)] w-[min(25rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5">
-    <div class="flex items-center gap-3 bg-gradient-to-r from-navy via-brand to-sky-500 px-4 py-3.5 text-white">
+  const hb = 'border-0 flex items-center justify-center h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-100 p-0 text-slate-600 transition hover:bg-slate-200';
+  w.innerHTML = `<div class="flex h-[min(36rem,82vh)] w-[min(25rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-3xl bg-white shadow-2xl shadow-slate-900/25 ring-1 ring-black/5" role="dialog" aria-label="Chat">
+    <div class="flex items-center gap-3 border-b border-line bg-white px-4 py-3.5 text-ink">
       ${S.peer === null ? '' : `<button class="${hb}" onclick="A.chatBack()" aria-label="Volver"><svg viewBox="0 0 24 24" class="block h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>`}
       <div class="flex min-w-0 flex-1 items-center gap-3">${S.peer === null
-        ? '<img class="h-9 w-9 rounded-full bg-white p-1 shadow" src="/chaticon.png" alt=""><span class="leading-tight"><b class="block text-[15px] font-extrabold">Chat</b><small class="block text-[11px] font-medium text-blue-100">Equipo y mensajes privados</small></span>'
+        ? '<img class="h-9 w-9 rounded-full bg-ice p-1" src="/chaticon.png" alt=""><span class="leading-tight"><b class="block text-[15px] font-bold">Chat</b><small class="block text-[11px] font-medium text-slate-500">Equipo y mensajes privados</small></span>'
         : peerHead()}</div>
       <button class="${hb}" onclick="A.chatToggle()" aria-label="Cerrar"><svg viewBox="0 0 24 24" class="block h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
     ${S.peer === null ? '<div id="chatside" class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-3"></div>'
-      : `<div id="chatlist" class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto bg-gradient-to-b from-ice/70 to-white px-4 py-4"></div>
+      : `<div id="chatlist" class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto bg-slate-50 px-4 py-4"></div>
         <div id="cwpick" class="cw-pick" hidden></div>
         <div class="flex items-center gap-3 border-t border-line bg-white px-4 py-3.5">
           <button class="border-0 flex items-center justify-center h-10 w-10 shrink-0 place-items-center rounded-full bg-ice p-0 text-brand transition hover:bg-blue-100" onclick="A.pick()" aria-label="Emojis y stickers"><svg viewBox="0 0 24 24" class="block h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2.5 4 2.5S16 14 16 14M9 9.5h.01M15 9.5h.01"/></svg></button>
           <input id="cm" class="!min-w-0 !flex-1 !rounded-full !border-line !bg-ice/60 !px-4 !py-2.5" maxlength="500" autocomplete="off" placeholder="Escribe un mensaje…" onkeydown="if(event.key==='Enter')A.say()">
-          <button class="border-0 flex items-center justify-center h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand to-sky-500 p-0 text-white shadow-md shadow-blue-600/40 transition hover:scale-105" onclick="A.say()" aria-label="Enviar"><svg viewBox="0 0 24 24" class="block h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button></div>`}</div>`;
+          <button class="border-0 flex items-center justify-center h-10 w-10 shrink-0 place-items-center rounded-full bg-brand p-0 text-white shadow-md shadow-blue-600/30 transition hover:scale-105 active:scale-95" onclick="A.say()" aria-label="Enviar"><svg viewBox="0 0 24 24" class="block h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button></div>`}</div>`;
   chatPaintSide(); chatPaintList();
   const f = $('#cm'); if (f) f.focus();
 }
@@ -246,7 +246,7 @@ function chatPaintList() {
     const body = m.sticker_id ? `<img class="h-28 w-28 object-contain" src="/api/stickers/${m.sticker_id}/img" alt="sticker">`
       : `<div class="whitespace-pre-wrap text-[14px] leading-relaxed [overflow-wrap:anywhere]">${m.body ? esc(m.body) : '<i class="opacity-60">sticker eliminado</i>'}</div>`;
     const corner = mine ? `${last ? 'rounded-br-md' : ''} ${first ? '' : 'rounded-tr-md'}` : `${last ? 'rounded-bl-md' : ''} ${first ? '' : 'rounded-tl-md'}`;
-    const look = mine ? 'bg-gradient-to-br from-brand to-sky-500 text-white' : 'bg-white text-slate-800 ring-1 ring-line';
+    const look = mine ? 'bg-brand text-white' : 'bg-white text-slate-800 ring-1 ring-line';
     return (newDay ? `<div class="my-3 self-center rounded-full bg-white px-3.5 py-1 text-[11px] font-bold capitalize text-slate-500 shadow-sm ring-1 ring-line">${esc(day(m))}</div>` : '')
       + `<div class="flex max-w-[85%] items-end gap-2.5 ${mine ? 'flex-row-reverse self-end' : 'self-start'} ${first ? 'mt-3.5' : ''}">
         ${mine ? '' : last ? avatar({ id: m.user_id, name: m.user_name, photo: m.photo }, 'sm', true) : '<span class="w-[30px] shrink-0"></span>'}
@@ -336,7 +336,7 @@ function loginView() {
       <div class="hero-bob"><img id="hero" src="/sami/hd/happy.png" alt="" draggable="false"></div><div class="hero-shd"></div></div>
     <div class="login"><img src="/logo.png" alt="ACEIS"><h2>La Plancha</h2><p class="mute">Asociación de Ingeniería de Sistemas</p>
     <label for="lu">Usuario</label><input id="lu" autocomplete="username" autocapitalize="none">
-    <label>Contraseña</label><div class="pw"><input id="lp" type="password" autocomplete="current-password">
+    <label for="lp">Contraseña</label><div class="pw"><input id="lp" type="password" autocomplete="current-password">
       <button type="button" class="eye" id="eye" aria-label="Mostrar contraseña" title="Mostrar contraseña">${icon('ojo')}</button></div>
     <button class="btn" id="lb">Ingresar</button></div></div>`;
   danceSami();
@@ -361,10 +361,11 @@ const views = {
   async resumen() {
     if (!can('reportes')) {
       const d = await api('/summary'), s = d.open_shift;
-      $('#main').innerHTML = `<h2>Resumen</h2>
-        <div class="grid"><div class="stat"><span>Ventas de hoy (${d.today.n})</span><b>${money(d.today.total)}</b></div></div><br>
-        <div class="card"><h3>Turno actual</h3>${s ? `<b>${esc(s.user_name)}</b> abrió caja ${dt(s.opened_at)}` : '<span class="mute">No hay caja abierta.</span>'}</div>
-        <div class="grid">
+      $('#main').innerHTML = `<div class="pagehead"><div><h2>Resumen</h2><p>${todayLong()}</p></div></div>
+        <div class="grid"><div class="stat"><span>Ventas de hoy (${d.today.n})</span><b>${money(d.today.total)}</b></div></div>
+        <h3 class="sect">Turno actual</h3>
+        <div class="card">${s ? `<b>${esc(s.user_name)}</b> abrió caja ${dt(s.opened_at)}` : '<span class="mute">No hay caja abierta.</span>'}</div>
+        <div class="grid2">
           <div class="card"><h3>Stock bajo</h3>${lowStock(d.low)}</div>
           <div class="card"><h3>Más vendidos hoy</h3>${d.top.length ? `<table>${d.top.map((p) => `<tr><td>${esc(p.name)}</td><td class="n">${p.qty}</td></tr>`).join('')}</table>` : '<span class="mute">Sin ventas aún.</span>'}</div>
         </div>`;
@@ -373,22 +374,28 @@ const views = {
     const d = await api('/dashboard');
     const s = d.open_shift;
     $('#main').innerHTML = `
-      <h2>Resumen</h2>
-      <div class="grid">
+      <div class="pagehead"><div><h2>Resumen</h2><p>${todayLong()}</p></div>
+        <div class="kpis"><div class="kpi"><b>${d.today.n}</b><span>${d.today.n === 1 ? 'venta hoy' : 'ventas hoy'}</span></div><div class="kpi ${s ? '' : 'bad'}"><b>${s ? 'Abierta' : 'Cerrada'}</b><span>caja</span></div></div></div>
+      <h3 class="sect">Dinero en caja</h3>
+      <div class="grid c4">
         <div class="stat"><span>Efectivo en caja (según sistema)</span><b>${money(d.register.cash)}</b></div>
         <div class="stat"><span>Nequi (según sistema)</span><b>${money(d.register.nequi)}</b></div>
         <div class="stat"><span>Total esperado</span><b>${money(d.register.cash + d.register.nequi)}</b></div>
+        <div class="stat"><span>Inventario (costo → venta)</span><b style="font-size:1.1rem">${money(d.inventory.cost)} → ${money(d.inventory.value)}</b></div>
+      </div>
+      <h3 class="sect">Hoy</h3>
+      <div class="grid c3">
         <div class="stat"><span>Ventas de hoy (${d.today.n})</span><b>${money(d.today.total)}</b></div>
         <div class="stat"><span>Ganancia hoy</span><b>${money(d.today.profit)}</b></div>
         <div class="stat"><span>Retiros Nequi hoy (${d.today.withdrawals}) · comisiones</span><b>${money(d.today.fees)}</b></div>
         <div class="stat"><span>Gastos de implementos hoy</span><b>${money(d.today.expenses)}</b></div>
         <div class="stat"><span>Pagos de pedidos hoy</span><b>${money(d.today.orders)}</b></div>
         <div class="stat"><span>Ganancia neta hoy</span><b>${money(d.today.profit - d.today.expenses)}</b></div>
-        <div class="stat"><span>Inventario (costo → venta)</span><b style="font-size:1.1rem">${money(d.inventory.cost)} → ${money(d.inventory.value)}</b></div>
-      </div><br>
-      <div class="card"><h3>Turno actual</h3>${s ? `<b>${esc(s.user_name)}</b> abrió caja ${dt(s.opened_at)} · ${s.sales_count} ventas · ${money(s.sales_cash + s.sales_nequi)}`
+      </div>
+      <h3 class="sect">Turno actual</h3>
+      <div class="card">${s ? `<b>${esc(s.user_name)}</b> abrió caja ${dt(s.opened_at)} · ${s.sales_count} ventas · ${money(s.sales_cash + s.sales_nequi)}`
         : '<span class="mute">No hay caja abierta.</span>'}</div>
-      <div class="grid">
+      <div class="grid2">
         <div class="card"><h3>Stock bajo</h3>${lowStock(d.low)}</div>
         <div class="card"><h3>Más vendidos (30 días)</h3>${d.top.length ? Object.entries(d.top.reduce((g, p) => ((g[p.category] ||= []).push(p), g), {})).map(([c, ps]) => `<h4 style="margin:.6rem 0 .2rem">${esc(c)}</h4><table>${ps.map((p) => `<tr><td>${esc(p.name)}</td><td class="n">${p.qty}</td></tr>`).join('')}</table>`).join('') : '<span class="mute">Sin ventas aún.</span>'}</div>
       </div>`;
@@ -399,40 +406,40 @@ const views = {
     const mine = s && s.user_id === S.user.id;
     S.cajaExp = { cash: register.cash, nequi: register.nequi };
     const lbl = 'text-xs font-bold uppercase tracking-wide text-slate-500';
-    const field = (m, id, label, val0, extra = '') => `<div class="rounded-2xl border border-line bg-white p-3.5 shadow-sm">
+    const field = (m, id, label, val0, extra = '') => `<div class="fieldbox">
       <div class="mb-2 flex items-center gap-2">${payLogo(m, 'h-7 w-7')}<span class="${lbl}">${label}</span></div>
-      <input id="${id}" type="number" inputmode="numeric" min="0" value="${val0}" placeholder="$ 0" class="!rounded-xl !py-3 !text-xl !font-extrabold" ${extra}></div>`;
-    const money2 = (m, name, exp, start, sales) => `<div class="rounded-3xl border border-line bg-white p-4 shadow-sm">
+      <input id="${id}" type="number" inputmode="numeric" min="0" value="${val0}" placeholder="$ 0" class="!py-3 !text-xl !font-extrabold" ${extra}></div>`;
+    const money2 = (m, name, exp, start, sales) => `<div class="panel tight">
       <div class="flex items-center gap-3">${payLogo(m, 'h-11 w-11')}<div><div class="${lbl}">${name}</div><div class="text-xs text-slate-500">Debería haber en caja</div></div></div>
       <div class="mt-2 text-3xl font-extrabold tracking-tight text-navy">${money(exp)}</div>
       <div class="mt-3 flex gap-2 text-sm"><div class="flex-1 rounded-xl bg-ice/70 px-3 py-2"><div class="text-[11px] font-bold uppercase text-slate-500">Inicio</div><b class="text-slate-800">${money(start)}</b></div>
         <div class="flex-1 rounded-xl bg-emerald-50 px-3 py-2"><div class="text-[11px] font-bold uppercase text-emerald-700">Ventas</div><b class="text-emerald-800">+${money(sales)}</b></div></div></div>`;
     let html;
     if (!s) {
-      html = `<div class="ord"><div class="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-r from-navy to-brand p-5 text-white shadow-lg">
-          <div><h2 class="!mb-0 text-2xl font-extrabold !text-white">Caja cerrada</h2><p class="mt-1 text-sm text-blue-100">Cuenta el dinero con el que empiezas tu turno para abrirla.</p></div>
-          <span class="rounded-full bg-white/15 px-4 py-1.5 text-sm font-bold backdrop-blur">Sin turno abierto</span></div>
-        <section class="max-w-2xl rounded-3xl border border-line bg-white p-5 shadow-sm">
-          <h3 class="!mb-3 text-lg font-extrabold text-navy">Abrir caja</h3>
+      html = `<div class="ord"><div class="pagehead">
+          <div><h2>Caja cerrada</h2><p>Cuenta el dinero con el que empiezas tu turno para abrirla.</p></div>
+          <span class="tag warn">Sin turno abierto</span></div>
+        <section class="max-w-2xl panel">
+          <h3>Abrir caja</h3>
           <div class="flex flex-col gap-3 sm:flex-row"><div class="flex-1">${field('efectivo', 'oc', 'Efectivo en caja', register.cash)}</div><div class="flex-1">${field('nequi', 'on', 'Saldo Nequi', register.nequi)}</div></div>
           <p class="mt-3 rounded-xl bg-ice/60 px-3 py-2 text-sm text-slate-600">El sistema esperaba <b>${money(register.cash)}</b> en efectivo y <b>${money(register.nequi)}</b> en Nequi. Si lo que cuentas es distinto, queda registrado en el turno.</p>
-          <button class="btn mt-4 w-full !rounded-2xl !py-3 text-base" onclick="A.openShift()">Abrir caja</button></section></div>`;
+          <button class="btn mt-4 w-full lg" onclick="A.openShift()">Abrir caja</button></section></div>`;
     } else {
-      html = `<div class="ord"><div class="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-r from-navy to-brand p-5 text-white shadow-lg">
+      html = `<div class="ord"><div class="pagehead">
           <div class="flex items-center gap-3">${avatar({ id: s.user_id, name: s.user_name, photo: s.user_id === S.user.id ? S.user.photo : undefined }, 'sm')}
-            <div><h2 class="!mb-0 text-2xl font-extrabold !text-white">${mine ? 'Tu turno está abierto' : 'Turno de ' + esc(s.user_name)}</h2><p class="mt-1 text-sm text-blue-100">Desde ${dt(s.opened_at)}</p></div></div>
-          <div class="flex gap-3"><div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${s.sales_count}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Ventas</div></div>
-            <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${money(s.sales_cash + s.sales_nequi)}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Vendido</div></div></div></div>
+            <div><h2>${mine ? 'Tu turno está abierto' : 'Turno de ' + esc(s.user_name)}</h2><p>Desde ${dt(s.opened_at)}</p></div></div>
+          <div class="kpis"><div class="kpi"><b>${s.sales_count}</b><span>Ventas</span></div>
+            <div class="kpi"><b>${money(s.sales_cash + s.sales_nequi)}</b><span>Vendido</span></div></div></div>
         <div class="flex flex-col gap-5 lg:flex-row lg:items-start">
-          <section class="min-w-0 flex-1"><h3 class="!mb-3 text-lg font-extrabold text-navy">Lo que debería haber</h3>
+          <section class="min-w-0 flex-1"><h3>Lo que debería haber</h3>
             <div class="flex flex-col gap-3 sm:flex-row"><div class="flex-1">${money2('efectivo', 'Efectivo', register.cash, s.open_cash, s.sales_cash)}</div><div class="flex-1">${money2('nequi', 'Nequi', register.nequi, s.open_nequi, s.sales_nequi)}</div></div></section>
-          ${mine || S.user.role === 'admin' ? `<section class="min-w-0 flex-1 rounded-3xl border border-line bg-white p-5 shadow-sm">
-            <h3 class="!mb-1 text-lg font-extrabold text-navy">Cerrar caja</h3>
+          ${mine || S.user.role === 'admin' ? `<section class="min-w-0 flex-1 panel">
+            <h3 class="m0">Cerrar caja</h3>
             <p class="mb-3 text-sm text-slate-500">Cuenta el dinero real y escríbelo. El sistema lo compara con lo que debería haber.</p>
             <div class="flex flex-col gap-3 sm:flex-row"><div class="flex-1">${field('efectivo', 'cc', 'Efectivo contado', '', 'oninput="A.cajaDiff()"')}<div id="dcc" class="mt-1.5 min-h-[1.5rem]"></div></div>
               <div class="flex-1">${field('nequi', 'cn', 'Saldo Nequi', '', 'oninput="A.cajaDiff()"')}<div id="dcn" class="mt-1.5 min-h-[1.5rem]"></div></div></div>
-            <div class="mt-3"><label class="${lbl}" for="cnote">Observaciones (opcional)</label><input id="cnote" maxlength="300" placeholder="Algo que debamos saber del turno" class="!rounded-xl"></div>
-            <button class="btn danger mt-4 w-full !rounded-2xl !py-3 text-base" onclick="A.closeShift()">Cerrar caja</button></section>` : ''}
+            <div class="mt-3"><label class="${lbl}" for="cnote">Observaciones (opcional)</label><input id="cnote" maxlength="300" placeholder="Algo que debamos saber del turno" class=""></div>
+            <button class="btn danger mt-4 w-full lg" onclick="A.closeShift()">Cerrar caja</button></section>` : ''}
         </div></div>`;
     }
     $('#main').innerHTML = html;
@@ -448,34 +455,35 @@ const views = {
     const cats = [...new Set(S.prods.map((p) => p.category || 'Sin categoría'))];
     const lbl = 'text-xs font-bold uppercase tracking-wide text-slate-500';
     const sold = sales.filter((x) => !x.voided).reduce((t, x) => t + Number(x.total), 0), nSold = sales.filter((x) => !x.voided).length;
-    $('#main').innerHTML = `<div class="vhead"><h2>Vender</h2><span class="vstat"><b>${nSold}</b> ${nSold === 1 ? 'venta' : 'ventas'} del turno · <b>${money(sold)}</b></span></div>
+    $('#main').innerHTML = `<div class="pagehead vh"><div><h2>Vender</h2></div>
+        <div class="kpis"><div class="kpi"><b>${nSold}</b><span>${nSold === 1 ? 'venta del turno' : 'ventas del turno'}</span></div><div class="kpi"><b>${money(sold)}</b><span>vendido</span></div></div></div>
       <div class="pos">
-      <div><div class="relative"><span class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">${icon('lupa')}</span>
-        <input id="q" placeholder="Buscar producto…" value="${esc(S.q)}" oninput="S.q=this.value;A.grid()" class="!rounded-2xl !py-3 !pl-11"></div>
+      <div><div class="sbox"><span>${icon('lupa')}</span>
+        <input id="q" type="search" aria-label="Buscar producto" placeholder="Buscar producto…" value="${esc(S.q)}" oninput="S.q=this.value;A.grid()"></div>
         <div class="chips"><button class="${S.cat === 'all' ? 'on' : ''}" data-c="all" onclick="A.setCat('all')">Todos</button>
         <button class="fchip ${S.cat === 'fav' ? 'on' : ''}" data-c="fav" onclick="A.setCat('fav')">${icon('estrella')} Favoritos</button>
         ${cats.map((c) => `<button class="${S.cat === c ? 'on' : ''}" data-c="${esc(c)}" onclick="A.setCat(this.dataset.c)">${esc(c)}</button>`).join('')}</div>
         <div class="prods" id="grid"></div></div>
-      <div class="card" id="cartcard"><h3>Venta</h3><div id="cart"></div></div></div>
+      <div class="card" id="cartcard"><div id="cart"></div></div></div>
       <button type="button" class="cartbar" id="cartbar" hidden onclick="$('#cartcard').scrollIntoView({behavior:'smooth',block:'start'})"></button>
       <div class="ord">
-      <details class="fold mb-5 rounded-3xl border border-line bg-white p-5 shadow-sm"><summary class="text-lg font-extrabold text-navy">Retiro o cambio entre Nequi y efectivo</summary>
-        <p class="mb-3 mt-2 text-sm text-slate-500">Comisión sugerida: $500 por cada $50.000.</p>
+      <details class="fold mb-5 panel"><summary>Retiro o cambio entre Nequi y efectivo</summary><div class="fbody">
+        <p class="mb-3 text-sm text-slate-500">Comisión sugerida: $500 por cada $50.000.</p>
         <input type="hidden" id="wd" value="nequi_efectivo"><input type="hidden" id="wm" value="nequi">
         <div class="mb-3"><div class="mb-1 ${lbl}">Tipo de movimiento</div>
-          <div class="flex flex-col overflow-hidden rounded-2xl border border-line sm:flex-row" data-seg="wd">
-            ${[['nequi_efectivo', payLogo('nequi') + ' Nequi → efectivo', 'El cliente transfiere, tú entregas efectivo'], ['efectivo_nequi', payLogo('efectivo') + ' Efectivo → Nequi', 'El cliente da efectivo, tú transfieres']].map(([v, t, h], i) => `<button type="button" data-v="${v}" onclick="A.loanSeg('wd','${v}');A.wdFee()" class="flex-1 px-4 py-2.5 text-left ${i ? 'border-t border-line sm:border-l sm:border-t-0' : ''} ${v === 'nequi_efectivo' ? 'bg-brand text-white' : 'text-slate-600 hover:bg-ice'}"><span class="inline-flex items-center gap-1.5 text-sm font-bold">${t}</span><span class="block text-xs opacity-80">${h}</span></button>`).join('')}</div></div>
+          <div class="segc stack" data-seg="wd">
+            ${[['nequi_efectivo', payLogo('nequi') + ' Nequi → efectivo', 'El cliente transfiere, tú entregas efectivo'], ['efectivo_nequi', payLogo('efectivo') + ' Efectivo → Nequi', 'El cliente da efectivo, tú transfieres']].map(([v, t, h]) => `<button type="button" data-v="${v}" onclick="A.loanSeg('wd','${v}');A.wdFee()" class="${v === 'nequi_efectivo' ? 'on' : ''}"><span class="inline-flex items-center gap-1.5">${t}</span><small>${h}</small></button>`).join('')}</div></div>
         <div class="flex flex-wrap gap-3">
-          <div class="min-w-[9rem] flex-1"><label class="${lbl}" for="wa">Monto a entregar</label><input id="wa" type="number" inputmode="numeric" min="1" placeholder="$ 0" oninput="A.wdFee()" class="!rounded-xl !py-3 !text-lg !font-extrabold"></div>
-          <div class="min-w-[9rem] flex-1"><label class="${lbl}" for="wf">Comisión</label><input id="wf" type="number" inputmode="numeric" min="0" value="0" class="!rounded-xl !py-3 !text-lg !font-extrabold"></div>
+          <div class="min-w-[9rem] flex-1"><label class="${lbl}" for="wa">Monto a entregar</label><input id="wa" type="number" inputmode="numeric" min="1" placeholder="$ 0" oninput="A.wdFee()" class="!py-3 !text-lg !font-extrabold"></div>
+          <div class="min-w-[9rem] flex-1"><label class="${lbl}" for="wf">Comisión</label><input id="wf" type="number" inputmode="numeric" min="0" value="0" class="!py-3 !text-lg !font-extrabold"></div>
           <div><div class="mb-1 ${lbl}">La comisión se cobró en</div>${loanSeg('wm', [['nequi', payLogo('nequi') + ' Nequi'], ['efectivo', payLogo('efectivo') + ' Efectivo']], 'nequi')}</div></div>
         <p id="wsum" class="mt-2 text-sm text-slate-500"></p>
-        <button class="btn mt-3 w-full !rounded-2xl !py-3 text-base sm:w-auto sm:px-8" onclick="A.withdraw()">Registrar retiro</button>
+        <button class="btn mt-3 w-full lg sm:w-auto sm:px-8" onclick="A.withdraw()">Registrar retiro</button>
         ${wds.length ? `<div class="mt-4 flex flex-col gap-2">${wds.map((w) => `<div class="flex flex-wrap items-center gap-3 rounded-2xl bg-ice/50 px-3 py-2 ${w.voided ? 'opacity-50' : ''}">
           <span class="text-sm text-slate-500">${dt(w.created_at).split(', ').pop()}</span><b class="min-w-0 flex-1 text-sm text-navy ${w.voided ? 'line-through' : ''}">${w.direction === 'efectivo_nequi' ? 'Efectivo → Nequi' : 'Nequi → efectivo'}</b>
           <span class="text-sm">${money(w.amount)} <span class="text-slate-500">· comisión ${money(w.fee)}</span></span>
-          ${w.voided ? '<span class="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-700">Anulado</span>' : `<button class="btn sec sm !rounded-xl" onclick="A.voidWd(${w.id})">Anular</button>`}</div>`).join('')}</div>` : ''}</details>
-      <section class="rounded-3xl border border-line bg-white p-5 shadow-sm"><h3 class="!mb-3 text-lg font-extrabold text-navy">Ventas de este turno</h3><div class="tw">${salesTable(sales, true)}</div></section></div></div>`;
+          ${w.voided ? '<span class="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-700">Anulado</span>' : `<button class="btn sec sm" onclick="A.voidWd(${w.id})">Anular</button>`}</div>`).join('')}</div>` : ''}</div></details>
+      <section class="panel"><h3>Ventas de este turno</h3><div class="tw">${salesTable(sales, true)}</div></section></div></div>`;
     A.grid(); A.cart();
   },
 
@@ -503,25 +511,25 @@ const views = {
     const item = (l) => items.find((x) => x.id === l.item_id);
     const chip = (txt, cls) => `<span class="rounded-full px-2.5 py-0.5 text-xs font-bold ${cls}">${txt}</span>`;
     $('#main').innerHTML = `<div class="ord">
-      <div class="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-r from-navy to-brand p-5 text-white shadow-lg">
-        <div><h2 class="!mb-0 text-2xl font-extrabold !text-white">Préstamo de implementos</h2>
-          <p class="mt-1 text-sm text-blue-100">Raquetas, juegos de mesa y más. Registra el préstamo y márcalo cuando lo devuelvan.</p></div>
-        <div class="flex gap-3">
-          <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${pending.length}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Prestados</div></div>
-          <div class="rounded-2xl ${late ? 'bg-rose-500/80' : 'bg-white/15'} px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${late}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Vencidos</div></div>
+      <div class="pagehead">
+        <div><h2>Préstamo de implementos</h2>
+          <p>Raquetas, juegos de mesa y más. Registra el préstamo y márcalo cuando lo devuelvan.</p></div>
+        <div class="kpis">
+          <div class="kpi"><b>${pending.length}</b><span>Prestados</span></div>
+          <div class="kpi ${late ? 'bad' : ''}"><b>${late}</b><span>Vencidos</span></div>
         </div>
       </div>
       <div class="flex flex-col gap-5 lg:flex-row lg:items-start">
-        <section class="min-w-0 flex-1 rounded-3xl border border-line bg-white p-5 shadow-sm lg:max-w-xl">
-          <h3 class="!mb-3 flex items-center gap-2 text-lg font-extrabold text-navy"><span class="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-sm text-white">1</span> Nuevo préstamo</h3>
+        <section class="min-w-0 flex-1 panel lg:max-w-xl">
+          <h3 class="stephead"><span class="step">1</span> Nuevo préstamo</h3>
           ${avail.length ? `<input type="hidden" id="lm" value="efectivo"><input type="hidden" id="ld" value="1">
           <div class="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">¿Qué implementos y cuántos?</div>
           <div class="flex flex-wrap gap-2.5">${avail.map((i) => `<div data-i="${i.id}" class="litem flex w-[7.2rem] flex-col items-center gap-1.5 rounded-2xl border-2 border-line bg-white p-2 text-center transition">
               <button type="button" onclick="A.loanChg(${i.id},1)" class="flex flex-col items-center gap-1.5">${loanThumb(i, 'h-20 w-20')}<b class="line-clamp-2 text-xs leading-tight text-slate-800">${esc(i.name)}</b></button>
               <small class="text-[11px] text-slate-500">${i.available} disp.</small>
               <div class="qty"><button type="button" onclick="A.loanChg(${i.id},-1)">−</button><span id="lq${i.id}">0</span><button type="button" onclick="A.loanChg(${i.id},1)">+</button></div></div>`).join('')}</div>
-          <div class="mt-4"><label class="text-xs font-bold uppercase tracking-wide text-slate-500" for="lb">Nombre de la persona</label><input id="lb" maxlength="80" placeholder="¿A quién se le presta?" class="!rounded-2xl !py-3"></div>
-          <div class="mt-3"><label class="text-xs font-bold uppercase tracking-wide text-slate-500" for="lp">Teléfono</label><input id="lp" type="tel" inputmode="tel" maxlength="20" placeholder="Número de contacto" class="!rounded-2xl !py-3"></div>
+          <div class="mt-4"><label class="text-xs font-bold uppercase tracking-wide text-slate-500" for="lb">Nombre de la persona</label><input id="lb" maxlength="80" placeholder="¿A quién se le presta?" class="!py-3"></div>
+          <div class="mt-3"><label class="text-xs font-bold uppercase tracking-wide text-slate-500" for="lp">Teléfono</label><input id="lp" type="tel" inputmode="tel" maxlength="20" placeholder="Número de contacto" class="!py-3"></div>
           <div class="mt-3 rounded-2xl bg-ice/60 p-3">
             <div class="flex flex-wrap items-end gap-3">
               <div class="min-w-[8rem] flex-1"><label class="text-xs font-bold uppercase tracking-wide text-slate-500" for="lf">Valor del préstamo</label><input id="lf" type="number" inputmode="numeric" min="0" value="1000" class="!text-lg !font-extrabold"></div>
@@ -529,35 +537,35 @@ const views = {
               <div><div class="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Plazo</div>${loanSeg('ld', [['1', '1 día'], ['2', '2 días']], '1')}</div>
             </div>
           </div>
-          <button class="btn mt-4 w-full !rounded-2xl !py-3 text-base" onclick="A.loan()">Registrar préstamo</button>`
-          : '<div class="rounded-2xl border border-dashed border-line p-6 text-center text-slate-500"><div class="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-ice text-brand">' + icon('productos') + '</div>No hay implementos disponibles para prestar.</div>'}
+          <button class="btn mt-4 w-full lg" onclick="A.loan()">Registrar préstamo</button>`
+          : '<div class="empty"><div class="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-ice text-brand">' + icon('productos') + '</div>No hay implementos disponibles para prestar.</div>'}
         </section>
         <section class="min-w-0 flex-1">
-          <h3 class="!mb-3 flex items-center gap-2 text-lg font-extrabold text-navy"><span class="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-sm text-white">2</span> Pendientes de devolución</h3>
-          ${pending.length ? `<div class="flex flex-col gap-3">${pending.map((l) => `<article class="overflow-hidden rounded-3xl border ${l.late ? 'border-rose-300' : 'border-amber-200'} bg-white shadow-sm">
+          <h3 class="stephead"><span class="step b">2</span> Pendientes de devolución</h3>
+          ${pending.length ? `<div class="flex flex-col gap-3">${pending.map((l) => `<article class="ticket ${l.late ? 'late' : ''}">
             <div class="flex items-center gap-3 p-3">${loanThumb(item(l), 'h-16 w-16')}
               <div class="min-w-0 flex-1"><b class="block truncate text-navy">${l.qty > 1 ? l.qty + '× ' : ''}${esc(l.item)}</b><div class="truncate text-sm text-slate-700">${icon('usuarios')} ${esc(l.borrower)}${l.phone ? ` · <a href="tel:${esc(l.phone)}" class="text-brand">${esc(l.phone)}</a>` : ''}</div>
                 <div class="text-xs text-slate-500">Prestado ${dt(l.created_at)} · atendió ${esc(l.who)}</div></div>
               <div class="text-right"><div class="text-lg font-extrabold text-navy">${l.fee || !l.group_id || l.group_id === l.id ? money(l.fee) : '<small class="text-xs font-semibold text-slate-500">incluido</small>'}</div>${l.method ? `<small class="text-xs text-slate-500">${payTag(l.method)}</small>` : ''}</div></div>
             <div class="flex flex-wrap items-center gap-2 ${l.late ? 'bg-rose-50' : 'bg-amber-50'} px-3 py-2">
               <span class="text-xs font-semibold ${l.late ? 'text-rose-700' : 'text-amber-800'}">${icon('reloj')} Devolver antes de ${dt(l.due_at)}</span>${l.late ? chip('VENCIDO', 'bg-rose-500 text-white') : ''}
-              <span class="ml-auto flex gap-2"><button class="btn sm !rounded-xl" onclick="A.loanReturn(${l.id})">${icon('check')} Devuelto</button>${admin ? `<button class="btn sec sm !rounded-xl" onclick="A.loanVoid(${l.id})">Anular</button>` : ''}</span></div></article>`).join('')}</div>`
-          : '<div class="rounded-3xl border border-dashed border-line bg-white/70 p-8 text-center text-slate-500"><div class="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">' + icon('check') + '</div>Nada pendiente: todo fue devuelto.</div>'}
+              <span class="ml-auto flex gap-2"><button class="btn sm" onclick="A.loanReturn(${l.id})">${icon('check')} Devuelto</button>${admin ? `<button class="btn sec sm" onclick="A.loanVoid(${l.id})">Anular</button>` : ''}</span></div></article>`).join('')}</div>`
+          : '<div class="empty"><div class="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">' + icon('check') + '</div>Nada pendiente: todo fue devuelto.</div>'}
         </section>
       </div>
-      <section class="mt-6"><h3 class="!mb-3 text-lg font-extrabold text-navy">Historial reciente</h3>
-        ${history.length ? `<div class="flex flex-col gap-2">${history.map((l) => `<div class="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-white px-3 py-2 shadow-sm ${l.voided ? 'opacity-60' : ''}">
+      <section class="mt-6"><h3>Historial reciente</h3>
+        ${history.length ? `<div class="flex flex-col gap-2">${history.map((l) => `<div class="flex flex-wrap items-center gap-3 rowcard ${l.voided ? 'opacity-60' : ''}">
           ${loanThumb(item(l), 'h-10 w-10')}
           <div class="min-w-0 flex-1"><b class="block truncate text-sm text-navy ${l.voided ? 'line-through' : ''}">${l.qty > 1 ? l.qty + '× ' : ''}${esc(l.item)} <span class="font-medium text-slate-600">· ${esc(l.borrower)}</span></b>
             <div class="text-xs text-slate-500">Prestó ${esc(l.who)} · ${dt(l.created_at)}${l.voided ? '' : ` → recibió ${esc(l.received_by)} · ${dt(l.returned_at)}`}</div></div>
           ${l.voided ? chip('Anulado', 'bg-rose-100 text-rose-700') : chip('Devuelto', 'bg-emerald-100 text-emerald-700')}<b class="text-navy">${money(l.fee)}</b></div>`).join('')}</div>`
         : '<span class="text-slate-500">Sin movimientos.</span>'}</section>
-      ${admin ? `<section class="mt-6"><div class="mb-3 flex items-center justify-between"><h3 class="!mb-0 text-lg font-extrabold text-navy">Inventario de implementos</h3><button class="btn sm !rounded-xl" onclick="A.loanItemForm()">+ Implemento</button></div>
+      ${admin ? `<section class="mt-6"><div class="mb-3 flex items-center justify-between"><h3 class="m0">Inventario de implementos</h3><button class="btn sm" onclick="A.loanItemForm()">+ Implemento</button></div>
         ${items.length ? `<div class="flex flex-wrap gap-3">${items.map((i) => `<div class="flex w-full items-center gap-3 rounded-2xl border border-line bg-white p-3 shadow-sm sm:w-[calc(50%-.375rem)] xl:w-[calc(33.333%-.5rem)] ${i.active ? '' : 'opacity-50'}">
           ${loanThumb(i, 'h-14 w-14')}<div class="min-w-0 flex-1"><b class="block truncate text-navy">${esc(i.name)}</b>
             <div class="text-xs text-slate-500">${i.available} de ${i.qty} disponibles${i.active ? '' : ' · inactivo'}</div></div>
-          <button class="btn sec sm !rounded-xl" onclick="A.loanItemForm(${i.id})">Editar</button></div>`).join('')}</div>`
-        : '<div class="rounded-3xl border border-dashed border-line bg-white/70 p-6 text-center text-slate-500">Aún no hay implementos. Agrega raquetas, juegos de mesa, etc.</div>'}</section>` : ''}</div>`;
+          <button class="btn sec sm" onclick="A.loanItemForm(${i.id})">Editar</button></div>`).join('')}</div>`
+        : '<div class="empty">Aún no hay implementos. Agrega raquetas, juegos de mesa, etc.</div>'}</section>` : ''}</div>`;
     S.loanSel = {};
   },
   async pedidos() {
@@ -569,20 +577,20 @@ const views = {
     const line = (i) => `<li class="flex items-center gap-2.5 py-1">${ordThumb(byId(i.product_id), 'h-9 w-9')}<span class="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">${esc(i.name)}${i.product_id ? '' : ' <span class="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">NUEVO</span>'}</span>
       <span class="rounded-lg bg-ice px-2 py-0.5 text-sm font-extrabold text-brand">${i.received_qty != null && i.received_qty !== i.qty ? `${i.received_qty} de ${i.qty}` : '×' + i.qty}</span></li>`;
     $('#main').innerHTML = `<div class="ord">
-      <div class="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-r from-navy to-brand p-5 text-white shadow-lg">
-        <div><h2 class="!mb-0 text-2xl font-extrabold !text-white">Pedidos a proveedores</h2>
-          <p class="mt-1 text-sm text-blue-100">Registra lo que pediste; quien lo reciba verifica, paga y suma el stock.</p></div>
-        <div class="flex gap-3">
-          <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${pending.length}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Pendientes</div></div>
-          <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${money(pendTotal)}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Por pagar</div></div>
+      <div class="pagehead">
+        <div><h2>Pedidos a proveedores</h2>
+          <p>Registra lo que pediste; quien lo reciba verifica, paga y suma el stock.</p></div>
+        <div class="kpis">
+          <div class="kpi"><b>${pending.length}</b><span>Pendientes</span></div>
+          <div class="kpi"><b>${money(pendTotal)}</b><span>Por pagar</span></div>
         </div>
       </div>
       <div class="flex flex-col gap-5 lg:flex-row lg:items-start">
-        <section class="min-w-0 flex-1 rounded-3xl border border-line bg-white p-5 shadow-sm lg:max-w-xl">
-          <h3 class="!mb-3 flex items-center gap-2 text-lg font-extrabold text-navy"><span class="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-sm text-white">1</span> Nuevo pedido</h3>
+        <section class="min-w-0 flex-1 panel lg:max-w-xl">
+          <h3 class="stephead"><span class="step">1</span> Nuevo pedido</h3>
           <div class="relative">
             <span class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">${icon('lupa')}</span>
-            <input id="os" autocomplete="off" placeholder="Escribe el producto (ej. coca zero)…" class="!rounded-2xl !py-3 !pl-11" oninput="A.ordFind()" onfocus="A.ordFind()" onkeydown="if(event.key==='Escape'){$('#ores').hidden=true;A.ordUnpick()}">
+            <input id="os" autocomplete="off" placeholder="Escribe el producto (ej. coca zero)…" class="!py-3 !pl-11" oninput="A.ordFind()" onfocus="A.ordFind()" onkeydown="if(event.key==='Escape'){$('#ores').hidden=true;A.ordUnpick()}">
             <div id="ores" hidden class="absolute inset-x-0 top-full z-20 mt-1.5 max-h-80 overflow-y-auto rounded-2xl border border-line bg-white p-1.5 shadow-xl"></div>
           </div>
           <div id="osel"></div>
@@ -593,23 +601,23 @@ const views = {
               <div class="min-w-[9rem] flex-[2]"><label class="text-xs font-bold uppercase tracking-wide text-slate-500" for="on">Nota (opcional)</label><input id="on" maxlength="200" placeholder="Proveedor, observaciones…" value="${esc(d.note)}" oninput="S.orderDraft.note=this.value"></div>
             </div>
           </div>
-          <button class="btn mt-4 w-full !rounded-2xl !py-3 text-base" onclick="A.ordSave()">Registrar pedido</button>
+          <button class="btn mt-4 w-full lg" onclick="A.ordSave()">Registrar pedido</button>
         </section>
         <section class="min-w-0 flex-1">
-          <h3 class="!mb-3 flex items-center gap-2 text-lg font-extrabold text-navy"><span class="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-sm text-white">2</span> Pendientes por recibir</h3>
-          ${pending.length ? `<div class="flex flex-col gap-3">${pending.map((o) => `<article class="overflow-hidden rounded-3xl border border-amber-200 bg-white shadow-sm">
+          <h3 class="stephead"><span class="step b">2</span> Pendientes por recibir</h3>
+          ${pending.length ? `<div class="flex flex-col gap-3">${pending.map((o) => `<article class="ticket">
             <header class="flex items-center justify-between gap-2 bg-amber-50 px-4 py-2.5">
               <div><b class="text-navy">Pedido #${o.id}</b><div class="text-xs text-slate-500">${dt(o.created_at)} · pidió ${esc(o.who)}</div></div>
               <div class="text-right text-xl font-extrabold text-navy">${money(o.total)}</div></header>
             <ul class="divide-y divide-slate-100 px-4 py-1.5">${o.items.map(line).join('')}</ul>
             ${o.note ? `<p class="px-4 pb-1 text-xs italic text-slate-500">${esc(o.note)}</p>` : ''}
-            <footer class="flex gap-2 px-4 pb-3 pt-2"><button class="btn flex-1 !rounded-xl" onclick="A.ordReceive(${o.id})">${icon('check')} Recibir y pagar</button>
-              ${S.user.role === 'admin' || o.user_id === S.user.id ? `<button class="btn sec !rounded-xl" onclick="A.ordCancel(${o.id})">Cancelar</button>` : ''}</footer></article>`).join('')}</div>`
-          : '<div class="rounded-3xl border border-dashed border-line bg-white/70 p-8 text-center text-slate-500"><div class="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-ice text-brand">' + icon('productos') + '</div>No hay pedidos pendientes.</div>'}
+            <footer class="flex gap-2 px-4 pb-3 pt-2"><button class="btn flex-1" onclick="A.ordReceive(${o.id})">${icon('check')} Recibir y pagar</button>
+              ${S.user.role === 'admin' || o.user_id === S.user.id ? `<button class="btn sec" onclick="A.ordCancel(${o.id})">Cancelar</button>` : ''}</footer></article>`).join('')}</div>`
+          : '<div class="empty"><div class="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-ice text-brand">' + icon('productos') + '</div>No hay pedidos pendientes.</div>'}
         </section>
       </div>
-      <section class="mt-6"><h3 class="!mb-3 text-lg font-extrabold text-navy">Historial reciente</h3>
-        ${history.length ? `<div class="flex flex-col gap-2">${history.map((o) => `<details class="rounded-2xl border border-line bg-white px-4 py-2.5 shadow-sm">
+      <section class="mt-6"><h3>Historial reciente</h3>
+        ${history.length ? `<div class="flex flex-col gap-2">${history.map((o) => `<details class="rowcard">
           <summary class="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1"><b class="text-navy">#${o.id}</b>
             ${o.status === 'recibido' ? '<span class="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-700">Recibido</span>' : '<span class="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-700">Cancelado</span>'}
             <span class="text-xs text-slate-500">${dt(o.created_at)} · ${esc(o.who)}${o.status === 'recibido' ? ` → ${esc(o.received_name)} · ${payTag(o.method)}` : ''}</span>
@@ -622,10 +630,10 @@ const views = {
     const [{ register, adjustments }, prods] = await Promise.all([api('/register'), api('/products')]);
     S.prods = prods;
     const wo = prods.filter((p) => p.active && p.track_stock && p.stock > 0);
-    $('#main').innerHTML = `<h2>Dinero total en caja</h2>
-      <div class="grid"><div class="stat"><span>Efectivo</span><b>${money(register.cash)}</b></div>
+    $('#main').innerHTML = `<div class="pagehead"><div><h2>Dinero total en caja</h2><p>Lo que el sistema calcula que hay ahora mismo.</p></div></div>
+      <div class="grid c3"><div class="stat"><span>Efectivo</span><b>${money(register.cash)}</b></div>
       <div class="stat"><span>Nequi</span><b>${money(register.nequi)}</b></div>
-      <div class="stat"><span>Total</span><b>${money(register.cash + register.nequi)}</b></div></div><br>
+      <div class="stat"><span>Total</span><b>${money(register.cash + register.nequi)}</b></div></div><div style="height:1rem"></div>
       <div class="card"><h3>Registrar ingreso o retiro</h3>
         <p class="mute">Úsalo para fijar la base inicial, consignar, o sacar dinero (ej. para comprar mercancía). Usa un valor negativo para retirar.</p>
         <div class="row"><div><label for="am">Medio</label><select id="am"><option value="efectivo">Efectivo</option><option value="nequi">Nequi</option></select></div>
@@ -650,9 +658,9 @@ const views = {
 
   async emprendimientos() {
     const { pending, history, register } = await api('/payouts');
-    $('#main').innerHTML = `<h2>Pago a emprendimientos</h2>
-      <p class="mute">Cada producto de emprendimientos se paga por separado, a nombre de quien corresponda. Se paga el costo de lo vendido más el 60% del costo de lo perdido (descartado) desde el último pago de ese producto. Al pagar se descuenta de la caja y la pérdida se resta de la ganancia neta.</p>
-      <div class="grid"><div class="stat"><span>Efectivo en caja</span><b>${money(register.cash)}</b></div><div class="stat"><span>Nequi en caja</span><b>${money(register.nequi)}</b></div></div><br>
+    $('#main').innerHTML = `<div class="pagehead"><div><h2>Pago a emprendimientos</h2></div></div>
+      <p class="mute" style="max-width:70ch;margin-top:-.6rem">Cada producto de emprendimientos se paga por separado, a nombre de quien corresponda. Se paga el costo de lo vendido más el 60% del costo de lo perdido (descartado) desde el último pago de ese producto. Al pagar se descuenta de la caja y la pérdida se resta de la ganancia neta.</p>
+      <div class="grid"><div class="stat"><span>Efectivo en caja</span><b>${money(register.cash)}</b></div><div class="stat"><span>Nequi en caja</span><b>${money(register.nequi)}</b></div></div><div style="height:1rem"></div>
       <div class="card tw"><h3>Pendiente de pago</h3>${pending.length ? `<table><tr><th>Producto</th><th class="n">Vendidos</th><th class="n">Perdidos</th><th class="n">A pagar</th><th>A nombre de</th><th>Pagar con</th><th></th></tr>
       ${pending.map((p, i) => `<tr><td><b>${esc(p.product)}</b></td>
         <td class="n">${p.sold_qty} · ${money(p.sold_cost)}</td>
@@ -672,36 +680,36 @@ const views = {
     const sum = (k) => rows.filter((e) => e.kind === k).reduce((t, e) => t + e.amount, 0);
     const lbl = 'text-xs font-bold uppercase tracking-wide text-slate-500';
     $('#main').innerHTML = `<div class="ord">
-      <div class="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-r from-navy to-brand p-5 text-white shadow-lg">
-        <div><h2 class="!mb-0 text-2xl font-extrabold !text-white">Gastos</h2><p class="mt-1 text-sm text-blue-100">Pagos de pedidos a proveedores y compras de implementos.</p></div>
-        <div class="flex gap-3">
-          <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${money(sum('pedido'))}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Pedidos pagados</div></div>
-          <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${money(sum('implementos'))}</div><div class="text-[11px] uppercase tracking-wide text-blue-100">Implementos</div></div>
+      <div class="pagehead">
+        <div><h2>Gastos</h2><p>Pagos de pedidos a proveedores y compras de implementos.</p></div>
+        <div class="kpis">
+          <div class="kpi"><b>${money(sum('pedido'))}</b><span>Pedidos pagados</span></div>
+          <div class="kpi"><b>${money(sum('implementos'))}</b><span>Implementos</span></div>
         </div></div>
       <div class="flex flex-col gap-5 lg:flex-row lg:items-start">
-        <section class="min-w-0 flex-1 rounded-3xl border border-line bg-white p-5 shadow-sm lg:max-w-xl">
-          <h3 class="!mb-3 text-lg font-extrabold text-navy">Registrar gasto</h3>
-          <div class="flex overflow-hidden rounded-2xl border border-line">
-            <button id="k1" onclick="A.kind('pedido')" class="inline-flex flex-1 items-center justify-center gap-2 px-3 py-2.5 text-sm font-bold">${icon('camion')} Pago de pedido</button>
-            <button id="k2" onclick="A.kind('implementos')" class="inline-flex flex-1 items-center justify-center gap-2 px-3 py-2.5 text-sm font-bold">${icon('gastos')} Implementos</button></div>
+        <section class="min-w-0 flex-1 panel lg:max-w-xl">
+          <h3>Registrar gasto</h3>
+          <div class="segc" style="display:flex">
+            <button id="k1" onclick="A.kind('pedido')">${icon('camion')} Pago de pedido</button>
+            <button id="k2" onclick="A.kind('implementos')">${icon('gastos')} Implementos</button></div>
           <p class="mt-2 rounded-xl bg-ice/60 px-3 py-2 text-sm text-slate-600" id="kh"></p>
           <div class="mt-3 flex flex-col gap-3">
-            <div id="gcw"><label class="${lbl}" for="gc">Proveedor / categoría</label><select id="gc" class="!rounded-xl"><option value="">Otro</option>${cats.map((c) => `<option>${esc(c.name)}</option>`).join('')}</select></div>
-            <div><label class="${lbl}" id="gdl" for="gd">Nota (opcional)</label><input id="gd" maxlength="150" class="!rounded-xl"></div>
-            <div><label class="${lbl}" for="ga">Monto</label><input id="ga" type="number" inputmode="numeric" min="1" placeholder="$ 0" class="!rounded-xl !py-3 !text-xl !font-extrabold"></div>
+            <div id="gcw"><label class="${lbl}" for="gc">Proveedor / categoría</label><select id="gc" class=""><option value="">Otro</option>${cats.map((c) => `<option>${esc(c.name)}</option>`).join('')}</select></div>
+            <div><label class="${lbl}" id="gdl" for="gd">Nota (opcional)</label><input id="gd" maxlength="150" class=""></div>
+            <div><label class="${lbl}" for="ga">Monto</label><input id="ga" type="number" inputmode="numeric" min="1" placeholder="$ 0" class="!py-3 !text-xl !font-extrabold"></div>
             <div><div class="mb-1 ${lbl}">¿De dónde salió?</div><input type="hidden" id="gm" value="">
               <div class="flex flex-wrap">${loanSeg('gm', [['', 'Fuera de la caja'], ['efectivo', payLogo('efectivo') + ' Efectivo'], ['nequi', payLogo('nequi') + ' Nequi']], '')}</div></div>
           </div>
-          <button class="btn mt-4 w-full !rounded-2xl !py-3 text-base" onclick="A.addExpense()">Registrar gasto</button>
+          <button class="btn mt-4 w-full lg" onclick="A.addExpense()">Registrar gasto</button>
         </section>
-        <section class="min-w-0 flex-1"><h3 class="!mb-3 text-lg font-extrabold text-navy">Historial</h3>
-          ${rows.length ? `<div class="flex flex-col gap-2">${rows.map((e) => `<div class="flex items-center gap-3 rounded-2xl border border-line bg-white px-3 py-2.5 shadow-sm">
+        <section class="min-w-0 flex-1"><h3>Historial</h3>
+          ${rows.length ? `<div class="flex flex-col gap-2">${rows.map((e) => `<div class="flex items-center gap-3 rowcard">
             <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${e.kind === 'pedido' ? 'bg-ice text-brand' : 'bg-amber-100 text-amber-700'}">${icon(e.kind === 'pedido' ? 'camion' : 'gastos')}</span>
             <div class="min-w-0 flex-1"><b class="block truncate text-sm text-slate-800">${esc(e.description)}</b>
               <div class="flex flex-wrap items-center gap-x-2 text-xs text-slate-500"><span>${dt(e.created_at)}</span><span class="font-semibold">${e.kind === 'pedido' ? 'Pedido' : 'Implementos'}</span>${e.method ? payTag(e.method) : '<span>Fuera de caja</span>'}</div></div>
             <b class="text-navy">${money(e.amount)}</b>
-            <button class="btn sec sm !rounded-xl" onclick="A.delExpense(${e.id})">Borrar</button></div>`).join('')}</div>`
-          : '<div class="rounded-3xl border border-dashed border-line bg-white/70 p-8 text-center text-slate-500">Sin gastos registrados.</div>'}
+            <button class="btn sec sm" onclick="A.delExpense(${e.id})">Borrar</button></div>`).join('')}</div>`
+          : '<div class="empty">Sin gastos registrados.</div>'}
         </section></div></div>`;
     S.kind = 'pedido'; A.kind('pedido');
   },
@@ -721,7 +729,7 @@ const views = {
     today.setUTCDate(today.getUTCDate() - S.rp + 1);
     if (S.view === 'rentabilidad') {
       const er = await api(`/reports/emprendimientos?from=${iso(today)}&to=${rto}`).catch((e) => ({ error: e.message }));
-      $('#main').innerHTML = `<h2>Rentabilidad de emprendimientos</h2>${reportTabs()}${empPanel(er)}`;
+      $('#main').innerHTML = `<div class="pagehead"><div><h2>Rentabilidad de emprendimientos</h2></div></div>${reportTabs()}${empPanel(er)}`;
       return empCharts(er);
     }
     const [w, tr] = await Promise.all([api('/reports/week' + (S.week ? `?start=${S.week}` : '')), api(`/reports/trend?from=${iso(today)}&to=${rto}`).catch((e) => ({ error: e.message }))]);
@@ -731,8 +739,8 @@ const views = {
     const pct = (a, b) => b ? `<small class="${a >= b ? 'ok' : 'err'}">${a >= b ? '▲' : '▼'} ${Math.abs(Math.round((a - b) / b * 100))}% vs semana anterior</small>` : '<small class="mute">Sin semana anterior</small>';
     const t = w.totals, pv = w.previous, max = Math.max(1, ...w.days.map((d) => d.total));
     const net = t.profit - t.impl - t.lost;
-    $('#main').innerHTML = `<h2>Reportes</h2>${reportTabs()}${reportPanel(tr)}<h2 style="margin-top:1.6rem">Reporte semanal</h2>
-      <div class="row" style="align-items:center;margin-bottom:1rem">
+    $('#main').innerHTML = `<div class="pagehead"><div><h2>Reportes</h2></div></div>${reportTabs()}${reportPanel(tr)}<h2 style="margin:2rem 0 .8rem">Reporte semanal</h2>
+      <div class="row" style="align-items:center;margin-bottom:1rem;max-width:520px">
         <button class="btn sec sm" onclick="A.week(-7)">← Anterior</button>
         <b style="flex:2;text-align:center">${d0(w.start)} – ${d0(w.end)}</b>
         <button class="btn sec sm" onclick="A.week(7)">Siguiente →</button></div>
@@ -743,7 +751,7 @@ const views = {
         <div class="stat"><span>Ganancia neta</span><b>${money(net)}</b>${pct(net, pv.profit - pv.impl - pv.lost)}</div>
         <div class="stat"><span>Pérdidas por descartes (pagadas)</span><b>${money(t.lost)}</b></div>
         <div class="stat"><span>Pagos de pedidos</span><b>${money(t.ped)}</b></div>
-      </div><br>
+      </div><div style="height:1rem"></div>
       <div class="card tw"><h3>Por día</h3><table><tr><th>Día</th><th class="n">Ventas</th><th class="n">Total</th><th></th><th class="n">Ganancia</th><th class="n">Gastos</th><th class="n">Pedidos</th></tr>
       ${w.days.map((d) => `<tr><td>${dn(d.day)}</td><td class="n">${d.n}</td><td class="n">${money(d.total)}</td>
         <td style="width:25%"><div class="bar"><i style="width:${Math.round(d.total / max * 100)}%"></i></div></td>
@@ -765,8 +773,8 @@ const views = {
   async actividad() {
     S.aq ??= '';
     const rows = await api('/audit?q=' + encodeURIComponent(S.aq));
-    $('#main').innerHTML = `<h2>Actividad</h2>
-      <p class="mute">Quién hizo qué: ventas, anulaciones, cambios de productos y stock, ajustes de dinero, usuarios y más. Se muestran los últimos 300 movimientos.</p>
+    $('#main').innerHTML = `<div class="pagehead"><div><h2>Actividad</h2></div></div>
+      <p class="mute" style="max-width:70ch;margin-top:-.6rem">Quién hizo qué: ventas, anulaciones, cambios de productos y stock, ajustes de dinero, usuarios y más. Se muestran los últimos 300 movimientos.</p>
       <div class="row"><input id="aq" placeholder="Buscar por persona, acción o detalle…" value="${esc(S.aq)}" onkeydown="if(event.key==='Enter')A.auditSearch()"><button class="btn sm" style="flex:0 0 auto" onclick="A.auditSearch()">Buscar</button></div>
       <div class="card tw" style="margin-top:1rem"><table><tr><th>Fecha</th><th>Quién</th><th>Acción</th><th>Detalle</th></tr>
       ${rows.map((r) => `<tr><td style="white-space:nowrap">${dt(r.created_at)}</td><td>${esc(r.user_name)}</td><td><span class="tag">${esc(r.action)}</span></td><td>${esc(r.detail || '')}</td></tr>`).join('') || '<tr><td colspan="4" class="mute">Sin actividad.</td></tr>'}</table></div>`;
@@ -784,7 +792,7 @@ const views = {
     const d = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].indexOf(f.weekday), r = Number(f.hour) - 8;
     const lbl = (i) => { const h = (n) => String((n - 1) % 12 + 1).padStart(2, '0') + ':00'; return `${h(8 + i)} - ${h(9 + i)}`; };
     const now = d >= 0 && r >= 0 && r < H.length ? `Ahora (${lbl(r)}): <b>${esc(H[r][d])}</b>` : 'Fuera del horario de atención.';
-    $('#main').innerHTML = `<div class="card"><h3>Horario de atención</h3><p>${now}</p>
+    $('#main').innerHTML = `<div class="pagehead"><div><h2>Horario</h2><p>${now}</p></div></div><div class="card"><h3>Horario de atención</h3>
       <div class="tw"><table><tr><th>Horario</th>${DIAS.map((x, i) => `<th${i === d ? ' style="background:var(--ice)"' : ''}>${x}</th>`).join('')}</tr>
       ${H.map((row, i) => `<tr><td><b>${lbl(i)}</b></td>${row.map((n, j) => `<td style="${j === d ? 'background:var(--ice);' : ''}${i === r && j === d ? 'background:var(--brand);color:#fff;font-weight:700' : ''}">${esc(n)}</td>`).join('')}</tr>`).join('')}
       <tr><td><b>ASEO</b></td>${ASEO.map((n, j) => `<td style="font-weight:600;${j === d ? 'background:var(--ice)' : ''}">${esc(n)}</td>`).join('')}</tr></table></div></div>`;
@@ -804,31 +812,31 @@ const views = {
     const lbl = 'text-[11px] font-bold uppercase tracking-wide';
     const list = [...people.values()].sort((x, y) => x.name.localeCompare(y.name));
     $('#main').innerHTML = `<div class="ord">
-      <div class="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-3xl bg-gradient-to-r from-navy to-brand p-5 text-white shadow-lg">
-        <div><h2 class="!mb-0 text-2xl font-extrabold !text-white">${admin ? 'Turnos' : 'Mis turnos'}</h2><p class="mt-1 text-sm text-blue-100">Historial de cierres y descuadre de caja.</p></div>
-        <div class="flex gap-3"><div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${rows.length}</div><div class="${lbl} text-blue-100">Turnos</div></div>
-          <div class="rounded-2xl bg-white/15 px-4 py-2 text-center backdrop-blur"><div class="text-2xl font-extrabold">${open}</div><div class="${lbl} text-blue-100">Abiertos</div></div></div></div>
-      <section class="mb-5 rounded-3xl border border-line bg-white p-5 shadow-sm"><div class="!mb-3 flex items-center justify-between gap-3"><h3 class="!mb-0 text-lg font-extrabold text-navy">Descuadre de caja</h3>${admin ? '<button class="btn sec sm !rounded-xl" onclick="A.resetDiff()">Reiniciar</button>' : ''}</div>
+      <div class="pagehead">
+        <div><h2>${admin ? 'Turnos' : 'Mis turnos'}</h2><p>Historial de cierres y descuadre de caja.</p></div>
+        <div class="kpis"><div class="kpi"><b>${rows.length}</b><span>Turnos</span></div>
+          <div class="kpi"><b>${open}</b><span>Abiertos</span></div></div></div>
+      <section class="mb-5 panel"><div class="mb-3 flex items-center justify-between gap-3"><h3 class="m0">Descuadre de caja</h3>${admin ? '<button class="btn sec sm" onclick="A.resetDiff()">Reiniciar</button>' : ''}</div>
         ${list.length ? `<div class="flex flex-col gap-2"><div class="flex items-center gap-3 px-3 ${lbl} text-slate-400"><span class="flex-1">Usuario</span><span class="w-36">Esta semana</span><span class="w-36">Total</span></div>
         ${list.map((p) => `<div class="flex flex-wrap items-center gap-3 rounded-2xl bg-ice/50 px-3 py-2.5">
           <span class="flex min-w-0 flex-1 items-center gap-3"><b class="av sm">${initialOf(p.name)}</b><b class="truncate text-navy">${esc(p.name)}</b></span>
           <span class="w-36">${diffTag(p.week)}</span><span class="w-36">${diffTag(p.total)}</span></div>`).join('')}</div>`
         : '<span class="text-slate-500">Aún no hay cierres de caja.</span>'}</section>
-      <section><h3 class="!mb-3 text-lg font-extrabold text-navy">Historial</h3>
+      <section><h3>Historial</h3>
         ${rows.length ? `<div class="flex flex-col gap-2">${rows.map((s) => {
           const closed = !!s.closed_at, dc = closed ? s.close_cash - s.sys_close_cash : 0, dn = closed ? s.close_nequi - s.sys_close_nequi : 0;
-          return `<div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border ${closed ? 'border-line' : 'border-amber-300'} bg-white px-4 py-3 shadow-sm">
+          return `<div class="flex flex-wrap items-center gap-x-4 gap-y-2 rowcard ${closed ? '' : 'open'}">
             <div class="min-w-[9rem] flex-1"><b class="text-navy">${dt(s.opened_at)}</b><div class="text-xs text-slate-500">${closed ? 'hasta ' + dt(s.closed_at) : '<span class="rounded-full bg-amber-100 px-2 py-0.5 font-bold text-amber-700">Abierto</span>'}${admin ? ` · ${esc(s.user_name)}` : ''}</div></div>
             <div class="text-sm"><div class="${lbl} text-slate-400">Ventas (${s.sales_count})</div><b class="text-navy">${money(s.sales_cash + s.sales_nequi)}</b></div>
             ${closed ? `<div class="text-sm"><div class="${lbl} text-slate-400">${payLogo('efectivo', 'h-4 w-4')} Efectivo</div>${diffTag(dc)}</div>
             <div class="text-sm"><div class="${lbl} text-slate-400">${payLogo('nequi', 'h-4 w-4')} Nequi</div>${diffTag(dn)}</div>` : ''}
-            <button class="btn sec sm !rounded-xl ml-auto" onclick="A.shiftDetail(${s.id})">Ver</button></div>`;
-        }).join('')}</div>` : '<div class="rounded-3xl border border-dashed border-line bg-white/70 p-8 text-center text-slate-500">Sin turnos.</div>'}</section></div>`;
+            <button class="btn sec sm ml-auto" onclick="A.shiftDetail(${s.id})">Ver</button></div>`;
+        }).join('')}</div>` : '<div class="empty">Sin turnos.</div>'}</section></div>`;
   },
 
   async usuarios() {
     const users = await api('/users');
-    $('#main').innerHTML = `<div class="row" style="align-items:center"><h2 style="flex:3">Usuarios</h2><button class="btn" onclick="A.userForm()">+ Usuario</button></div>
+    $('#main').innerHTML = `<div class="pagehead"><div><h2>Usuarios</h2><p>Quién puede entrar y qué puede hacer.</p></div><button class="btn" onclick="A.userForm()">+ Usuario</button></div>
       <div class="card tw"><table><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th></th></tr>
       ${users.map((u) => `<tr style="${u.active ? '' : 'opacity:.5'}"><td>${esc(u.name)}</td><td>${esc(u.username)}</td>
         <td>${u.role === 'admin' ? 'Admin' : 'Turno'}${u.active ? '' : ' (inactivo)'}</td>
@@ -841,7 +849,7 @@ window.views = views; window.S = S;
 // Pedidos: miniatura del producto (foto o ícono) y selector de cantidad con − / +
 const ordThumb = (p, size) => (p && p.photo
   ? `<img class="${size} shrink-0 rounded-xl object-cover ring-1 ring-line" src="${photoUrl(p)}" alt="">`
-  : `<span class="${size} flex shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-ice to-blue-200 text-brand">${icon('productos')}</span>`);
+  : `<span class="${size} flex shrink-0 items-center justify-center rounded-xl bg-ice text-brand">${icon('productos')}</span>`);
 // Cierra el desplegable del buscador de Pedidos al hacer clic fuera de él
 document.addEventListener('mousedown', (e) => {
   const box = $('#ores');
@@ -850,13 +858,13 @@ document.addEventListener('mousedown', (e) => {
 // Préstamos: miniatura del implemento (foto o ícono)
 const loanThumb = (it, size = 'h-12 w-12') => (it && it.photo
   ? `<img class="${size} shrink-0 rounded-xl object-cover ring-1 ring-line" src="/api/loan-items/${it.id}/photo?v=${it.photo}" alt="">`
-  : `<span class="${size} flex shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-ice to-blue-200 text-brand">${icon('productos')}</span>`);
+  : `<span class="${size} flex shrink-0 items-center justify-center rounded-xl bg-ice text-brand">${icon('productos')}</span>`);
 // Logos de medio de pago (efectivo / nequi)
 const PAYLOGO = { efectivo: '/efectivo.png', nequi: '/nequi.jpg' };
 const payLogo = (m, size = 'h-5 w-5') => (PAYLOGO[m] ? `<img class="${size} inline-block shrink-0 rounded object-contain align-middle" src="${PAYLOGO[m]}" alt="">` : '');
 const payTag = (m) => (m ? `<span class="inline-flex items-center gap-1">${payLogo(m)}<span class="capitalize">${m}</span></span>` : '');
 // Préstamos: botones tipo selector que escriben su valor en un input oculto
-const loanSeg = (id, opts, cur) => `<div class="flex overflow-hidden rounded-xl border border-line bg-white" data-seg="${id}">${opts.map(([v, t]) => `<button type="button" data-v="${v}" onclick="A.loanSeg('${id}','${v}')" class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-bold ${v === cur ? 'bg-brand text-white' : 'text-slate-600 hover:bg-ice'}">${t}</button>`).join('')}</div>`;
+const loanSeg = (id, opts, cur) => `<div class="segc" data-seg="${id}">${opts.map(([v, t]) => `<button type="button" data-v="${v}" onclick="A.loanSeg('${id}','${v}')" class="${v === cur ? 'on' : ''}">${t}</button>`).join('')}</div>`;
 const ordStep = (dec, inc, n) => `<div class="flex items-center overflow-hidden rounded-xl border border-line bg-ice/50">
   <button class="h-8 w-8 text-lg font-bold text-brand hover:bg-ice" onclick="${dec}">−</button><b class="w-9 text-center text-sm">${n}</b><button class="h-8 w-8 text-lg font-bold text-brand hover:bg-ice" onclick="${inc}">+</button></div>`;
 
@@ -997,9 +1005,14 @@ const A = window.A = {
     const list = S.prods.filter((p) => (S.cat === 'all' || (S.cat === 'fav' ? p.favorite : (p.category || 'Sin categoría') === S.cat))
       && words.every((w) => norm(p.name + ' ' + (p.category || '')).includes(w)))
       .sort((x, y) => y.favorite - x.favorite); // los favoritos van de primeros (el orden es estable)
-    $('#grid').innerHTML = list.map((p) => `<button class="prod" data-p="${p.id}" ${p.track_stock && p.stock <= 0 ? 'disabled' : ''} onclick="A.add(${p.id})">
+    $('#grid').innerHTML = list.map((p) => {
+      const out = p.track_stock && p.stock <= 0, low = p.track_stock && !out && p.stock <= p.min_stock;
+      const st = !p.track_stock ? '' : out ? 'Agotado' : p.stock + ' disp.';
+      return `<button class="prod ${S.cart.some((c) => c.id === p.id) ? 'in' : ''}" data-p="${p.id}" ${out ? 'disabled' : ''} onclick="A.add(${p.id})" aria-label="${esc(p.name)}, ${money(p.sell_price)}${st ? ', ' + st : ''}">
+      ${p.photo ? `<span class="pimg"><img loading="lazy" src="${photoUrl(p)}" alt=""></span>` : ''}
       <span class="fav ${p.favorite ? 'on' : ''}" role="button" aria-label="${p.favorite ? 'Quitar de favoritos' : 'Marcar como favorito'}" title="${p.favorite ? 'Quitar de favoritos' : 'Favorito'}" onclick="A.fav(event, ${p.id})">${icon('estrella')}</span>
-      ${p.photo ? `<img loading="lazy" src="${photoUrl(p)}" alt="">` : ''}<b>${esc(p.name)}</b>${money(p.sell_price)}<br><small>${p.track_stock ? p.stock + ' disp.' : 'sin control de stock'}</small>${A.badge(p.id)}</button>`).join('') || '<span class="mute">Sin resultados.</span>';
+      <span class="pn">${esc(p.name)}</span><span class="pp"><strong>${money(p.sell_price)}</strong><span class="ps ${out ? 'out' : low ? 'low' : ''}">${st}</span></span>${A.badge(p.id)}</button>`;
+    }).join('') || '<div class="nores empty">Ningún producto coincide con la búsqueda.</div>';
   },
   setCat(c) {
     S.cat = c;
@@ -1024,6 +1037,7 @@ const A = window.A = {
     if (!b) return;
     b.querySelector('.bdg')?.remove();
     b.insertAdjacentHTML('beforeend', A.badge(id));
+    b.classList.toggle('in', S.cart.some((c) => c.id === id));
     b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop');
   },
   add(id) {
@@ -1042,23 +1056,24 @@ const A = window.A = {
     if (S.benefit && !S.cart.find((c) => c.id === S.benefit.product_id)) S.benefit = null;
     const total = S.cart.reduce((t, c) => t + c.qty * S.prods.find((p) => p.id === c.id).sell_price, 0)
       - (S.benefit ? S.prods.find((p) => p.id === S.benefit.product_id).sell_price - S.prods.find((p) => p.id === S.benefit.product_id).benefit_price : 0);
-    $('#cart').innerHTML = (S.cart.length ? `<table>${S.cart.map((c) => {
-      const p = S.prods.find((x) => x.id === c.id);
-      return `<tr><td>${esc(p.name)}<br><small class="mute">${money(p.sell_price)}</small></td>
-        <td><div class="qty"><button onclick="A.chg(${c.id},-1)">−</button>${c.qty}<button onclick="A.chg(${c.id},1)">+</button></div></td>
-        <td class="n">${money(c.qty * p.sell_price)}</td></tr>` +
-        (p.benefit_price !== undefined ? `<tr><td colspan="3">${S.benefit && S.benefit.product_id === c.id
-          ? `<small>${icon('regalo')} Beneficio: <b>${esc(S.benefit.name)}</b> · 1 a ${money(p.benefit_price)}</small> <button class="btn sec sm" onclick="S.benefit=null;A.cart()">Quitar</button>`
-          : (S.benefit ? '' : `<button class="btn sec sm" onclick="A.benefit(${c.id})">${icon('regalo')} Beneficio (precio de compra)</button>`)}</td></tr>` : '');
-    }).join('')}</table>` : '<span class="mute">Toca un producto para agregarlo.</span>') +
-      `<p class="total">${money(total)}</p>
-      <div class="seg"><button class="${S.method === 'efectivo' ? 'on' : ''}" onclick="S.method='efectivo';A.cart()"><img class="pay" src="/efectivo.png" alt=""> Efectivo</button>
+    const nItems = S.cart.reduce((t, c) => t + c.qty, 0);
+    $('#cart').innerHTML = `<div class="ch"><h3>Venta actual</h3>${S.cart.length ? '<button class="linkbtn" onclick="S.cart=[];S.benefit=null;A.cart();A.grid()">Vaciar</button>' : ''}</div>`
+      + (S.cart.length ? `<ul class="cl">${S.cart.map((c) => {
+        const p = S.prods.find((x) => x.id === c.id);
+        return `<li class="ci"><div class="nm">${esc(p.name)}<small>${money(p.sell_price)} c/u</small></div>
+          <div class="qty"><button onclick="A.chg(${c.id},-1)" aria-label="Quitar una unidad de ${esc(p.name)}">−</button><span>${c.qty}</span><button onclick="A.chg(${c.id},1)" aria-label="Agregar una unidad de ${esc(p.name)}">+</button></div>
+          <div class="lt">${money(c.qty * p.sell_price)}</div>
+          ${p.benefit_price !== undefined ? `<div class="bn">${S.benefit && S.benefit.product_id === c.id
+            ? `<small>${icon('regalo')} Beneficio: <b>${esc(S.benefit.name)}</b> · 1 a ${money(p.benefit_price)}</small> <button class="btn sec sm" onclick="S.benefit=null;A.cart()">Quitar</button>`
+            : (S.benefit ? '' : `<button class="btn sec sm" onclick="A.benefit(${c.id})">${icon('regalo')} Beneficio (precio de compra)</button>`)}</div>` : ''}</li>`;
+      }).join('')}</ul>` : `<div class="cempty">${icon('vender')}<span>Toca un producto para agregarlo a la venta.</span></div>`)
+      + `<div class="cfoot"><div class="ctot"><span>Total${nItems ? ` · ${nItems} ${nItems === 1 ? 'producto' : 'productos'}` : ''}</span><p class="total">${money(total)}</p></div>
+      <div class="seg" role="group" aria-label="Forma de pago"><button class="${S.method === 'efectivo' ? 'on' : ''}" onclick="S.method='efectivo';A.cart()"><img class="pay" src="/efectivo.png" alt=""> Efectivo</button>
       <button class="${S.method === 'nequi' ? 'on' : ''}" onclick="S.method='nequi';A.cart()"><img class="pay" src="/nequi.jpg" alt=""> Nequi</button>
       <button class="${S.method === 'mixto' ? 'on' : ''}" onclick="S.method='mixto';A.cart()">${icon('mezcla')} Mixto</button></div>
       ${S.method === 'mixto' ? `<label for="nq">Pagó por Nequi</label><input id="nq" type="number" inputmode="numeric" min="1" value="${S.nq || ''}" oninput="S.nq=this.value;A.mix(${total})">
       <p id="mix" class="mute"></p>` : ''}
-      <p><button class="btn go" style="width:100%" ${S.cart.length ? '' : 'disabled'} onclick="A.sell()">Registrar venta</button></p>
-      ${S.cart.length ? '<button class="btn sec sm" onclick="S.cart=[];S.benefit=null;A.cart()">Vaciar</button>' : ''}`;
+      <button class="btn go lg" ${S.cart.length ? '' : 'disabled'} onclick="A.sell()">Registrar venta${S.cart.length ? ' · ' + money(total) : ''}</button></div>`;
     const bar = $('#cartbar');
     if (bar) { const n = S.cart.reduce((t, c) => t + c.qty, 0); bar.hidden = !n; bar.innerHTML = `<span>${n} ${n === 1 ? 'producto' : 'productos'}</span><b>${money(total)}</b><span class="go2">Ver venta ↓</span>`; }
   },
@@ -1295,8 +1310,7 @@ const A = window.A = {
   kind(k) {
     S.kind = k;
     [['k1', 'pedido'], ['k2', 'implementos']].forEach(([id, v]) => {
-      const on = k === v, b = $('#' + id);
-      b.classList.toggle('bg-brand', on); b.classList.toggle('text-white', on); b.classList.toggle('text-slate-600', !on); b.classList.toggle('hover:bg-ice', !on);
+      $('#' + id).classList.toggle('on', k === v);
     });
     $('#gcw').style.display = k === 'pedido' ? '' : 'none';
     $('#gdl').textContent = k === 'pedido' ? 'Nota (opcional)' : 'Descripción (ej. paquete de vasos)';
@@ -1344,7 +1358,7 @@ const A = window.A = {
   // Pedidos
   ordDraft() {
     const d = S.orderDraft;
-    $('#odraft').innerHTML = d.items.length ? `<div class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">En este pedido (${d.items.length})</div><div class="flex flex-col gap-2">${d.items.map((i, k) => `<div class="flex items-center gap-3 rounded-2xl border border-line bg-white p-2 pr-3 shadow-sm">
+    $('#odraft').innerHTML = d.items.length ? `<div class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">En este pedido (${d.items.length})</div><div class="flex flex-col gap-2">${d.items.map((i, k) => `<div class="flex items-center gap-3 rowcard">
       ${i.new_photo ? `<img class="h-12 w-12 shrink-0 rounded-xl object-cover ring-1 ring-line" src="${i.new_photo}" alt="">` : ordThumb(i.product_id ? S.prods.find((p) => p.id === i.product_id) : null, 'h-12 w-12')}
       <div class="min-w-0 flex-1"><div class="truncate text-sm font-bold text-slate-800">${esc(i.name)}</div>${i.product_id ? '' : '<span class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">PRODUCTO NUEVO</span>'}</div>
       ${ordStep(`A.ordQty(${k},-1)`, `A.ordQty(${k},1)`, i.qty)}
@@ -1369,7 +1383,7 @@ const A = window.A = {
       ${ordThumb(p, 'h-16 w-16')}
       <div class="min-w-0 flex-1"><b class="block truncate text-slate-800">${esc(p.name)}</b><small class="text-slate-500">${esc(p.category || 'Sin categoría')} · stock actual ${p.stock}</small></div>
       <input id="oq" type="number" inputmode="numeric" min="1" placeholder="Cant." class="!w-20 !text-center !text-lg !font-extrabold" onkeydown="if(event.key==='Enter')A.ordAdd();if(event.key==='Escape')A.ordUnpick()">
-      <button class="btn !rounded-xl" onclick="A.ordAdd()">Agregar</button>
+      <button class="btn" onclick="A.ordAdd()">Agregar</button>
       <button class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-white hover:text-rose-500" aria-label="Quitar selección" title="Elegir otro producto" onclick="A.ordUnpick()">✕</button></div>`;
     $('#oq').focus();
   },
@@ -1486,8 +1500,7 @@ const A = window.A = {
     $('#' + id).value = v;
     if (id === 'ld') $('#lf').value = Number(v) * 1000; // 1 día = $1.000, 2 días = $2.000 (se puede cambiar a mano)
     document.querySelectorAll(`[data-seg="${id}"] button`).forEach((b) => {
-      const on = b.dataset.v === v;
-      b.classList.toggle('bg-brand', on); b.classList.toggle('text-white', on); b.classList.toggle('text-slate-600', !on);
+      b.classList.toggle('on', b.dataset.v === v);
     });
   },
 
@@ -1522,7 +1535,7 @@ boot();
 
 // Tarjetas de datos: según el texto de la etiqueta se les da color e icono
 const STAT_TONES = [
-  [/nequi/i, 'nequi', 'caja'], [/efectivo/i, 'cash', 'dinero'], [/p[eé]rdida|descart/i, 'loss', 'gastos'],
+  [/total esperado/i, 'sales', 'dinero'], [/nequi/i, 'nequi', 'caja'], [/efectivo/i, 'cash', 'dinero'], [/p[eé]rdida|descart/i, 'loss', 'gastos'],
   [/gasto|implemento|comisi/i, 'exp', 'gastos'], [/pedido/i, 'orders', 'productos'], [/ganancia/i, 'gain', 'reportes'], [/rentabilidad/i, 'gain', 'reportes'], [/pagad|por pagar/i, 'ped', 'dinero'],
   [/inventario/i, 'inv', 'productos'], [/inicio|deber[ií]a/i, 'slate', 'turnos'], [/agotad/i, 'loss', 'gastos'], [/stock bajo/i, 'exp', 'gastos'], [/productos activos/i, 'inv', 'productos'], [/ticket|promedio/i, 'inv', 'reportes'], [/mejor/i, 'ped', 'reportes'], [/salida/i, 'loss', 'gastos'], [/saldo|entrada/i, 'gain', 'dinero'], [/venta|total/i, 'sales', 'vender'],
 ];
@@ -1535,7 +1548,24 @@ function decorateStats(root = document) {
     el.insertAdjacentHTML('afterbegin', logo ? `<i class="si logo"><img src="${logo}" alt=""></i>` : `<i class="si">${icon(ic)}</i>`);
   });
 }
-new MutationObserver(() => decorateStats()).observe(document.body, { childList: true, subtree: true });
+// Cifras en pesos: cuentan hacia arriba una sola vez al aparecer (respeta "reducir movimiento")
+const calmMotion = matchMedia('(prefers-reduced-motion: reduce)');
+function countUp(root = document) {
+  if (calmMotion.matches) return;
+  root.querySelectorAll('.stat b:not([data-c])').forEach((el) => {
+    el.dataset.c = '1';
+    const m = el.textContent.trim().match(/^\$([\d.]+)$/); if (!m) return;
+    const to = Number(m[1].replace(/\./g, '')); if (!to || to < 100) return;
+    const t0 = performance.now(), dur = 750;
+    const tick = (now) => {
+      const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 4);
+      el.textContent = money(Math.round(to * e));
+      if (k < 1 && el.isConnected) requestAnimationFrame(tick); else el.textContent = money(to);
+    };
+    el.textContent = money(0); requestAnimationFrame(tick);
+  });
+}
+new MutationObserver(() => { decorateStats(); countUp(); }).observe(document.body, { childList: true, subtree: true });
 
 // ---------- Reportes: panel de análisis ----------
 const RANGOS = [[7, '7 días'], [30, '30 días'], [90, '90 días'], [365, '12 meses']];
@@ -1564,7 +1594,7 @@ function reportPanel(tr) {
       <div class="stat"><span>Salidas de dinero</span><b>${money(out)}</b><small>Gastos, pedidos y pagos a emprendimientos</small></div>
       <div class="stat"><span>Saldo (entradas − salidas)</span><b>${smoney(balance)}</b><small>${tr.units} unidades vendidas</small></div>
       <div class="stat"><span>Mejor día</span><b style="font-size:1.15rem">${bestLbl[0].toUpperCase() + bestLbl.slice(1)}</b><small>${money(best.total)} en ${best.n} ventas</small></div>
-    </div><br>
+    </div><div style="height:1rem"></div>
     <div class="card"><h3>Ventas y ganancia por día</h3>${lg([C.ventas, 'Ventas'], [C.ganancia, 'Ganancia'])}<div id="ch1"></div>
       <details class="dt"><summary>Ver tabla de datos</summary><div class="tw"><table><tr><th>Día</th><th class="n">Ventas</th><th class="n">Ganancia</th><th class="n">Efectivo</th><th class="n">Nequi</th><th class="n">Salidas</th><th class="n">#</th></tr>
       ${tr.days.filter((d) => d.n || d.out).reverse().map((d) => `<tr><td>${d.day}</td><td class="n">${money(d.total)}</td><td class="n">${money(d.profit)}</td><td class="n">${money(d.cash)}</td><td class="n">${money(d.nequi)}</td><td class="n">${money(d.out)}</td><td class="n">${d.n}</td></tr>`).join('')}</table></div></details></div>
@@ -1664,7 +1694,7 @@ function empPanel(er) {
       <div class="stat"><span>Rentabilidad neta</span><b>${smoney(t.net)}</b>${dl(t.net, p.net)}<small>${pctOf(t.net, t.revenue)} de las ventas</small></div>
       <div class="stat"><span>Pagado a emprendedores</span><b>${money(er.paid.total)}</b><small>${er.paid.n} pagos en el periodo</small></div>
       <div class="stat"><span>Por pagar ahora</span><b>${money(er.pending)}</b><small>Vendido y descartado sin pagar aún</small></div>
-    </div><br>
+    </div><div style="height:1rem"></div>
     <div class="card"><h3>Lo que dicen los números</h3><ul class="ins">${insights.map((x) => `<li>${x}</li>`).join('')}</ul></div>
     <div class="card"><h3>Ganancia y pérdidas por día</h3>${lg([C.ganancia, 'Ganancia por lo vendido'], [C.gasto, 'Pérdida por descartes (lo que pagó la tienda)'])}<div id="em1"></div></div>
     <div class="grid2">
@@ -1718,7 +1748,15 @@ document.addEventListener('click', (e) => {
   z.addEventListener('click', () => z.remove());
   document.body.appendChild(z);
 }, true);
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.zoom').forEach((x) => x.remove()); });
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const z = document.querySelectorAll('.zoom');
+  if (z.length) return z.forEach((x) => x.remove());
+  const m = document.querySelectorAll('.modal'); if (m.length) m[m.length - 1].remove();
+  else if ($('.shell.open')) A.sideClose();
+});
+// el título de la barra superior aparece al bajar (el título grande queda en la página)
+addEventListener('scroll', () => document.body.classList.toggle('scrolled', scrollY > 28), { passive: true });
 
 // ---------- Productos: tarjetas ----------
 function prodToolbar(admin) {
