@@ -574,3 +574,14 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:0}
 main,.content,.pos>*{min-width:0}
 body{overflow-x:clip}
 body:has(.shell.open) #cw{display:none}
+
+/* ---------- Color por medio de pago: efectivo verde, Nequi morado, total azul ---------- */
+.stat[data-t=cash],.stat[data-t=nequi],.stat[data-t=total],.panel.tc-efectivo,.panel.tc-nequi{border-color:var(--tb);background:linear-gradient(150deg,var(--tf),color-mix(in srgb,var(--tf) 55%,#fff))}
+.stat[data-t=cash],.panel.tc-efectivo{--tone:#0f7a4d;--tone-bg:#fff;--tf:#e3f5eb;--tb:#b5e0c9;--td:#0a5434}
+.stat[data-t=nequi],.panel.tc-nequi{--tone:#8a2fa8;--tone-bg:#fff;--tf:#f3e6fa;--tb:#dcbfec;--td:#5b1e76}
+.stat[data-t=total]{--tone:#1d4ed8;--tone-bg:#fff;--tf:#e4ecff;--tb:#bccffa;--td:#13318f}
+.stat[data-t=cash] b,.stat[data-t=nequi] b,.stat[data-t=total] b,.panel.tc-efectivo .text-navy,.panel.tc-nequi .text-navy{color:var(--td)}
+.stat[data-t=cash] span,.stat[data-t=nequi] span,.stat[data-t=total] span{color:var(--td)}
+.stat[data-t=cash] small,.stat[data-t=nequi] small,.stat[data-t=total] small{color:var(--td);opacity:.8}
+.stat[data-t=cash] .si,.stat[data-t=nequi] .si,.stat[data-t=total] .si{box-shadow:0 0 0 1px var(--tb)}
+.panel.tc-efectivo .text-slate-500,.panel.tc-nequi .text-slate-500{color:var(--td);opacity:.8}

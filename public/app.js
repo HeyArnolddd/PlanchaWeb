@@ -409,7 +409,7 @@ const views = {
     const field = (m, id, label, val0, extra = '') => `<div class="fieldbox">
       <div class="mb-2 flex items-center gap-2">${payLogo(m, 'h-7 w-7')}<span class="${lbl}">${label}</span></div>
       <input id="${id}" type="number" inputmode="numeric" min="0" value="${val0}" placeholder="$ 0" class="!py-3 !text-xl !font-extrabold" ${extra}></div>`;
-    const money2 = (m, name, exp, start, sales) => `<div class="panel tight">
+    const money2 = (m, name, exp, start, sales) => `<div class="panel tight tc-${m}">
       <div class="flex items-center gap-3">${payLogo(m, 'h-11 w-11')}<div><div class="${lbl}">${name}</div><div class="text-xs text-slate-500">Debería haber en caja</div></div></div>
       <div class="mt-2 text-3xl font-extrabold tracking-tight text-navy">${money(exp)}</div>
       <div class="mt-3 flex gap-2 text-sm"><div class="flex-1 rounded-xl bg-ice/70 px-3 py-2"><div class="text-[11px] font-bold uppercase text-slate-500">Inicio</div><b class="text-slate-800">${money(start)}</b></div>
@@ -1535,7 +1535,7 @@ boot();
 
 // Tarjetas de datos: según el texto de la etiqueta se les da color e icono
 const STAT_TONES = [
-  [/total esperado/i, 'sales', 'dinero'], [/nequi/i, 'nequi', 'caja'], [/efectivo/i, 'cash', 'dinero'], [/p[eé]rdida|descart/i, 'loss', 'gastos'],
+  [/^total( esperado)?$/i, 'total', 'dinero'], [/nequi/i, 'nequi', 'caja'], [/efectivo/i, 'cash', 'dinero'], [/p[eé]rdida|descart/i, 'loss', 'gastos'],
   [/gasto|implemento|comisi/i, 'exp', 'gastos'], [/pedido/i, 'orders', 'productos'], [/ganancia/i, 'gain', 'reportes'], [/rentabilidad/i, 'gain', 'reportes'], [/pagad|por pagar/i, 'ped', 'dinero'],
   [/inventario/i, 'inv', 'productos'], [/inicio|deber[ií]a/i, 'slate', 'turnos'], [/agotad/i, 'loss', 'gastos'], [/stock bajo/i, 'exp', 'gastos'], [/productos activos/i, 'inv', 'productos'], [/ticket|promedio/i, 'inv', 'reportes'], [/mejor/i, 'ped', 'reportes'], [/salida/i, 'loss', 'gastos'], [/saldo|entrada/i, 'gain', 'dinero'], [/venta|total/i, 'sales', 'vender'],
 ];
