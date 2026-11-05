@@ -1755,8 +1755,7 @@ document.addEventListener('keydown', (e) => {
   const m = document.querySelectorAll('.modal'); if (m.length) m[m.length - 1].remove();
   else if ($('.shell.open')) A.sideClose();
 });
-// el título de la barra superior aparece al bajar (el título grande queda en la página)
-addEventListener('scroll', () => document.body.classList.toggle('scrolled', scrollY > 28), { passive: true });
+
 
 // ---------- Productos: tarjetas ----------
 function prodToolbar(admin) {
